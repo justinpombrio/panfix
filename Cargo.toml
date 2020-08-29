@@ -1,5 +1,5 @@
 [package]
-name = "pratt"
+name = "panfix"
 version = "0.1.0"
 authors = ["Justin Pombrio <zallambo@gmail.com>"]
 edition = "2018"

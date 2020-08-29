@@ -84,12 +84,12 @@ impl<T: Token> Lexer<T> {
         regexes: Vec<(String, T)>,
         mut constants: Vec<(String, T)>,
     ) -> Result<Lexer<T>, LexerConstructionError> {
-        let whitespace = Regex::new(&format!("^{}", whitespace))?;
+        let whitespace = Regex::new(&format!("^({})", whitespace))?;
         // In case one constant is a prefix of another
         constants.sort_by_key(|(c, _)| -(c.chars().count() as i32));
         let mut compiled_regexes = vec![];
         for (regex, token) in regexes {
-            compiled_regexes.push((Regex::new(&format!("^{}", regex))?, token));
+            compiled_regexes.push((Regex::new(&format!("^({})", regex))?, token));
         }
         Ok(Lexer {
             whitespace,
@@ -157,77 +157,4 @@ impl<'s, T: Token> Lex<'s, T> {
         self.index += len;
         Lexeme { span, token }
     }
-}
-
-#[test]
-fn test_lexer() {
-    use JsonToken::*;
-
-    #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-    enum JsonToken {
-        True,
-        False,
-        Null,
-        JString,
-        Number,
-        OpenBrace,
-        CloseBrace,
-        OpenBracket,
-        CloseBracket,
-        Colon,
-        Comma,
-        _LexError,
-    }
-    impl Token for JsonToken {
-        const LEX_ERROR: JsonToken = JsonToken::_LexError;
-        fn as_usize(self) -> usize {
-            self as usize
-        }
-    }
-
-    let string_regex = "^\"([^\"\\\\]|\\\\.)*\"";
-    let number_regex = "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?";
-    let whitespace_regex = "^[ \\n\\r\\v]*";
-    let lexer = LexerBuilder::new(whitespace_regex)
-        .regex(string_regex, JString)
-        .regex(number_regex, Number)
-        .constant("true", True)
-        .constant("false", False)
-        .constant("null", Null)
-        .constant(":", Colon)
-        .constant(",", Comma)
-        .constant("[", OpenBracket)
-        .constant("]", CloseBracket)
-        .constant("{", OpenBrace)
-        .constant("}", CloseBrace)
-        .build()
-        .unwrap();
-
-    let lex = |source| {
-        lexer
-            .lex(source)
-            .map(|l| &source[l.span.0..l.span.1])
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(lex("3.1e5"), vec!["3.1e5"]);
-    assert_eq!(
-        lex("{false]true  [5\"5\\\"\""),
-        vec!["{", "false", "]", "true", "[", "5", "\"5\\\"\""]
-    );
-
-    /*
-    use std::fs::File;
-    use std::io::{BufRead, BufReader};
-    let file = File::open("large-file.json").unwrap();
-    let reader = BufReader::new(file);
-    let mut lexeme_count = 0;
-    for line in reader.lines() {
-        let line = &line.unwrap();
-        for _ in lexer.lex(line) {
-            lexeme_count += 1;
-        }
-    }
-    // This could use some external verification
-    assert_eq!(lexeme_count, 2507032);
-    */
 }

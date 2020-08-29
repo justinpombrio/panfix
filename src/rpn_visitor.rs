@@ -3,9 +3,10 @@
 //! All operations are amortized O(1) cost.  The stack itself is stored as a vector; besides that
 //! there are no heap allocations.
 
+use std::fmt::Debug;
 use std::ops::Deref;
 
-pub trait Node: std::fmt::Debug {
+pub trait Node: Debug {
     fn arity(&self) -> usize;
 }
 
@@ -22,6 +23,7 @@ pub struct Stack<N: Node> {
     groups: Vec<usize>,
 }
 
+// TODO: Stick the soruce in here too!
 #[derive(Debug, Clone, Copy)]
 pub struct Visitor<'s, N: Node> {
     stack: &'s [Link<N>],
@@ -45,7 +47,7 @@ impl<'s, N: Node> VisitorIter<'s, N> {
 }
 
 impl<'s, N: Node> Visitor<'s, N> {
-    pub fn node(&self) -> &'s N {
+    pub fn node(&self) -> &N {
         &self.stack[self.ptr].node
     }
 
@@ -159,6 +161,10 @@ impl<N: Node> Stack<N> {
                 remaining: self.groups.len(),
             }
         }
+    }
+
+    pub fn nodes(&self) -> impl ExactSizeIterator<Item = &N> {
+        self.stack.iter().map(|link| &link.node)
     }
 }
 
