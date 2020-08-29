@@ -1,0 +1,171 @@
+\documentclass{article}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+\newenvironment{Table}
+  {\begin{center}\begin{tabular}{l l l @{\quad}l}}
+  {\end{tabular}\end{center}}
+
+\newenvironment{TallTable}
+  {\renewcommand{\arraystretch}{2.0}\begin{center}\begin{tabular}{l l l l @{\quad}l}}
+  {\renewcommand{\arraystretch}{1.0}\end{tabular}\end{center}}
+
+\begin{document}
+
+\newcommand{\seq}[1]{\overline{#1}}
+\newcommand{\state}[4]{#1 \;\, \big\langle\; #2 \;\big\rangle_{\!\bold#4} \;\, #3}
+\newcommand{\estate}[3]{#1 \;\, \big\lceil\; #2 \;\big\rceil \;\, #3}
+\newcommand{\sstate}[3]{#1 \;\, \big\lfloor\; #2 \;\big\rfloor \;\, #3}
+%\newcommand{\estate}[3]{\state{#1}{#2}{#3}{e}}
+%\newcommand{\sstate}[3]{\state{#1}{#2}{#3}{s}}
+\newcommand{\atom}{{a}}
+\newcommand{\op}{{\odot}}
+\newcommand{\infix}[2]{{}_{#1}\op_{#2}}
+\newcommand{\suffix}[1]{{}_{#1}\op}
+\newcommand{\prefix}[1]{\op_{#1}}
+\newcommand{\s}{\;\;}
+\newcommand{\lprec}[1]{\textit{lprec}(#1)}
+\newcommand{\rprec}[1]{\textit{rprec}(#1)}
+\newcommand{\none}{\emptyset}
+\newcommand{\juxt}{\textit{J}}
+\newcommand{\miss}{\textit{M}}
+
+\section{Pratt Parsing}
+
+\subsection{Language:}
+
+\begin{Table}
+$t$ &$::=$& $\atom$ &(atom) \\
+&$|$& $\op$ &(operator) \\
+\\
+$\op$ &$::=$& $\infix{i}{j}$ &(infix operator) \\
+&$|$& $\prefix{i}$ &(prefix operator) \\
+&$|$& $\suffix{i}$ &(suffix operator) \\
+\\
+ \textit{state} &$::=$& $\estate{\seq{t}}{\seq{\op}}{\seq{t}}$ & (parse expression) \\
+ \\
+ &$|$& $\sstate{\seq{t}}{\seq{\op}}{\seq{t}}$ & (parse suffix)
+\end{Table}
+
+\begin{Table}
+$\infix{?}{j}$ &\textit{is shorthand for}& $\infix{i}{j}$ or $\prefix{j}$ \\
+$\infix{i}{?}$ &\textit{is shorthand for}& $\infix{i}{j}$ or $\suffix{i}$ \\
+\end{Table}
+
+\subsection{Evaluation:}
+
+\begin{itemize}
+\item The inital state for a token stream $\seq{t}$ is $\estate{}{}{\seq{t}}$.
+\item The final state is $\sstate{\seq{t'}}{}{}$, where $\seq{t'}$ is the original tokens rearranged in RPN.
+\end{itemize}
+
+\begin{TallTable}
+1.&     $\estate{\seq{t'}}{\seq{\op}}{\atom\s\seq{t}}$
+&$\to$& $\sstate{\seq{t'}\s\atom}{\seq{\op}}{\seq{t}}$
+\\
+2.&     $\estate{\seq{t'}}{\seq{\op}}{\prefix{i}\s\seq{t}}$
+&$\to$& $\estate{\seq{t'}}{\seq{\op}\s\prefix{i}}{\seq{t}}$
+\\
+3.&     $\sstate{\seq{t'}}{\seq{\op}\s\infix{?}{i}}{\infix{j}{?}\s\seq{t}}$
+&$\to$& $\sstate{\seq{t'}\s\infix{?}{i}}{\seq{\op}}{\infix{j}{?}\s\seq{t}}$
+& if $i < j$
+\\
+4.&     $\sstate{\seq{t'}}{\seq{\op}\s\infix{?}{i}}{\infix{j}{k}\s\seq{t}}$
+&$\to$& $\estate{\seq{t'}}{\seq{\op}\s\infix{?}{i}\s\infix{j}{k}}{\seq{t}}$
+& if $i > j$
+\\
+5.&     $\sstate{\seq{t'}}{\seq{\op}\s\infix{?}{i}}{\suffix{j}\s\seq{t}}$
+&$\to$& $\sstate{\seq{t'}\s\suffix{j}}{\seq{\op}\s\infix{?}{i}}{\seq{t}}$
+& if $i > j$
+\\
+6.&     $\sstate{\seq{t'}}{}{\infix{i}{j}\s\seq{t}}$
+&$\to$& $\estate{\seq{t'}}{\infix{i}{j}}{\seq{t}}$
+\\
+7.&     $\sstate{\seq{t'}}{}{\suffix{i}\s\seq{t}}$
+&$\to$& $\sstate{\seq{t'}\s\suffix{i}}{}{\seq{t}}$
+\\
+8.&     $\sstate{\seq{t'}}{\seq{\op}\s\op}{}$
+&$\to$& $\sstate{\seq{t'}\s\op}{\seq{\op}}{}$
+\end{TallTable}
+
+\subsection{Derivations of some of the rules:}
+
+\paragraph{Rule 2.} A prefix should act as if it were an atom followed by an infix operator with
+maximally low (tight) left precedence. Thus:
+\begin{Table}
+&&          $\estate{\seq{t'}}{\seq{\op}}{\prefix{i}\s\seq{t}}$ \\
+&$\approx$& $\estate{\seq{t'}}{\seq{\op}}{\atom\s\infix{0}{i}\s\seq{t}}$ \\
+&$\to_1$&   $\sstate{\seq{t'}\s\atom}{\seq{\op}}{\infix{0}{i}\s\seq{t}}$ \\
+&$\to_4$&   $\sstate{\seq{t'}\s\atom}{\seq{\op}\s\infix{0}{i}}{\seq{t}}$ \\
+&$\approx$& $\sstate{\seq{t'}}{\seq{\op}\s\prefix{i}}{\seq{t}}$
+\end{Table}
+
+\paragraph{Rule 5.} A suffix should act as if it were an infix operator with maximally low (tight)
+right precedence, followed by an atom. Thus:
+\begin{Table}
+&&          $\sstate{\seq{t'}}{\seq{\op}\s\infix{?}{i}}{\suffix{j}\s\seq{t}}$ \\
+&$\approx$& $\sstate{\seq{t'}}{\seq{\op}\s\infix{?}{i}}{\infix{j}{0}\s\atom\s\seq{t}}$ \\
+&$\to_4$&   $\estate{\seq{t'}}{\seq{\op}\s\infix{?}{i}\s\infix{j}{0}}{\atom\s\seq{t}}$ \\
+&$\to_1$&   $\sstate{\seq{t'}\s\atom}{\seq{\op}\s\infix{?}{i}\s\infix{j}{0}}{\seq{t}}$ \\
+&$\to_3$&   $\sstate{\seq{t'}\s\atom\s\infix{j}{0}}{\seq{\op}\s\infix{?}{i}}{\seq{t}}$ \\
+&$\approx$& $\sstate{\seq{t'}\s\suffix{j}}{\seq{\op}\s\infix{?}{i}}{\seq{t}}$
+\end{Table}
+
+\paragraph{Rule 6.} The bottom of the operator stack should act as if it contains a maximally high
+precedence (weakly binding) operator. Thus:
+\[
+\sstate{\seq{t'}}{}{\infix{i}{j}\s\seq{t}}
+\;\;\approx\;\;
+\sstate{\seq{t'}}{\prefix{\infty}}{\infix{i}{j}\s\seq{t}}
+\;\;\to_4\;\;
+\estate{\seq{t'}}{\prefix{\infty}\s\infix{i}{j}}{\seq{t}}
+\;\;\approx\;\;
+\estate{\seq{t'}}{\infix{i}{j}}{\seq{t}}
+\]
+\paragraph{Rule 7.} Similar to the previous rule.
+\[
+\sstate{\seq{t'}}{}{\suffix{i}\s\seq{t}}
+\;\;\approx\;\;
+\sstate{\seq{t'}}{\prefix{\infty}}{\suffix{i}\s\seq{t}}
+\;\;\to_5\;\;
+\sstate{\seq{t'}\s\suffix{i}}{\prefix{\infty}}{\seq{t}}
+\;\;\approx\;\;
+\sstate{\seq{t'}\s\suffix{i}}{}{\seq{t}}
+\]
+\paragraph{Rule 8.} The end of the token stream should act as if it contains a maximally high
+precedence (weakly binding) operator. Thus:
+\[
+\sstate{\seq{t'}}{\seq{\op}\s\op}{}
+\;\;\approx\;\;
+\sstate{\seq{t'}}{\seq{\op}\s\op}{\suffix{\infty}}
+\;\;\to_3\;\;
+\sstate{\seq{t'}\s\op}{\seq{\op}}{\suffix{\infty}}
+\;\;\approx\;\;
+\sstate{\seq{t'}\s\op}{\seq{\op}}{}
+\]
+
+\subsection{Error Cases}
+To handle potentially malformed inputs gracefully, introduce a special atom called $M$ (for
+"missing"), and a special operator $J$ (for "juxtaposition"). Insert $M$ and $J$ as required to make
+the expression well-formed. For example, $1+$ would turn into $1+M$, and $1\;2$ would turn into
+$1\;J\;2$.
+
+Using these special tokens, we can "fill out" the rest of the parsing cases, so that \textit{every}
+expression parses.
+\begin{TallTable}
+9.&     $\estate{\seq{t'}}{\seq{\op}}{\infix{i}{?}\s\seq{t}}$
+&$\to$& $\estate{\seq{t'}}{\seq{\op}}{\miss\s\infix{i}{?}\s\seq{t}}$
+\\
+10.&    $\estate{\seq{t'}}{\seq{\op}}{}$
+&$\to$& $\sstate{\seq{t'}}{\seq{\op}}{\miss}$
+\\
+11.&    $\sstate{\seq{t'}}{\seq{\op}}{\atom\s\seq{t}}$
+&$\to$& $\sstate{\seq{t'}}{\seq{\op}}{\juxt\s\atom\s\seq{t}}$
+\\
+12.&    $\sstate{\seq{t'}}{\seq{\op}}{\prefix{i}\s\seq{t}}$
+&$\to$& $\sstate{\seq{t'}}{\seq{\op}}{\juxt\s\prefix{i}\s\seq{t}}$
+\end{TallTable}
+(You can check that rules 1-12 now cover all cases; parsing never "gets stuck".)
+
+\end{document}
