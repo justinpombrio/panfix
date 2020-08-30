@@ -12,8 +12,26 @@ enum JsonToken {
     OpenBracket,
     CloseBracket,
     Colon,
-    DoubleColon, // for testing
     Comma,
+    _LexError,
+    _Missing,
+    _Juxtapose,
+}
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+enum TokenThatHatesYou {
+    Colon,
+    DoubleColon,
+    TripleColon,
+    OpenParen,
+    CloseParen,
+    SadFace,
+    True,
+    Truer,
+    Truest,
+    Word,
+    AngryWord,
+    ShortWord,
     _LexError,
     _Missing,
     _Juxtapose,
@@ -29,12 +47,23 @@ impl Token for JsonToken {
     }
 }
 
+impl Token for TokenThatHatesYou {
+    const LEX_ERROR: TokenThatHatesYou = TokenThatHatesYou::_LexError;
+    const MISSING: TokenThatHatesYou = TokenThatHatesYou::_Missing;
+    const JUXTAPOSE: TokenThatHatesYou = TokenThatHatesYou::_Juxtapose;
+
+    fn as_usize(self) -> usize {
+        (self as usize) + 13
+    }
+}
+
 fn json_lexer() -> Lexer<JsonToken> {
     use JsonToken::*;
 
     let string_regex = "\"([^\"\\\\]|\\\\.)*\"";
     let number_regex = "-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?";
     let whitespace_regex = "[ \\t\\n\\r\\v]*";
+
     LexerBuilder::new(whitespace_regex)
         .regex(string_regex, JString)
         .regex(number_regex, Number)
@@ -42,12 +71,36 @@ fn json_lexer() -> Lexer<JsonToken> {
         .constant("false", False)
         .constant("null", Null)
         .constant(":", Colon)
-        .constant("::", DoubleColon)
         .constant(",", Comma)
         .constant("[", OpenBracket)
         .constant("]", CloseBracket)
         .constant("{", OpenBrace)
         .constant("}", CloseBrace)
+        .build()
+        .unwrap()
+}
+
+fn hate_lexer() -> Lexer<TokenThatHatesYou> {
+    use TokenThatHatesYou::*;
+
+    let word_regex = "[a-yA-Y]+";
+    let angry_word_regex = "[A-Y]+";
+    let short_word_regex = "[a-zA-Z]";
+    let whitespace_regex = "[ e]*";
+
+    LexerBuilder::new(whitespace_regex)
+        .regex(angry_word_regex, AngryWord)
+        .regex(word_regex, Word)
+        .regex(short_word_regex, ShortWord)
+        .constant(":", Colon)
+        .constant(":::", TripleColon)
+        .constant("::", DoubleColon)
+        .constant("(", OpenParen)
+        .constant(")", CloseParen)
+        .constant(":(", SadFace)
+        .constant("true", True)
+        .constant("truer", Truer)
+        .constant("truerest", Truest)
         .build()
         .unwrap()
 }
@@ -66,7 +119,6 @@ fn test_lexer() {
         lex("{false]true  [5\"5\\\"\""),
         vec!["{", "false", "]", "true", "[", "5", "\"5\\\"\""]
     );
-    assert_eq!(lex(":::::"), vec!["::", "::", ":"]);
 
     /*
      SPEED TEST:
@@ -84,4 +136,33 @@ fn test_lexer() {
     // This could use some external verification
     assert_eq!(lexeme_count, 2507032);
     */
+}
+
+#[test]
+fn test_lexing_horrible_things() {
+    let lexer = hate_lexer();
+    let lex = |source| {
+        lexer
+            .lex(source)
+            .map(|l| &source[l.span.0..l.span.1])
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(lex("HELLO"), vec!["HELLO"]);
+    assert_eq!(lex("Hello"), vec!["H", "llo"]);
+    assert_eq!(lex("hello"), vec!["hello"]);
+    assert_eq!(lex(":()"), vec![":(", ")"]);
+    assert_eq!(lex(":::()"), vec![":::", "(", ")"]);
+    assert_eq!(lex("::::()"), vec![":::", ":(", ")"]);
+    assert_eq!(lex(":::::()"), vec![":::", "::", "(", ")"]);
+    assert_eq!(lex("truertruetruerest"), vec!["truertruetruerest"]);
+    assert_eq!(
+        lex("truer true truerest"),
+        vec!["truer", "true", "truerest"]
+    );
+    assert_eq!(
+        lex("truery truey truerestytrue"),
+        vec!["truery", "truey", "truerestytrue"]
+    );
+    assert_eq!(lex(" eprom "), vec!["prom"]);
+    assert_eq!(lex("true! true"), vec!["true", "! true"]);
 }
