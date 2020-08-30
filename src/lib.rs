@@ -1,13 +1,17 @@
 use std::fmt::Debug;
 use std::hash::Hash;
 
-pub mod lexer;
-mod parser;
-pub mod rpn_visitor;
+// TODO:
+// - Multifix
+// - ParsrConstructionError
+// - Handle lexing errors
+// - Proper Source data structure, with line numbers
+// - Put builder in submodule
+// - Eliminate rpn_visitor dependency
 
-pub use lexer::{Lexer, LexerBuilder};
-pub use parser::{parse, Grammar, GrammarBuilder, Node};
-pub use rpn_visitor::Visitor;
+pub mod lexer;
+pub mod rpn_visitor;
+pub mod shunter;
 
 pub type Span = (usize, usize);
 
