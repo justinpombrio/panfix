@@ -39,7 +39,7 @@ mod rpn_tests {
         let mut rpn = Stack::new();
         if !source.is_empty() {
             for token in source.split(' ') {
-                let ch = token.chars().nth(0).unwrap();
+                let ch = token.chars().next().unwrap();
                 rpn.push(Item(ch));
             }
         }

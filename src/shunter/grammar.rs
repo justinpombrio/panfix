@@ -20,9 +20,13 @@ pub struct Operator<T: Token> {
 
 #[derive(Debug, Clone)]
 pub struct Grammar<T: Token> {
+    // Map from the first token in an operator, to that operator
     pub(super) token_to_op: Vec<Option<Operator<T>>>,
-    pub(super) missing: Operator<T>,
+    pub(super) missing_atom: Operator<T>,
+    pub(super) missing_sep: Operator<T>,
+    pub(super) extra_sep: Operator<T>,
     pub(super) juxtapose: Operator<T>,
+    pub(super) lex_error: Operator<T>,
 }
 
 impl<'g, T: Token> Operator<T> {
@@ -45,10 +49,14 @@ impl<'g, T: Token> Operator<T> {
         }
         arity
     }
+
+    pub fn num_holes(&self) -> usize {
+        self.tokens.len().saturating_sub(1)
+    }
 }
 
 impl<'g, T: Token> Grammar<T> {
-    pub fn new(ops: Vec<Operator<T>>) -> Grammar<T> {
+    pub fn new(ops: Vec<Operator<T>>, juxtapose_prec: Option<(Prec, Prec)>) -> Grammar<T> {
         let mut largest_token: usize = 0;
         for op in &ops {
             for token in &op.tokens {
@@ -56,27 +64,56 @@ impl<'g, T: Token> Grammar<T> {
             }
         }
         let mut token_to_op = vec![None; largest_token + 1];
-        let mut missing = None;
-        let mut juxtapose = None;
+
+        let missing_atom = Operator {
+            name: "$MissingAtom".to_owned(),
+            left_prec: None,
+            right_prec: None,
+            tokens: vec![T::MISSING_ATOM],
+        };
+        let missing_sep = Operator {
+            name: "$MissingSeparator".to_owned(),
+            left_prec: Some(0),
+            right_prec: None,
+            tokens: vec![T::MISSING_SEP],
+        };
+        let extra_sep = Operator {
+            name: "$ExtraSeparator".to_owned(),
+            left_prec: Some(0),
+            right_prec: None,
+            tokens: vec![T::EXTRA_SEP],
+        };
+        let lex_error = Operator {
+            name: "$LexError".to_owned(),
+            left_prec: Some(0),
+            right_prec: None,
+            tokens: vec![T::LEX_ERROR],
+        };
+        let juxtapose_prec = if let Some((lprec, rprec)) = juxtapose_prec {
+            (lprec, rprec)
+        } else {
+            (0, 0)
+        };
+        let juxtapose = Operator {
+            name: "$Juxtapose".to_owned(),
+            left_prec: Some(juxtapose_prec.0),
+            right_prec: Some(juxtapose_prec.1),
+            tokens: vec![T::JUXTAPOSE],
+        };
         for op in ops {
-            if op.name == "Missing" {
-                assert!(op.left_prec.is_none());
-                assert!(op.right_prec.is_none());
-                missing = Some(op);
-            } else if op.name == "Juxtapose" {
-                assert!(op.left_prec.is_some());
-                assert!(op.right_prec.is_some());
-                juxtapose = Some(op);
-            } else if let Some(token) = op.tokens.first() {
-                let index = token.as_usize();
-                token_to_op[index] = Some(op);
-            }
+            assert!(!op.tokens.is_empty());
+            let token = op.tokens.first().unwrap();
+            let index = token.as_usize();
+            token_to_op[index] = Some(op);
         }
         // TODO: unwrap -> Err
         Grammar {
             token_to_op,
-            missing: missing.unwrap().to_owned(),
-            juxtapose: juxtapose.unwrap().to_owned(),
+            missing_atom,
+            missing_sep,
+            extra_sep,
+            juxtapose,
+            lex_error,
         }
     }
 }

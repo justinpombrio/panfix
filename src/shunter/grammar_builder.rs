@@ -3,12 +3,21 @@ use crate::Token;
 
 #[derive(Debug, Clone)]
 pub struct GrammarBuilder<T: Token> {
+    juxtapose_prec: Option<(Prec, Prec)>,
     ops: Vec<Operator<T>>,
 }
 
 impl<T: Token> GrammarBuilder<T> {
     pub fn new() -> GrammarBuilder<T> {
-        GrammarBuilder { ops: vec![] }
+        GrammarBuilder {
+            juxtapose_prec: None,
+            ops: vec![],
+        }
+    }
+
+    pub fn juxtapose_prec(&mut self, lprec: Prec, rprec: Prec) -> &mut Self {
+        self.juxtapose_prec = Some((lprec, rprec));
+        self
     }
 
     pub fn op(
@@ -78,6 +87,6 @@ impl<T: Token> GrammarBuilder<T> {
     }
 
     pub fn build(&self) -> Grammar<T> {
-        Grammar::new(self.ops.clone())
+        Grammar::new(self.ops.clone(), self.juxtapose_prec)
     }
 }

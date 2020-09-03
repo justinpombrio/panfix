@@ -14,8 +14,10 @@ enum JsonToken {
     Colon,
     Comma,
     _LexError,
-    _Missing,
+    _MissingAtom,
     _Juxtapose,
+    _MissingSep,
+    _ExtraSep,
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -33,14 +35,18 @@ enum TokenThatHatesYou {
     AngryWord,
     ShortWord,
     _LexError,
-    _Missing,
+    _MissingAtom,
     _Juxtapose,
+    _MissingSep,
+    _ExtraSep,
 }
 
 impl Token for JsonToken {
     const LEX_ERROR: JsonToken = JsonToken::_LexError;
-    const MISSING: JsonToken = JsonToken::_Missing;
+    const MISSING_ATOM: JsonToken = JsonToken::_MissingAtom;
     const JUXTAPOSE: JsonToken = JsonToken::_Juxtapose;
+    const MISSING_SEP: JsonToken = JsonToken::_MissingSep;
+    const EXTRA_SEP: JsonToken = JsonToken::_ExtraSep;
 
     fn as_usize(self) -> usize {
         self as usize
@@ -49,8 +55,10 @@ impl Token for JsonToken {
 
 impl Token for TokenThatHatesYou {
     const LEX_ERROR: TokenThatHatesYou = TokenThatHatesYou::_LexError;
-    const MISSING: TokenThatHatesYou = TokenThatHatesYou::_Missing;
+    const MISSING_ATOM: TokenThatHatesYou = TokenThatHatesYou::_MissingAtom;
     const JUXTAPOSE: TokenThatHatesYou = TokenThatHatesYou::_Juxtapose;
+    const MISSING_SEP: TokenThatHatesYou = TokenThatHatesYou::_MissingSep;
+    const EXTRA_SEP: TokenThatHatesYou = TokenThatHatesYou::_ExtraSep;
 
     fn as_usize(self) -> usize {
         (self as usize) + 13
@@ -164,5 +172,5 @@ fn test_lexing_horrible_things() {
         vec!["truery", "truey", "truerestytrue"]
     );
     assert_eq!(lex(" eprom "), vec!["prom"]);
-    assert_eq!(lex("true! true"), vec!["true", "! true"]);
+    assert_eq!(lex("true! true"), vec!["true", "!", "true"]);
 }

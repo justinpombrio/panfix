@@ -5,8 +5,10 @@ pub struct CharToken(char);
 
 impl Token for CharToken {
     const LEX_ERROR: CharToken = CharToken('E');
-    const MISSING: CharToken = CharToken('J');
-    const JUXTAPOSE: CharToken = CharToken('M');
+    const MISSING_ATOM: CharToken = CharToken('M');
+    const JUXTAPOSE: CharToken = CharToken('J');
+    const MISSING_SEP: CharToken = CharToken('S');
+    const EXTRA_SEP: CharToken = CharToken('X');
 
     fn as_usize(self) -> usize {
         self.0 as usize
@@ -68,5 +70,5 @@ fn test_prefix_and_suffix() {
 fn test_complicated() {
     assert_eq!(shunt("--+@1-2"), "M--12-J@+",);
     assert_eq!(shunt("!*@!3"), "M!M!3J@*",);
-    assert_eq!(shunt("--+@1-2!*@!3"), "M--12-!M!3J@*J@+");
+    assert_eq!(shunt("--+@1-2!*@!3"), "M--12-J!M!3J@*@+");
 }

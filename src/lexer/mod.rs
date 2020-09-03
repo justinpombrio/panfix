@@ -48,10 +48,10 @@ impl<'s, T: Token> Iterator for Lex<'s, T> {
                 return Some(self.eat_token(token, len));
             }
         }
-        if self.remaining().is_empty() {
-            None
+        if let Some(first_char) = self.remaining().chars().next() {
+            Some(self.eat_token(T::LEX_ERROR, first_char.len_utf8()))
         } else {
-            Some(self.eat_token(T::LEX_ERROR, self.remaining().len()))
+            None
         }
     }
 }
