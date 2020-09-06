@@ -167,7 +167,7 @@ where
             OpStackTop::Empty => match self.lexemes.next() {
                 None => Step::Done,
                 Some(lexeme) if lexeme.token == T::LEX_ERROR => {
-                    let op = self.lookup_op(T::LEX_ERROR).unwrap();
+                    let op = &self.shunter.lex_error;
                     self.halt();
                     Step::Produce(op, lexeme.span)
                 }

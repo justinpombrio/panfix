@@ -94,7 +94,7 @@ fn hate_lexer() -> Lexer<TokenThatHatesYou> {
     let word_regex = "[a-yA-Y]+";
     let angry_word_regex = "[A-Y]+";
     let short_word_regex = "[a-zA-Z]";
-    let whitespace_regex = "[ e]*";
+    let whitespace_regex = "[ \\t\\n\\re]*";
 
     LexerBuilder::new(whitespace_regex)
         .regex(angry_word_regex, AngryWord)
@@ -173,4 +173,6 @@ fn test_lexing_horrible_things() {
     );
     assert_eq!(lex(" eprom "), vec!["prom"]);
     assert_eq!(lex("true! true"), vec!["true", "!", "true"]);
+    assert_eq!(lex("tr%ue%%true"), vec!["tr", "%", "ue", "%", "%", "true"]);
+    assert_eq!(lex("tr\nue"), vec!["tr", "ue"]);
 }
