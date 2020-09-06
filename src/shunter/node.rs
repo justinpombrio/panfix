@@ -1,5 +1,6 @@
-use super::grammar::{Fixity, Operator};
-use crate::{Span, Token};
+use super::shunter::Operator;
+use crate::lexer::{Span, Token};
+use crate::rpn_visitor::Node as NodeTrait;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Node<'g, T: Token> {
@@ -13,10 +14,6 @@ pub struct NodeBuilder {
 }
 
 impl<'g, T: Token> Node<'g, T> {
-    pub fn fixity(self) -> Fixity {
-        self.op.fixity()
-    }
-
     pub fn arity(self) -> usize {
         self.op.arity()
     }
@@ -32,40 +29,20 @@ impl NodeBuilder {
     }
 
     pub fn build<'g, T: Token>(&mut self, op: &'g Operator<T>, op_span: Span) -> Node<'g, T> {
-        use Fixity::*;
         println!("Build: {}", op.name);
-        match op.fixity() {
-            Nilfix => self.build_nilfix(op, op_span),
-            Prefix(_) => self.build_prefix(op, op_span),
-            Suffix(_) => self.build_suffix(op, op_span),
-            Infix(_, _) => self.build_infix(op, op_span),
+        let mut span = op_span;
+        for _ in 0..op.arity() {
+            let arg_span = self.spans.pop().unwrap();
+            span.0 = span.0.min(arg_span.0);
+            span.1 = span.1.max(arg_span.1);
         }
-    }
-
-    fn build_nilfix<'g, T: Token>(&mut self, op: &'g Operator<T>, op_span: Span) -> Node<'g, T> {
-        self.spans.push(op_span);
-        Node { op, span: op_span }
-    }
-
-    fn build_prefix<'g, T: Token>(&mut self, op: &'g Operator<T>, op_span: Span) -> Node<'g, T> {
-        let arg_span = self.spans.pop().unwrap();
-        let span = (op_span.0, arg_span.1);
         self.spans.push(span);
         Node { op, span }
     }
+}
 
-    fn build_suffix<'g, T: Token>(&mut self, op: &'g Operator<T>, op_span: Span) -> Node<'g, T> {
-        let arg_span = self.spans.pop().unwrap();
-        let span = (arg_span.0, op_span.1);
-        self.spans.push(span);
-        Node { op, span }
-    }
-
-    fn build_infix<'g, T: Token>(&mut self, op: &'g Operator<T>, _op_span: Span) -> Node<'g, T> {
-        let arg_2_span = self.spans.pop().unwrap();
-        let arg_1_span = self.spans.pop().unwrap();
-        let span = (arg_1_span.0, arg_2_span.1);
-        self.spans.push(span);
-        Node { op, span }
+impl<'g, T: Token> NodeTrait for Node<'g, T> {
+    fn arity(&self) -> usize {
+        Node::arity(*self)
     }
 }

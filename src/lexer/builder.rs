@@ -1,4 +1,4 @@
-use crate::Token;
+use super::Token;
 use regex::{Error as RegexError, Regex};
 use std::error::Error;
 use std::fmt;

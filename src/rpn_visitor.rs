@@ -51,7 +51,7 @@ impl<'s, N: Node> Visitor<'s, N> {
         &self.stack[self.ptr].node
     }
 
-    pub fn children(&self) -> impl ExactSizeIterator<Item = Visitor<'s, N>> {
+    pub fn children(&self) -> VisitorIter<'s, N> {
         if self.stack[self.ptr].node.arity() == 0 {
             VisitorIter::empty()
         } else {
@@ -159,7 +159,7 @@ impl<N: Node> Stack<N> {
         self.groups.len()
     }
 
-    pub fn groups(&self) -> impl ExactSizeIterator<Item = Visitor<N>> {
+    pub fn groups(&self) -> VisitorIter<N> {
         if self.groups.is_empty() {
             VisitorIter::empty()
         } else {

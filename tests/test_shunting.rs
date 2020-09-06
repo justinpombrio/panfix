@@ -1,4 +1,4 @@
-use panfix::shunter::{Grammar, GrammarBuilder, Lexeme, Token};
+use panfix::shunter::{Lexeme, Shunter, ShunterBuilder, Token};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CharToken(char);
@@ -22,16 +22,17 @@ fn lex(source: &str) -> impl Iterator<Item = Lexeme<CharToken>> + '_ {
     })
 }
 
-fn grammar() -> Grammar<CharToken> {
-    GrammarBuilder::new()
+fn grammar() -> Shunter<CharToken> {
+    ShunterBuilder::new()
         .nilfix("1", CharToken('1'))
         .nilfix("2", CharToken('2'))
         .nilfix("3", CharToken('3'))
         .prefix("-", CharToken('-'), 20)
-        .prefix("@", CharToken('@'), 80)
+        .prefix("^", CharToken('^'), 80)
         .suffix("!", CharToken('!'), 20)
         .infixl("+", CharToken('+'), 60)
         .infixr("*", CharToken('*'), 40)
+        .mixfix("@", Some(30), None, vec![CharToken('('), CharToken(')')])
         .nilfix("Missing", CharToken('M'))
         .infixl("Juxtapose", CharToken('J'), 50)
         .build()
@@ -68,7 +69,18 @@ fn test_prefix_and_suffix() {
 
 #[test]
 fn test_complicated() {
-    assert_eq!(shunt("--+@1-2"), "M--12-J@+",);
-    assert_eq!(shunt("!*@!3"), "M!M!3J@*",);
-    assert_eq!(shunt("--+@1-2!*@!3"), "M--12-J!M!3J@*@+");
+    assert_eq!(shunt("--+^1-2"), "M--12-J^+",);
+    assert_eq!(shunt("!*^!3"), "M!M!3J^*",);
+    assert_eq!(shunt("--+^1-2!*^!3"), "M--12-J!M!3J^*^+");
+}
+
+#[test]
+fn test_mixfix() {
+    assert_eq!(shunt("1(2)"), "12(");
+    assert_eq!(shunt("1(2"), "12S(");
+    assert_eq!(shunt("1(2))"), "12(X");
+    assert_eq!(shunt("1(2)(3)"), "12(3(");
+    assert_eq!(shunt("1(2(3))"), "123((");
+    assert_eq!(shunt("(2)"), "M2(");
+    assert_eq!(shunt("1()"), "1M(");
 }

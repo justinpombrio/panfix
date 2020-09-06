@@ -1,9 +1,28 @@
+use std::fmt::Debug;
+use std::hash::Hash;
 use std::iter::Iterator;
 
 mod builder;
 
-pub use crate::{Lexeme, Span, Token};
 pub use builder::{Lexer, LexerBuilder};
+
+pub type Span = (usize, usize);
+
+pub trait Token: Debug + Clone + Copy + PartialEq + Eq + Hash {
+    const LEX_ERROR: Self;
+    const MISSING_ATOM: Self;
+    const MISSING_SEP: Self;
+    const EXTRA_SEP: Self;
+    const JUXTAPOSE: Self;
+
+    fn as_usize(self) -> usize;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Lexeme<T: Token> {
+    pub token: T,
+    pub span: Span,
+}
 
 #[derive(Debug)]
 pub struct Lex<'s, T: Token> {
@@ -13,7 +32,7 @@ pub struct Lex<'s, T: Token> {
 }
 
 impl<T: Token> Lexer<T> {
-    pub fn lex<'s>(&'s self, source: &'s str) -> Lex<'s, T> {
+    pub fn lex<'s>(&'s self, source: &'s str) -> impl Iterator<Item = Lexeme<T>> + 's {
         Lex {
             lexer: self,
             source,
