@@ -1,12 +1,12 @@
 #[cfg(test)]
 mod shunting_tests {
-    use panfix::shunting::{Lexeme, Shunter, ShunterBuilder, Token};
+    use panfix::shunting::{Lexeme, ShuntError, Shunter, ShunterBuilder, Token};
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct CharToken(char);
 
     impl Token for CharToken {
-        const LEX_ERROR: CharToken = CharToken('E');
+        const LEX_ERROR: CharToken = CharToken('L');
         const MISSING_SEP: CharToken = CharToken('S');
         const EXTRA_SEP: CharToken = CharToken('X');
         const MISSING_ATOM: CharToken = CharToken('M');
@@ -62,11 +62,20 @@ mod shunting_tests {
         let rpn = grammar.shunt(lexemes);
         let mut output = String::new();
         for node in rpn {
-            let ch = node.rule.tokens[0].0;
-            output.push(ch);
-            // fatal error
-            if ch == 'X' || ch == 'E' {
-                break;
+            match node {
+                Err(error) => {
+                    let ch = match error {
+                        ShuntError::LexError(_) => 'L',
+                        ShuntError::ExtraSep(_) => 'X',
+                        ShuntError::MissingSep { .. } => 'S',
+                    };
+                    output.push(ch);
+                    break;
+                }
+                Ok(node) => {
+                    let ch = node.rule.tokens[0].0;
+                    output.push(ch);
+                }
             }
         }
         output
@@ -81,8 +90,8 @@ mod shunting_tests {
 
     #[test]
     fn test_lex_error() {
-        assert_eq!(shunt("E3"), "ME");
-        assert_eq!(shunt("3E"), "3E");
+        assert_eq!(shunt("X3"), "MX");
+        assert_eq!(shunt("3X"), "3X");
     }
 
     #[test]
@@ -108,7 +117,7 @@ mod shunting_tests {
 
     #[test]
     fn test_missing_sep() {
-        assert_eq!(shunt("1(2"), "12S(");
+        assert_eq!(shunt("1(2"), "12S");
     }
 
     #[test]

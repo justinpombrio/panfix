@@ -1,4 +1,4 @@
-use super::rule_stack::{OpStack, OpStackTop};
+use super::rule_stack::{RuleStack, RuleStackTop};
 use super::shunter::{Prec, Rule, Shunter};
 use crate::lexing::{Lexeme, Span, Token};
 use crate::rpn_visitor::Node as NodeTrait;
@@ -20,14 +20,19 @@ enum Step<'g, T: Token> {
     Produce(&'g Rule<T>, Span),
     Continue,
     Done,
+    Error(ShuntError<T>),
 }
 
-/*
 #[derive(Debug, Clone)]
 pub enum ShuntError<T: Token> {
-    LexError(
+    LexError(Lexeme<T>),
+    ExtraSep(Lexeme<T>),
+    MissingSep {
+        rule_name: String,
+        span: Span,
+        token: T,
+    },
 }
-*/
 
 #[derive(Debug)]
 struct Shunt<'g, T, I>
@@ -42,13 +47,14 @@ where
     // Mode::Suffix: looking to extend an existing expr with a suffix.
     mode: Mode,
     // Rules that are still waiting for args or seps.
-    rule_stack: OpStack<'g, T>,
+    rule_stack: RuleStack<'g, T>,
     // The right position of the last seen token.
     last_pos: usize,
+    done: bool,
 }
 
 impl<'g, T: Token> Shunter<T> {
-    pub fn shunt<I>(&self, lexemes: I) -> impl Iterator<Item = Node<T>>
+    pub fn shunt<I>(&self, lexemes: I) -> impl Iterator<Item = Result<Node<T>, ShuntError<T>>>
     where
         I: Iterator<Item = Lexeme<T>>,
     {
@@ -61,16 +67,26 @@ where
     T: Token,
     I: Iterator<Item = Lexeme<T>>,
 {
-    type Item = Node<'g, T>;
+    type Item = Result<Node<'g, T>, ShuntError<T>>;
 
-    fn next(&mut self) -> Option<Node<'g, T>> {
+    fn next(&mut self) -> Option<Result<Node<'g, T>, ShuntError<T>>> {
         loop {
+            if self.done {
+                return None;
+            }
             match self.step() {
                 Step::Produce(rule, span) => {
-                    return Some(Node { rule, span });
+                    return Some(Ok(Node { rule, span }));
                 }
                 Step::Continue => continue,
-                Step::Done => return None,
+                Step::Done => {
+                    self.done = true;
+                    return None;
+                }
+                Step::Error(error) => {
+                    self.done = true;
+                    return Some(Err(error));
+                }
             }
         }
     }
@@ -96,8 +112,9 @@ where
             shunter,
             lexemes: lexemes.peekable(),
             mode: Mode::Expr,
-            rule_stack: OpStack::new(),
+            rule_stack: RuleStack::new(),
             last_pos: 0,
+            done: false,
         }
     }
 
@@ -114,7 +131,7 @@ where
     }
 
     fn current_prec(&self) -> Prec {
-        if let OpStackTop::RightPrec(prec) = self.rule_stack.top() {
+        if let RuleStackTop::RightPrec(prec) = self.rule_stack.top() {
             prec
         } else {
             // Using Prec::MAX handles Rule 6 and Rule 7.
@@ -158,11 +175,11 @@ where
 
     fn pop(&mut self) -> Step<'g, T> {
         match self.rule_stack.top() {
-            OpStackTop::RightPrec(_) => {
+            RuleStackTop::RightPrec(_) => {
                 let (rule, span) = self.rule_stack.pop();
                 Step::Produce(rule, span)
             }
-            OpStackTop::Separator(sep) => {
+            RuleStackTop::Separator(sep) => {
                 if self.upcoming_sep() == Some(sep) {
                     let span = self.lexemes.next().unwrap().span;
                     if let Some((rule, span)) = self.rule_stack.found_sep(span) {
@@ -172,26 +189,26 @@ where
                         Step::Continue
                     }
                 } else {
-                    let rule = &self.shunter.missing_sep;
+                    let rule_name = self.rule_stack.missing_sep().name.to_owned();
                     let span = (self.last_pos, self.last_pos);
-                    self.rule_stack.missed_sep();
-                    self.mode = Mode::Suffix;
-                    Step::Produce(rule, span)
+                    Step::Error(ShuntError::MissingSep {
+                        rule_name,
+                        span,
+                        token: sep,
+                    })
                 }
             }
-            OpStackTop::Empty => match self.lexemes.next() {
+            RuleStackTop::Empty => match self.lexemes.next() {
                 None => Step::Done,
                 Some(lexeme) if lexeme.token == T::LEX_ERROR => {
-                    let rule = &self.shunter.lex_error;
-                    Step::Produce(rule, lexeme.span)
+                    Step::Error(ShuntError::LexError(lexeme))
                 }
                 Some(lexeme) => {
                     debug_assert!(self.lookup_rule(lexeme.token).is_none(), "shunt empty");
-                    let rule = &self.shunter.extra_sep;
-                    Step::Produce(rule, lexeme.span)
+                    Step::Error(ShuntError::ExtraSep(lexeme))
                 }
             },
-            OpStackTop::FinishedOp => {
+            RuleStackTop::FinishedOp => {
                 let (rule, span) = self.rule_stack.pop();
                 Step::Produce(rule, span)
             }

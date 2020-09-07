@@ -3,8 +3,16 @@ use crate::lexing::Span;
 use crate::rpn_visitor::Stack as RpnStack;
 use crate::rpn_visitor::Visitor as RpnVisitor;
 use crate::rpn_visitor::VisitorIter as RpnVisitorIter;
-use crate::shunting::Node;
+use crate::shunting::{Node, ShuntError};
+use std::error::Error;
 use std::fmt;
+
+// TODO: Get line&col nums
+#[derive(Debug, Clone)]
+pub struct Position {
+    pub line: usize,
+    pub column: usize,
+}
 
 #[derive(Debug)]
 pub struct Parsed<'a> {
@@ -17,20 +25,24 @@ pub struct Visitor<'a> {
     visitor: RpnVisitor<'a, Node<'a, Token>>,
 }
 
-// TODO: Get line&col nums
-#[derive(Debug, Clone)]
-pub struct Position {
-    pub line: usize,
-    pub column: usize,
-}
-
 #[derive(Debug, Clone)]
 pub enum ParseError {
-    LexError { lexeme: String, pos: Position },
-    ExtraSeparator { separator: String, pos: Position },
-    // TODO: Show the missing separator!
-    MissingSeparator { rule_name: String, pos: Position },
+    LexError {
+        lexeme: String,
+        pos: Position,
+    },
+    ExtraSeparator {
+        separator: String,
+        pos: Position,
+    },
+    MissingSeparator {
+        rule_name: String,
+        separator: String,
+        pos: Position,
+    },
 }
+
+impl Error for ParseError {}
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -47,10 +59,10 @@ impl fmt::Display for ParseError {
                "Parsing failed. It did not expect to find '{}' on its own. Line {} ({}:{})",
                separator, pos.line, pos.line, pos.column
             ),
-            MissingSeparator{rule_name, pos} => write!(
+            MissingSeparator{rule_name, separator, pos} => write!(
             f,
-            "Parsing failed. It expected to find '[TODO]' as part of {}, but could not. Line {} ({}:{})",
-            rule_name, pos.line, pos.line, pos.column
+            "Parsing failed. It expected to find '{}' as part of {}, but could not. Line {} ({}:{})",
+            rule_name, separator, pos.line, pos.line, pos.column
             ),
         }
     }
@@ -62,32 +74,43 @@ impl Parser {
         let rpn = self.shunter.shunt(tokens);
         let mut stack = RpnStack::new();
         for node in rpn {
-            match node.rule.tokens[0] {
-                Token::LexError => {
-                    let lexeme = source[node.span.0..node.span.1].to_owned();
+            match node {
+                Err(ShuntError::LexError(lexeme)) => {
                     let pos = Position {
                         line: 0,
-                        column: node.span.0 + 1,
+                        column: lexeme.span.0 + 1,
                     };
+                    let lexeme = source[lexeme.span.0..lexeme.span.1].to_owned();
                     return Err(ParseError::LexError { lexeme, pos });
                 }
-                Token::ExtraSep => {
-                    let separator = source[node.span.0..node.span.1].to_owned();
+                Err(ShuntError::ExtraSep(lexeme)) => {
                     let pos = Position {
                         line: 0,
-                        column: node.span.0 + 1,
+                        column: lexeme.span.0 + 1,
                     };
+                    let separator = source[lexeme.span.0..lexeme.span.1].to_owned();
                     return Err(ParseError::ExtraSeparator { separator, pos });
                 }
-                Token::MissingSep => {
-                    let rule_name = node.rule.name.to_string();
+                Err(ShuntError::MissingSep {
+                    rule_name,
+                    span,
+                    token,
+                }) => {
                     let pos = Position {
                         line: 0,
-                        column: node.span.0 + 1,
+                        column: span.0 + 1,
                     };
-                    return Err(ParseError::MissingSeparator { rule_name, pos });
+                    let separator = match self.token_patterns.get(&token).unwrap() {
+                        Pattern::Constant(constant) => format!("{}", constant),
+                        Pattern::Regex(regex) => format!("/{}/", regex),
+                    };
+                    return Err(ParseError::MissingSeparator {
+                        rule_name,
+                        separator,
+                        pos,
+                    });
                 }
-                _ => stack.push(node),
+                Ok(node) => stack.push(node),
             }
         }
         Ok(Parsed { source, stack })

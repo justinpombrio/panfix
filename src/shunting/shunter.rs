@@ -15,10 +15,7 @@ pub struct Shunter<T: Token> {
     // Map from the first token in a rule, to that rule
     pub(super) token_to_rule: Vec<Option<Rule<T>>>,
     pub(super) missing_atom: Rule<T>,
-    pub(super) missing_sep: Rule<T>,
-    pub(super) extra_sep: Rule<T>,
     pub(super) juxtapose: Rule<T>,
-    pub(super) lex_error: Rule<T>,
 }
 
 impl<'g, T: Token> Rule<T> {
@@ -54,24 +51,6 @@ impl<'g, T: Token> Shunter<T> {
             right_prec: None,
             tokens: vec![T::MISSING_ATOM],
         };
-        let missing_sep = Rule {
-            name: "$MissingSeparator".to_owned(),
-            left_prec: Some(0),
-            right_prec: None,
-            tokens: vec![T::MISSING_SEP],
-        };
-        let extra_sep = Rule {
-            name: "$ExtraSeparator".to_owned(),
-            left_prec: Some(0),
-            right_prec: None,
-            tokens: vec![T::EXTRA_SEP],
-        };
-        let lex_error = Rule {
-            name: "$LexError".to_owned(),
-            left_prec: Some(0),
-            right_prec: None,
-            tokens: vec![T::LEX_ERROR],
-        };
         let juxtapose_prec = if let Some((lprec, rprec)) = juxtapose_prec {
             (lprec, rprec)
         } else {
@@ -93,10 +72,7 @@ impl<'g, T: Token> Shunter<T> {
         Shunter {
             token_to_rule,
             missing_atom,
-            missing_sep,
-            extra_sep,
             juxtapose,
-            lex_error,
         }
     }
 }

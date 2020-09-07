@@ -2,20 +2,20 @@ use super::shunter::{Prec, Rule};
 use crate::lexing::{Span, Token};
 
 #[derive(Debug, Clone)]
-pub struct OpStack<'g, T: Token> {
+pub struct RuleStack<'g, T: Token> {
     stack: Vec<(&'g Rule<T>, Span, usize)>,
 }
 
-pub enum OpStackTop<T: Token> {
+pub enum RuleStackTop<T: Token> {
     RightPrec(Prec),
     Separator(T),
     Empty,
     FinishedOp,
 }
 
-impl<'g, T: Token> OpStack<'g, T> {
-    pub fn new() -> OpStack<'g, T> {
-        OpStack { stack: vec![] }
+impl<'g, T: Token> RuleStack<'g, T> {
+    pub fn new() -> RuleStack<'g, T> {
+        RuleStack { stack: vec![] }
     }
 
     pub fn push(&mut self, rule: &'g Rule<T>, span: Span) {
@@ -32,17 +32,17 @@ impl<'g, T: Token> OpStack<'g, T> {
         (rule, span)
     }
 
-    pub fn top(&self) -> OpStackTop<T> {
+    pub fn top(&self) -> RuleStackTop<T> {
         if let Some((rule, _, h)) = self.stack.last() {
             if *h < rule.num_holes() {
-                OpStackTop::Separator(rule.tokens[*h + 1])
+                RuleStackTop::Separator(rule.tokens[*h + 1])
             } else if rule.right_prec.is_some() {
-                OpStackTop::RightPrec(rule.right_prec.unwrap())
+                RuleStackTop::RightPrec(rule.right_prec.unwrap())
             } else {
-                OpStackTop::FinishedOp
+                RuleStackTop::FinishedOp
             }
         } else {
-            OpStackTop::Empty
+            RuleStackTop::Empty
         }
     }
 
@@ -57,7 +57,8 @@ impl<'g, T: Token> OpStack<'g, T> {
         }
     }
 
-    pub fn missed_sep(&mut self) {
-        self.stack.last_mut().unwrap().2 += 1;
+    pub fn missing_sep(&mut self) -> &'g Rule<T> {
+        let (rule, _, _) = self.stack.pop().unwrap();
+        rule
     }
 }

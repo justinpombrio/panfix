@@ -9,9 +9,14 @@ pub fn run_parser(parser: &Parser, input: &str) -> String {
             ExtraSeparator { separator, pos } => {
                 format!("ExtraSep {} {}:{}", separator, pos.line, pos.column)
             }
-            MissingSeparator { rule_name, pos } => {
-                format!("MissingSep {} {}:{}", rule_name, pos.line, pos.column)
-            }
+            MissingSeparator {
+                rule_name,
+                separator,
+                pos,
+            } => format!(
+                "MissingSep {} {} {}:{}",
+                rule_name, separator, pos.line, pos.column
+            ),
         },
         Ok(parsed) => {
             let mut expr = String::new();
