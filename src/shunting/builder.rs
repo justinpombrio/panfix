@@ -90,3 +90,9 @@ impl<T: Token> ShunterBuilder<T> {
         Shunter::new(self.rules, self.juxtapose_prec)
     }
 }
+
+impl<T: Token> Default for ShunterBuilder<T> {
+    fn default() -> Self {
+        ShunterBuilder::new()
+    }
+}

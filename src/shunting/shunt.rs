@@ -107,10 +107,6 @@ where
         self.shunter.token_to_rule[token.as_usize()].as_ref()
     }
 
-    fn halt(&mut self) {
-        while let Some(_) = self.lexemes.next() {}
-    }
-
     fn push(&mut self) -> Step<'g, T> {
         let lexeme = self.lexemes.next().unwrap();
         let rule = self.lookup_rule(lexeme.token).unwrap();
@@ -168,13 +164,11 @@ where
                 None => Step::Done,
                 Some(lexeme) if lexeme.token == T::LEX_ERROR => {
                     let rule = &self.shunter.lex_error;
-                    self.halt();
                     Step::Produce(rule, lexeme.span)
                 }
                 Some(lexeme) => {
                     debug_assert!(self.lookup_rule(lexeme.token).is_none(), "shunt empty");
                     let rule = &self.shunter.extra_sep;
-                    self.halt();
                     Step::Produce(rule, lexeme.span)
                 }
             },

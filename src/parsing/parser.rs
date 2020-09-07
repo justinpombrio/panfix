@@ -150,7 +150,7 @@ impl Grammar {
                 let (left_prec, right_prec) = match fixity {
                     Fixity::Prefix => (None, Some(prec)),
                     Fixity::Suffix => (Some(prec), None),
-                    Fixity::Infix => (Some(prec), Some(prec)),
+                    Fixity::Infix => (Some(prec), Some(prec + 1)),
                 };
                 let mut tokens = Vec::new();
                 for constant in constants {

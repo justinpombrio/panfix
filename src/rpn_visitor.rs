@@ -4,6 +4,7 @@
 //! there are no heap allocations.
 
 use std::fmt::Debug;
+use std::iter::FromIterator;
 use std::ops::Deref;
 
 pub trait Node: Debug {
@@ -62,6 +63,17 @@ impl<'s, N: Node> Visitor<'s, N> {
             }
         }
     }
+
+    pub fn last_child(&self) -> Option<Visitor<'s, N>> {
+        if self.stack[self.ptr].node.arity() == 0 {
+            None
+        } else {
+            Some(Visitor {
+                stack: self.stack,
+                ptr: self.ptr - 1,
+            })
+        }
+    }
 }
 
 impl<'s, N: Node> Deref for Visitor<'s, N> {
@@ -105,6 +117,16 @@ impl<N: Node> Default for Stack<N> {
     }
 }
 
+impl<N: Node> FromIterator<N> for Stack<N> {
+    fn from_iter<I: IntoIterator<Item = N>>(iter: I) -> Stack<N> {
+        let mut stack = Stack::new();
+        for node in iter {
+            stack.push(node);
+        }
+        stack
+    }
+}
+
 impl<N: Node> Stack<N> {
     /// Construct an empty stack.
     pub fn new() -> Stack<N> {
@@ -112,14 +134,6 @@ impl<N: Node> Stack<N> {
             stack: vec![],
             groups: vec![],
         }
-    }
-
-    pub fn from_iter<I: Iterator<Item = N>>(iter: I) -> Stack<N> {
-        let mut stack = Stack::new();
-        for node in iter {
-            stack.push(node);
-        }
-        stack
     }
 
     /// Push a node onto the stack. Amortized O(1).
@@ -174,6 +188,17 @@ impl<N: Node> Stack<N> {
                 ptr: self.groups[0],
                 remaining: self.groups.len(),
             }
+        }
+    }
+
+    pub fn last_group(&self) -> Option<Visitor<N>> {
+        if self.groups.is_empty() {
+            None
+        } else {
+            Some(Visitor {
+                stack: &self.stack,
+                ptr: self.stack.len() - 1,
+            })
         }
     }
 

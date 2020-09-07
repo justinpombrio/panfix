@@ -5,5 +5,5 @@ mod parser;
 pub const WHITESPACE_REGEX: &str =
     "[\\u0009\\u000A\\u000B\\u000C\\u000D\\u0020\\u0085\\u200E\\u200F\\u2028\\u2029]*";
 
-pub use parsed::{Parsed, Visitor, VisitorIter};
-pub use parser::{Fixity, Grammar, Parser, Rule, Token};
+pub use parsed::{ParseError, Parsed, Visitor, VisitorIter};
+pub use parser::{Fixity, Grammar, Parser, Pattern, Rule};

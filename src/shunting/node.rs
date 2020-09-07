@@ -23,6 +23,7 @@ impl<'g, T: Token> Node<'g, T> {
     }
 }
 
+// TODO: This is defunct
 impl NodeBuilder {
     pub fn new() -> NodeBuilder {
         NodeBuilder { spans: vec![] }
@@ -30,6 +31,11 @@ impl NodeBuilder {
 
     pub fn build<'g, T: Token>(&mut self, rule: &'g Rule<T>, rule_span: Span) -> Node<'g, T> {
         println!("Build: {}", rule.name);
+        Node {
+            rule,
+            span: rule_span,
+        }
+        /*
         let mut span = rule_span;
         for _ in 0..rule.arity() {
             let arg_span = self.spans.pop().unwrap();
@@ -38,6 +44,7 @@ impl NodeBuilder {
         }
         self.spans.push(span);
         Node { rule, span }
+        */
     }
 }
 
