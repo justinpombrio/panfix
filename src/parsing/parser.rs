@@ -1,7 +1,11 @@
-use crate::lexer::Lexer;
-use crate::lexer::Token as TokenTrait;
-use crate::shunter::{Operator, Prec, Shunter};
+use crate::lexing::Lexer;
+use crate::lexing::Token as TokenTrait;
+use crate::shunting::Rule as CompiledRule;
+use crate::shunting::{Prec, Shunter};
 use std::collections::HashMap;
+
+pub type RegexPattern = String;
+type Name = String;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Token {
@@ -17,32 +21,38 @@ pub enum Token {
 pub enum Fixity {
     Prefix,
     Suffix,
-    InfixL,
-    InfixR,
+    Infix,
 }
 
-pub struct Op {
+pub struct Rule {
     pub name: String,
     pub fixity: Fixity,
     pub tokens: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Pattern {
+    Constant(String),
+    Regex(RegexPattern),
+}
+
 pub struct Grammar {
-    whitespace: String,
+    whitespace: RegexPattern,
     juxtapose_prec: Option<(Prec, Prec)>,
-    regexes: Vec<(String, String)>,
-    constants: Vec<(String, String)>,
-    ops: Vec<Vec<Op>>,
+    atoms: Vec<(Name, Pattern)>,
+    rules_by_name: HashMap<Name, Rule>,
+    rules_by_prec: Vec<Vec<Name>>,
 }
 
 pub struct Parser {
     pub(super) lexer: Lexer<Token>,
     pub(super) shunter: Shunter<Token>,
+    pub(super) token_patterns: HashMap<Token, Pattern>,
 }
 
 struct TokenSet {
     next_token: u32,
-    regexes: Vec<(String, Token)>,
+    regexes: Vec<(RegexPattern, Token)>,
     constants: HashMap<String, Token>,
 }
 
@@ -67,13 +77,13 @@ impl TokenTrait for Token {
 }
 
 impl Grammar {
-    pub fn new(whitespace: String) -> Grammar {
+    pub fn new(whitespace: &str) -> Grammar {
         Grammar {
-            whitespace,
+            whitespace: whitespace.to_string(),
             juxtapose_prec: None,
-            regexes: Vec::new(),
-            constants: Vec::new(),
-            ops: Vec::new(),
+            atoms: Vec::new(),
+            rules_by_name: HashMap::new(),
+            rules_by_prec: Vec::new(),
         }
     }
 
@@ -84,41 +94,44 @@ impl Grammar {
     }
 
     pub fn regex(mut self, name: &str, regex: &str) -> Self {
-        self.regexes.push((name.to_owned(), regex.to_owned()));
+        let pattern = Pattern::Regex(regex.to_owned());
+        self.atoms.push((name.to_owned(), pattern));
         self
     }
 
     pub fn constant(mut self, name: &str, constant: &str) -> Self {
-        self.regexes.push((name.to_owned(), constant.to_owned()));
+        let pattern = Pattern::Constant(constant.to_owned());
+        self.atoms.push((name.to_owned(), pattern));
         self
     }
 
-    pub fn op(mut self, op: Op) -> Self {
-        self.ops.push(vec![op]);
+    pub fn rule(mut self, rule: Rule) -> Self {
+        self.rules_by_prec.push(vec![rule.name.clone()]);
+        self.rules_by_name.insert(rule.name.clone(), rule);
         self
     }
 
-    pub fn op_group(mut self, ops: Vec<Op>) -> Self {
-        self.ops.push(ops);
+    pub fn rule_group(mut self, rules: Vec<Rule>) -> Self {
+        self.rules_by_prec
+            .push(rules.iter().map(|r| r.name.clone()).collect());
+        for rule in rules {
+            self.rules_by_name.insert(rule.name.clone(), rule);
+        }
         self
     }
 
     // TODO: Errors
-    pub fn build(self) -> Parser {
+    pub fn build(mut self) -> Parser {
         let mut token_set = TokenSet::new();
-        let mut ops: Vec<Operator<Token>> = Vec::new();
-        for (name, regex) in self.regexes {
-            let token = token_set.insert_regex(regex);
-            ops.push(Operator {
-                name,
-                left_prec: None,
-                right_prec: None,
-                tokens: vec![token],
-            });
-        }
-        for (name, constant) in self.constants {
-            let token = token_set.insert_constant(constant);
-            ops.push(Operator {
+        let mut rules: Vec<CompiledRule<Token>> = Vec::new();
+        let mut token_patterns: HashMap<Token, Pattern> = HashMap::new();
+        for (name, pattern) in self.atoms {
+            let token = match pattern.clone() {
+                Pattern::Constant(constant) => token_set.insert_constant(constant),
+                Pattern::Regex(regex) => token_set.insert_regex(regex),
+            };
+            token_patterns.insert(token, pattern);
+            rules.push(CompiledRule {
                 name,
                 left_prec: None,
                 right_prec: None,
@@ -126,24 +139,26 @@ impl Grammar {
             });
         }
         let mut prec = 10;
-        for prec_group in self.ops {
-            for op in prec_group {
-                let Op {
+        for prec_group in self.rules_by_prec {
+            for rule_name in prec_group {
+                let rule = self.rules_by_name.remove(&rule_name).unwrap();
+                let Rule {
                     name,
                     fixity,
-                    tokens,
-                } = op;
+                    tokens: constants,
+                } = rule;
                 let (left_prec, right_prec) = match fixity {
                     Fixity::Prefix => (None, Some(prec)),
                     Fixity::Suffix => (Some(prec), None),
-                    Fixity::InfixL => (Some(prec + 1), Some(prec)),
-                    Fixity::InfixR => (Some(prec), Some(prec + 1)),
+                    Fixity::Infix => (Some(prec), Some(prec)),
                 };
-                let tokens = tokens
-                    .into_iter()
-                    .map(|c| token_set.insert_constant(c))
-                    .collect();
-                ops.push(Operator {
+                let mut tokens = Vec::new();
+                for constant in constants {
+                    let token = token_set.insert_constant(constant.clone());
+                    token_patterns.insert(token, Pattern::Constant(constant));
+                    tokens.push(token);
+                }
+                rules.push(CompiledRule {
                     name,
                     left_prec,
                     right_prec,
@@ -153,8 +168,12 @@ impl Grammar {
             prec += 10;
         }
         let lexer = token_set.into_lexer(self.whitespace);
-        let shunter = Shunter::new(ops, self.juxtapose_prec);
-        Parser { lexer, shunter }
+        let shunter = Shunter::new(rules, self.juxtapose_prec);
+        Parser {
+            lexer,
+            shunter,
+            token_patterns,
+        }
     }
 }
 
@@ -173,7 +192,7 @@ impl TokenSet {
         token
     }
 
-    fn insert_regex(&mut self, regex: String) -> Token {
+    fn insert_regex(&mut self, regex: RegexPattern) -> Token {
         let token = self.new_token();
         self.regexes.push((regex, token));
         token
@@ -189,7 +208,7 @@ impl TokenSet {
         }
     }
 
-    fn into_lexer(self, whitespace: String) -> Lexer<Token> {
+    fn into_lexer(self, whitespace: RegexPattern) -> Lexer<Token> {
         Lexer::new(
             whitespace,
             self.regexes,
@@ -202,9 +221,9 @@ impl TokenSet {
 #[macro_export]
 macro_rules! prefix {
     ( $name:expr, $( $token:expr ),* ) => {
-        $crate::parser::Op {
+        $crate::parsing::Rule {
             name: ::std::primitive::str::to_owned($name),
-            fixity: $crate::parser::Fixity::Prefix,
+            fixity: $crate::parsing::Fixity::Prefix,
             tokens: vec![$( ::std::primitive::str::to_owned($token) ),*],
         }
     };
@@ -213,31 +232,20 @@ macro_rules! prefix {
 #[macro_export]
 macro_rules! suffix {
     ( $name:expr, $( $token:expr ),* ) => {
-        $crate::parser::Op {
+        $crate::parsing::Rule {
             name: ::std::primitive::str::to_owned($name),
-            fixity: $crate::parser::Fixity::Suffix,
+            fixity: $crate::parsing::Fixity::Suffix,
             tokens: vec![$( ::std::primitive::str::to_owned($token) ),*],
         }
     };
 }
 
 #[macro_export]
-macro_rules! infix_l {
+macro_rules! infix {
     ( $name:expr, $( $token:expr ),* ) => {
-        $crate::parser::Op {
+        $crate::parsing::Rule {
             name: ::std::primitive::str::to_owned($name),
-            fixity: $crate::parser::Fixity::InfixL,
-            tokens: vec![$( ::std::primitive::str::to_owned($token) ),*],
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! infix_r {
-    ( $name:expr, $( $token:expr ),* ) => {
-        $crate::parser::Op {
-            name: ::std::primitive::str::to_owned($name),
-            fixity: $crate::parser::Fixity::InfixR,
+            fixity: $crate::parsing::Fixity::Infix,
             tokens: vec![$( ::std::primitive::str::to_owned($token) ),*],
         }
     };

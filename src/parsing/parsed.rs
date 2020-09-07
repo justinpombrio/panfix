@@ -1,9 +1,9 @@
-use super::grammar::{Parser, Token};
-use crate::lexer::Span;
+use super::parser::{Fixity, Parser, Pattern, Token};
+use crate::lexing::Span;
 use crate::rpn_visitor::Stack as RpnStack;
 use crate::rpn_visitor::Visitor as RpnVisitor;
 use crate::rpn_visitor::VisitorIter as RpnVisitorIter;
-use crate::shunter::{Node, Operator};
+use crate::shunting::Node;
 
 pub struct Parsed<'a> {
     source: &'a str,
@@ -29,8 +29,24 @@ impl<'a> Parsed<'a> {
 }
 
 impl<'a> Visitor<'a> {
-    pub fn op(&self) -> &'a Operator<Token> {
-        self.visitor.node().op
+    pub fn name(&self) -> &'a str {
+        &self.visitor.node().rule.name
+    }
+
+    pub fn fixity(&self) -> Option<Fixity> {
+        use Fixity::*;
+
+        let rule = self.visitor.node().rule;
+        match (rule.left_prec.is_some(), rule.right_prec.is_some()) {
+            (false, false) => None,
+            (false, true) => Some(Prefix),
+            (true, false) => Some(Suffix),
+            (true, true) => Some(Infix),
+        }
+    }
+
+    pub fn rule_tokens(&self) -> &[Token] {
+        &self.visitor.node().rule.tokens
     }
 
     pub fn span(&self) -> Span {
@@ -45,7 +61,7 @@ impl<'a> Visitor<'a> {
         self.visitor.node().text(self.source)
     }
 
-    pub fn children<'s>(&'s self) -> VisitorIter {
+    pub fn children(&self) -> VisitorIter {
         VisitorIter {
             source: self.source,
             iter: self.visitor.children(),
@@ -83,5 +99,9 @@ impl Parser {
         let rpn = self.shunter.shunt(tokens);
         let stack = RpnStack::from_iter(rpn);
         Parsed { source, stack }
+    }
+
+    pub fn token_pattern(&self, token: Token) -> Option<&Pattern> {
+        self.token_patterns.get(&token)
     }
 }

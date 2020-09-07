@@ -1,4 +1,4 @@
-use panfix::lexer::{Lexer, LexerBuilder, Token};
+use panfix::lexing::{Lexer, LexerBuilder, Token};
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 enum JsonToken {

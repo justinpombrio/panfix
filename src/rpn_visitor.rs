@@ -99,6 +99,12 @@ impl<'s, N: Node> ExactSizeIterator for VisitorIter<'s, N> {
     }
 }
 
+impl<N: Node> Default for Stack<N> {
+    fn default() -> Stack<N> {
+        Stack::new()
+    }
+}
+
 impl<N: Node> Stack<N> {
     /// Construct an empty stack.
     pub fn new() -> Stack<N> {

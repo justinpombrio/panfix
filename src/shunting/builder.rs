@@ -1,17 +1,17 @@
-use super::shunter::{Operator, Prec, Shunter};
-use crate::lexer::Token;
+use super::shunter::{Prec, Rule, Shunter};
+use crate::lexing::Token;
 
 #[derive(Debug, Clone)]
 pub struct ShunterBuilder<T: Token> {
     juxtapose_prec: Option<(Prec, Prec)>,
-    ops: Vec<Operator<T>>,
+    rules: Vec<Rule<T>>,
 }
 
 impl<T: Token> ShunterBuilder<T> {
     pub fn new() -> ShunterBuilder<T> {
         ShunterBuilder {
             juxtapose_prec: None,
-            ops: vec![],
+            rules: vec![],
         }
     }
 
@@ -27,7 +27,7 @@ impl<T: Token> ShunterBuilder<T> {
         right_prec: Option<Prec>,
         tokens: Vec<T>,
     ) -> Self {
-        self.ops.push(Operator {
+        self.rules.push(Rule {
             name: name.to_owned(),
             left_prec,
             right_prec,
@@ -37,7 +37,7 @@ impl<T: Token> ShunterBuilder<T> {
     }
 
     pub fn nilfix(mut self, name: &str, token: T) -> Self {
-        self.ops.push(Operator {
+        self.rules.push(Rule {
             name: name.to_owned(),
             left_prec: None,
             right_prec: None,
@@ -47,7 +47,7 @@ impl<T: Token> ShunterBuilder<T> {
     }
 
     pub fn prefix(mut self, name: &str, token: T, right_prec: Prec) -> Self {
-        self.ops.push(Operator {
+        self.rules.push(Rule {
             name: name.to_owned(),
             left_prec: None,
             right_prec: Some(right_prec),
@@ -57,7 +57,7 @@ impl<T: Token> ShunterBuilder<T> {
     }
 
     pub fn suffix(mut self, name: &str, token: T, left_prec: Prec) -> Self {
-        self.ops.push(Operator {
+        self.rules.push(Rule {
             name: name.to_owned(),
             left_prec: Some(left_prec),
             right_prec: None,
@@ -67,7 +67,7 @@ impl<T: Token> ShunterBuilder<T> {
     }
 
     pub fn infixl(mut self, name: &str, token: T, prec: Prec) -> Self {
-        self.ops.push(Operator {
+        self.rules.push(Rule {
             name: name.to_owned(),
             left_prec: Some(prec),
             right_prec: Some(prec),
@@ -77,7 +77,7 @@ impl<T: Token> ShunterBuilder<T> {
     }
 
     pub fn infixr(mut self, name: &str, token: T, prec: Prec) -> Self {
-        self.ops.push(Operator {
+        self.rules.push(Rule {
             name: name.to_owned(),
             left_prec: Some(prec),
             right_prec: Some(prec + 1),
@@ -87,6 +87,6 @@ impl<T: Token> ShunterBuilder<T> {
     }
 
     pub fn build(self) -> Shunter<T> {
-        Shunter::new(self.ops, self.juxtapose_prec)
+        Shunter::new(self.rules, self.juxtapose_prec)
     }
 }

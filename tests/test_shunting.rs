@@ -1,4 +1,4 @@
-use panfix::shunter::{Lexeme, Shunter, ShunterBuilder, Token};
+use panfix::shunting::{Lexeme, Shunter, ShunterBuilder, Token};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CharToken(char);
@@ -58,7 +58,7 @@ fn shunt(source: &str) -> String {
     let grammar = grammar();
     let lexemes = lex(source);
     let rpn = grammar.shunt(lexemes);
-    rpn.map(|node| node.op.tokens[0].0).collect::<String>()
+    rpn.map(|node| node.rule.tokens[0].0).collect::<String>()
 }
 
 #[test]

@@ -1,10 +1,10 @@
-use super::shunter::Operator;
-use crate::lexer::{Span, Token};
+use super::shunter::Rule;
+use crate::lexing::{Span, Token};
 use crate::rpn_visitor::Node as NodeTrait;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Node<'g, T: Token> {
-    pub op: &'g Operator<T>,
+    pub rule: &'g Rule<T>,
     pub span: Span,
 }
 
@@ -15,7 +15,7 @@ pub struct NodeBuilder {
 
 impl<'g, T: Token> Node<'g, T> {
     pub fn arity(self) -> usize {
-        self.op.arity()
+        self.rule.arity()
     }
 
     pub fn text(self, source: &str) -> &str {
@@ -28,16 +28,16 @@ impl NodeBuilder {
         NodeBuilder { spans: vec![] }
     }
 
-    pub fn build<'g, T: Token>(&mut self, op: &'g Operator<T>, op_span: Span) -> Node<'g, T> {
-        println!("Build: {}", op.name);
-        let mut span = op_span;
-        for _ in 0..op.arity() {
+    pub fn build<'g, T: Token>(&mut self, rule: &'g Rule<T>, rule_span: Span) -> Node<'g, T> {
+        println!("Build: {}", rule.name);
+        let mut span = rule_span;
+        for _ in 0..rule.arity() {
             let arg_span = self.spans.pop().unwrap();
             span.0 = span.0.min(arg_span.0);
             span.1 = span.1.max(arg_span.1);
         }
         self.spans.push(span);
-        Node { op, span }
+        Node { rule, span }
     }
 }
 
