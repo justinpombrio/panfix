@@ -1,8 +1,14 @@
-use super::node::{Node, NodeBuilder};
 use super::rule_stack::{OpStack, OpStackTop};
 use super::shunter::{Prec, Rule, Shunter};
 use crate::lexing::{Lexeme, Span, Token};
+use crate::rpn_visitor::Node as NodeTrait;
 use std::iter::Peekable;
+
+#[derive(Debug, Clone, Copy)]
+pub struct Node<'g, T: Token> {
+    pub rule: &'g Rule<T>,
+    pub span: Span,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mode {
@@ -15,6 +21,13 @@ enum Step<'g, T: Token> {
     Continue,
     Done,
 }
+
+/*
+#[derive(Debug, Clone)]
+pub enum ShuntError<T: Token> {
+    LexError(
+}
+*/
 
 #[derive(Debug)]
 struct Shunt<'g, T, I>
@@ -30,8 +43,6 @@ where
     mode: Mode,
     // Rules that are still waiting for args or seps.
     rule_stack: OpStack<'g, T>,
-    // Construct nodes, with the correct spans over their children.
-    node_builder: NodeBuilder,
     // The right position of the last seen token.
     last_pos: usize,
 }
@@ -56,13 +67,22 @@ where
         loop {
             match self.step() {
                 Step::Produce(rule, span) => {
-                    let node = self.node_builder.build(rule, span);
-                    return Some(node);
+                    return Some(Node { rule, span });
                 }
                 Step::Continue => continue,
                 Step::Done => return None,
             }
         }
+    }
+}
+
+impl<'g, T: Token> Node<'g, T> {
+    pub fn arity(self) -> usize {
+        self.rule.arity()
+    }
+
+    pub fn text(self, source: &str) -> &str {
+        &source[self.span.0..self.span.1]
     }
 }
 
@@ -77,7 +97,6 @@ where
             lexemes: lexemes.peekable(),
             mode: Mode::Expr,
             rule_stack: OpStack::new(),
-            node_builder: NodeBuilder::new(),
             last_pos: 0,
         }
     }
@@ -222,5 +241,11 @@ where
             self.last_pos = pos;
         }
         step
+    }
+}
+
+impl<'g, T: Token> NodeTrait for Node<'g, T> {
+    fn arity(&self) -> usize {
+        Node::arity(*self)
     }
 }
