@@ -7,8 +7,6 @@ mod shunting_tests {
 
     impl Token for CharToken {
         const LEX_ERROR: CharToken = CharToken('L');
-        const MISSING_SEP: CharToken = CharToken('S');
-        const EXTRA_SEP: CharToken = CharToken('X');
         const MISSING_ATOM: CharToken = CharToken('M');
         const JUXTAPOSE: CharToken = CharToken('J');
 

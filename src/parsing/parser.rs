@@ -12,8 +12,6 @@ pub enum Token {
     LexError,
     Juxtapose,
     MissingAtom,
-    MissingSep,
-    ExtraSep,
     Normal(u32),
 }
 
@@ -61,8 +59,6 @@ impl TokenTrait for Token {
     const LEX_ERROR: Token = Token::LexError;
     const JUXTAPOSE: Token = Token::Juxtapose;
     const MISSING_ATOM: Token = Token::MissingAtom;
-    const MISSING_SEP: Token = Token::MissingSep;
-    const EXTRA_SEP: Token = Token::ExtraSep;
 
     fn as_usize(self) -> usize {
         use Token::*;
@@ -70,8 +66,6 @@ impl TokenTrait for Token {
             LexError => 0,
             Juxtapose => 1,
             MissingAtom => 2,
-            MissingSep => 3,
-            ExtraSep => 4,
             Normal(tok) => tok as usize + 5,
         }
     }
