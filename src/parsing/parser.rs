@@ -21,7 +21,8 @@ pub enum Token {
 pub enum Fixity {
     Prefix,
     Suffix,
-    Infix,
+    InfixL,
+    InfixR,
 }
 
 pub struct Rule {
@@ -150,7 +151,8 @@ impl Grammar {
                 let (left_prec, right_prec) = match fixity {
                     Fixity::Prefix => (None, Some(prec)),
                     Fixity::Suffix => (Some(prec), None),
-                    Fixity::Infix => (Some(prec), Some(prec + 1)),
+                    Fixity::InfixL => (Some(prec + 1), Some(prec)),
+                    Fixity::InfixR => (Some(prec), Some(prec + 1)),
                 };
                 let mut tokens = Vec::new();
                 for constant in constants {
@@ -241,11 +243,22 @@ macro_rules! suffix {
 }
 
 #[macro_export]
-macro_rules! infix {
+macro_rules! infixl {
     ( $name:expr, $( $token:expr ),* ) => {
         $crate::parsing::Rule {
             name: ::std::primitive::str::to_owned($name),
-            fixity: $crate::parsing::Fixity::Infix,
+            fixity: $crate::parsing::Fixity::InfixL,
+            tokens: vec![$( ::std::primitive::str::to_owned($token) ),*],
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! infixr {
+    ( $name:expr, $( $token:expr ),* ) => {
+        $crate::parsing::Rule {
+            name: ::std::primitive::str::to_owned($name),
+            fixity: $crate::parsing::Fixity::InfixR,
             tokens: vec![$( ::std::primitive::str::to_owned($token) ),*],
         }
     };

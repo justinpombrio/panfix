@@ -189,8 +189,8 @@ where
                         Step::Continue
                     }
                 } else {
-                    let rule_name = self.rule_stack.missing_sep().name.to_owned();
-                    let span = (self.last_pos, self.last_pos);
+                    let (rule, span) = self.rule_stack.missing_sep();
+                    let rule_name = rule.name.to_owned();
                     Step::Error(ShuntError::MissingSep {
                         rule_name,
                         span,

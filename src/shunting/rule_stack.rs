@@ -57,8 +57,8 @@ impl<'g, T: Token> RuleStack<'g, T> {
         }
     }
 
-    pub fn missing_sep(&mut self) -> &'g Rule<T> {
-        let (rule, _, _) = self.stack.pop().unwrap();
-        rule
+    pub fn missing_sep(&mut self) -> (&'g Rule<T>, Span) {
+        let (rule, span, _) = self.stack.pop().unwrap();
+        (rule, span)
     }
 }
