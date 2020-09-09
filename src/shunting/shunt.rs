@@ -108,6 +108,8 @@ where
     I: Iterator<Item = Lexeme<T>>,
 {
     fn new(shunter: &'g Shunter<T>, lexemes: I) -> Shunt<'g, T, I> {
+        println!();
+        println!("Shunting:");
         Shunt {
             shunter,
             lexemes: lexemes.peekable(),
@@ -115,18 +117,6 @@ where
             rule_stack: RuleStack::new(),
             last_pos: 0,
             done: false,
-        }
-    }
-
-    fn upcoming_sep(&mut self) -> Option<T> {
-        if let Some(lexeme) = self.lexemes.peek() {
-            let token = lexeme.token;
-            match self.lookup_rule(token) {
-                Some(_) => None,
-                None => Some(token),
-            }
-        } else {
-            None
         }
     }
 
@@ -146,6 +136,7 @@ where
     fn push(&mut self) -> Step<'g, T> {
         let lexeme = self.lexemes.next().unwrap();
         let rule = self.lookup_rule(lexeme.token).unwrap();
+        println!("  Push    {}", rule.name);
         self.rule_stack.push(rule, lexeme.span);
         self.mode = Mode::Expr;
         Step::Continue
@@ -154,11 +145,13 @@ where
     fn forward(&mut self) -> Step<'g, T> {
         let lexeme = self.lexemes.next().unwrap();
         let rule = self.lookup_rule(lexeme.token).unwrap();
+        println!("  Forward {}", rule.name);
         self.mode = Mode::Suffix;
         Step::Produce(rule, lexeme.span)
     }
 
     fn missing_atom(&mut self) -> Step<'g, T> {
+        println!("  Missing");
         let rule = &self.shunter.missing_atom;
         let span = (self.last_pos, self.last_pos);
         self.mode = Mode::Suffix;
@@ -166,6 +159,7 @@ where
     }
 
     fn juxtapose(&mut self) -> Step<'g, T> {
+        println!("  Juxt");
         let rule = &self.shunter.juxtapose;
         let span = (self.last_pos, self.last_pos);
         self.rule_stack.push(rule, span);
@@ -174,13 +168,14 @@ where
     }
 
     fn pop(&mut self) -> Step<'g, T> {
+        println!("  Pop");
         match self.rule_stack.top() {
             RuleStackTop::RightPrec(_) => {
                 let (rule, span) = self.rule_stack.pop();
                 Step::Produce(rule, span)
             }
             RuleStackTop::Separator(sep) => {
-                if self.upcoming_sep() == Some(sep) {
+                if self.lexemes.peek().map(|lex| lex.token) == Some(sep) {
                     let span = self.lexemes.next().unwrap().span;
                     if let Some((rule, span)) = self.rule_stack.found_sep(span) {
                         Step::Produce(rule, span)
@@ -215,10 +210,13 @@ where
         }
     }
 
-    fn step(&mut self) -> Step<'g, T> {
-        let (rule_left_prec, rule_right_prec) = match self.lexemes.peek() {
+    fn next_token_prec(&mut self) -> (Option<Prec>, Option<Prec>) {
+        match self.lexemes.peek() {
             Some(lexeme) => {
                 let token = lexeme.token;
+                if self.rule_stack.top() == RuleStackTop::Separator(token) {
+                    return (Some(Prec::MAX), None);
+                }
                 match self.lookup_rule(token) {
                     Some(rule) => {
                         if rule.num_holes() > 0 {
@@ -231,7 +229,11 @@ where
                 }
             }
             None => (Some(Prec::MAX), None),
-        };
+        }
+    }
+
+    fn step(&mut self) -> Step<'g, T> {
+        let (rule_left_prec, rule_right_prec) = self.next_token_prec();
         let prec = self.current_prec();
         let juxt_prec: Prec = self.shunter.juxtapose.left_prec.unwrap();
         let this_pos = self.lexemes.peek().map(|lex| lex.span.1);

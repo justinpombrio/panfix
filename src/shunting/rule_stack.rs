@@ -6,6 +6,7 @@ pub struct RuleStack<'g, T: Token> {
     stack: Vec<(&'g Rule<T>, Span, usize)>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuleStackTop<T: Token> {
     RightPrec(Prec),
     Separator(T),

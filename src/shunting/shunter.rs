@@ -66,6 +66,7 @@ impl<'g, T: Token> Shunter<T> {
             assert!(!rule.tokens.is_empty());
             let token = rule.tokens.first().unwrap();
             let index = token.as_usize();
+            assert!(token_to_rule[index].is_none(), "Duplicate first rule token");
             token_to_rule[index] = Some(rule);
         }
         // TODO: unwrap -> Err

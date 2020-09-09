@@ -19,8 +19,7 @@ pub enum Token {
 pub enum Fixity {
     Prefix,
     Suffix,
-    InfixL,
-    InfixR,
+    Infix,
 }
 
 pub struct Rule {
@@ -35,12 +34,18 @@ pub enum Pattern {
     Regex(RegexPattern),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Assoc {
+    Left,
+    Right,
+}
+
 pub struct Grammar {
     whitespace: RegexPattern,
     juxtapose_prec: Option<(Prec, Prec)>,
     atoms: Vec<(Name, Pattern)>,
     rules_by_name: HashMap<Name, Rule>,
-    rules_by_prec: Vec<Vec<Name>>,
+    rules_by_prec: Vec<(Assoc, Vec<Name>)>,
 }
 
 pub struct Parser {
@@ -100,15 +105,31 @@ impl Grammar {
         self
     }
 
-    pub fn rule(mut self, rule: Rule) -> Self {
-        self.rules_by_prec.push(vec![rule.name.clone()]);
+    pub fn rule_l(self, rule: Rule) -> Self {
+        self.rule(Assoc::Left, rule)
+    }
+
+    pub fn rule_r(self, rule: Rule) -> Self {
+        self.rule(Assoc::Right, rule)
+    }
+
+    pub fn rule(mut self, assoc: Assoc, rule: Rule) -> Self {
+        self.rules_by_prec.push((assoc, vec![rule.name.clone()]));
         self.rules_by_name.insert(rule.name.clone(), rule);
         self
     }
 
-    pub fn rule_group(mut self, rules: Vec<Rule>) -> Self {
+    pub fn rules_l(self, rules: Vec<Rule>) -> Self {
+        self.rules(Assoc::Left, rules)
+    }
+
+    pub fn rules_r(self, rules: Vec<Rule>) -> Self {
+        self.rules(Assoc::Right, rules)
+    }
+
+    pub fn rules(mut self, assoc: Assoc, rules: Vec<Rule>) -> Self {
         self.rules_by_prec
-            .push(rules.iter().map(|r| r.name.clone()).collect());
+            .push((assoc, rules.iter().map(|r| r.name.clone()).collect()));
         for rule in rules {
             self.rules_by_name.insert(rule.name.clone(), rule);
         }
@@ -117,6 +138,9 @@ impl Grammar {
 
     // TODO: Errors
     pub fn build(mut self) -> Parser {
+        use Assoc::*;
+        use Fixity::*;
+
         let mut token_set = TokenSet::new();
         let mut rules: Vec<CompiledRule<Token>> = Vec::new();
         let mut token_patterns: HashMap<Token, Pattern> = HashMap::new();
@@ -134,7 +158,7 @@ impl Grammar {
             });
         }
         let mut prec = 10;
-        for prec_group in self.rules_by_prec {
+        for (assoc, prec_group) in self.rules_by_prec {
             for rule_name in prec_group {
                 let rule = self.rules_by_name.remove(&rule_name).unwrap();
                 let Rule {
@@ -142,11 +166,13 @@ impl Grammar {
                     fixity,
                     tokens: constants,
                 } = rule;
-                let (left_prec, right_prec) = match fixity {
-                    Fixity::Prefix => (None, Some(prec)),
-                    Fixity::Suffix => (Some(prec), None),
-                    Fixity::InfixL => (Some(prec + 1), Some(prec)),
-                    Fixity::InfixR => (Some(prec), Some(prec + 1)),
+                let (left_prec, right_prec) = match (fixity, assoc) {
+                    (Prefix, Left) => (None, Some(prec)),
+                    (Prefix, Right) => (None, Some(prec + 1)),
+                    (Suffix, Left) => (Some(prec + 1), None),
+                    (Suffix, Right) => (Some(prec), None),
+                    (Infix, Left) => (Some(prec + 1), Some(prec)),
+                    (Infix, Right) => (Some(prec), Some(prec + 1)),
                 };
                 let mut tokens = Vec::new();
                 for constant in constants {
@@ -237,22 +263,11 @@ macro_rules! suffix {
 }
 
 #[macro_export]
-macro_rules! infixl {
+macro_rules! infix {
     ( $name:expr, $( $token:expr ),* ) => {
         $crate::parsing::Rule {
             name: ::std::primitive::str::to_owned($name),
-            fixity: $crate::parsing::Fixity::InfixL,
-            tokens: vec![$( ::std::primitive::str::to_owned($token) ),*],
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! infixr {
-    ( $name:expr, $( $token:expr ),* ) => {
-        $crate::parsing::Rule {
-            name: ::std::primitive::str::to_owned($name),
-            fixity: $crate::parsing::Fixity::InfixR,
+            fixity: $crate::parsing::Fixity::Infix,
             tokens: vec![$( ::std::primitive::str::to_owned($token) ),*],
         }
     };
