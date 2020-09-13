@@ -1,12 +1,13 @@
 use crate::lexing::Lexer;
 use crate::lexing::Token as TokenTrait;
 use crate::shunting::Rule as CompiledRule;
-use crate::shunting::{Prec, Shunter};
+use crate::shunting::Shunter;
 use std::collections::HashMap;
 
 pub type RegexPattern = String;
 type Name = String;
 
+#[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Token {
     LexError,
@@ -20,6 +21,7 @@ pub enum Fixity {
     Prefix,
     Suffix,
     Infix,
+    Circumfix,
 }
 
 pub struct Rule {
@@ -38,11 +40,11 @@ pub enum Pattern {
 pub enum Assoc {
     Left,
     Right,
+    NoAssoc,
 }
 
 pub struct Grammar {
     whitespace: RegexPattern,
-    juxtapose_prec: Option<(Prec, Prec)>,
     atoms: Vec<(Name, Pattern)>,
     rules_by_name: HashMap<Name, Rule>,
     rules_by_prec: Vec<(Assoc, Vec<Name>)>,
@@ -80,17 +82,10 @@ impl Grammar {
     pub fn new(whitespace: &str) -> Grammar {
         Grammar {
             whitespace: whitespace.to_string(),
-            juxtapose_prec: None,
             atoms: Vec::new(),
             rules_by_name: HashMap::new(),
             rules_by_prec: Vec::new(),
         }
-    }
-
-    pub fn juxtapose(mut self, left_prec: Prec, right_prec: Prec) -> Self {
-        assert!(self.juxtapose_prec.is_none());
-        self.juxtapose_prec = Some((left_prec, right_prec));
-        self
     }
 
     pub fn regex(mut self, name: &str, regex: &str) -> Self {
@@ -106,28 +101,57 @@ impl Grammar {
     }
 
     pub fn rule_l(self, rule: Rule) -> Self {
-        self.rule(Assoc::Left, rule)
+        self.add_rule(Assoc::Left, rule)
     }
 
     pub fn rule_r(self, rule: Rule) -> Self {
-        self.rule(Assoc::Right, rule)
+        self.add_rule(Assoc::Right, rule)
     }
 
-    pub fn rule(mut self, assoc: Assoc, rule: Rule) -> Self {
+    pub fn rule(self, rule: Rule) -> Self {
+        assert!(rule.fixity != Fixity::Infix);
+        self.add_rule(Assoc::NoAssoc, rule)
+    }
+
+    fn add_rule(mut self, assoc: Assoc, rule: Rule) -> Self {
         self.rules_by_prec.push((assoc, vec![rule.name.clone()]));
         self.rules_by_name.insert(rule.name.clone(), rule);
         self
     }
 
     pub fn rules_l(self, rules: Vec<Rule>) -> Self {
-        self.rules(Assoc::Left, rules)
+        self.add_rules(Assoc::Left, rules)
     }
 
     pub fn rules_r(self, rules: Vec<Rule>) -> Self {
-        self.rules(Assoc::Right, rules)
+        self.add_rules(Assoc::Right, rules)
     }
 
-    pub fn rules(mut self, assoc: Assoc, rules: Vec<Rule>) -> Self {
+    pub fn rules(self, rules: Vec<Rule>) -> Self {
+        let mut lprec_exists = false;
+        let mut rprec_exists = false;
+        for rule in &rules {
+            match rule.fixity {
+                Fixity::Circumfix => (),
+                Fixity::Infix => {
+                    lprec_exists = true;
+                    rprec_exists = true;
+                }
+                Fixity::Prefix => {
+                    rprec_exists = true;
+                }
+                Fixity::Suffix => {
+                    lprec_exists = true;
+                }
+            }
+        }
+        if lprec_exists && rprec_exists {
+            panic!("Must specify associativity");
+        }
+        self.add_rules(Assoc::NoAssoc, rules)
+    }
+
+    fn add_rules(mut self, assoc: Assoc, rules: Vec<Rule>) -> Self {
         self.rules_by_prec
             .push((assoc, rules.iter().map(|r| r.name.clone()).collect()));
         for rule in rules {
@@ -169,10 +193,14 @@ impl Grammar {
                 let (left_prec, right_prec) = match (fixity, assoc) {
                     (Prefix, Left) => (None, Some(prec)),
                     (Prefix, Right) => (None, Some(prec + 1)),
+                    (Prefix, NoAssoc) => (None, Some(prec)),
                     (Suffix, Left) => (Some(prec + 1), None),
                     (Suffix, Right) => (Some(prec), None),
+                    (Suffix, NoAssoc) => (Some(prec), None),
                     (Infix, Left) => (Some(prec + 1), Some(prec)),
                     (Infix, Right) => (Some(prec), Some(prec + 1)),
+                    (Circumfix, _) => (None, None),
+                    (Infix, NoAssoc) => panic!("Must specify an associativity"),
                 };
                 let mut tokens = Vec::new();
                 for constant in constants {
@@ -190,7 +218,7 @@ impl Grammar {
             prec += 10;
         }
         let lexer = token_set.into_lexer(self.whitespace);
-        let shunter = Shunter::new(rules, self.juxtapose_prec);
+        let shunter = Shunter::new(rules);
         Parser {
             lexer,
             shunter,
@@ -269,6 +297,28 @@ macro_rules! infix {
             name: ::std::primitive::str::to_owned($name),
             fixity: $crate::parsing::Fixity::Infix,
             tokens: vec![$( ::std::primitive::str::to_owned($token) ),*],
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! circumfix {
+    ( $name:expr, $( $token:expr ),* ) => {
+        $crate::parsing::Rule {
+            name: ::std::primitive::str::to_owned($name),
+            fixity: $crate::parsing::Fixity::Circumfix,
+            tokens: vec![$( ::std::primitive::str::to_owned($token) ),*],
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! juxtapose {
+    () => {
+        $crate::parsing::Rule {
+            name: "$Juxtapose".to_owned(),
+            fixity: $crate::parsing::Fixity::Infix,
+            tokens: vec![],
         }
     };
 }

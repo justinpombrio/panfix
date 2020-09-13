@@ -4,7 +4,7 @@ mod common;
 mod parsing_tests {
     use super::common::run_parser;
     use panfix::parsing::{Grammar, WHITESPACE_REGEX};
-    use panfix::{infix, prefix, suffix};
+    use panfix::{circumfix, infix, juxtapose, prefix, suffix};
 
     #[test]
     fn test_left_associativity() {
@@ -55,6 +55,46 @@ mod parsing_tests {
         assert_eq!(parse("a:b:c;;"), "(a : (b : c ;) ;)");
         assert_eq!(parse("λx->y:z;"), "(λ x -> (y : z ;))"); // an unholy combination
         assert_eq!(parse("λx->a?b:c:z;"), "(λ x -> (a ? b : (c : z ;)))");
+    }
+
+    #[test]
+    fn test_circumfix() {
+        let parser = Grammar::new(WHITESPACE_REGEX)
+            .regex("Var", "[a-zA-Z]+")
+            .rule_l(infix!("Mul", "*"))
+            .rules_l(vec![infix!("Add", "+"), circumfix!("Parens", "(", ")")])
+            .build();
+        let parse = |input: &str| run_parser(&parser, input);
+
+        assert_eq!(parse("a*b+c*d"), "((a * b) + (c * d))");
+        assert_eq!(parse("a*(b+c)*d"), "((a * (( (b + c) ))) * d)");
+    }
+
+    #[test]
+    fn test_variable_precedence() {
+        let parser = Grammar::new(WHITESPACE_REGEX)
+            .regex("Var", "[a-zA-Z]+")
+            .rule_l(prefix!("Neg", "-"))
+            .rules_l(vec![infix!("Mul", "*"), infix!("Div", "/")])
+            .rules_l(vec![infix!("Add", "+"), infix!("Sub", "-")])
+            .build();
+        let parse = |input: &str| run_parser(&parser, input);
+
+        assert_eq!(parse("a*a-b*b"), "((a * a) - (b * b))");
+        assert_eq!(parse("-a*a"), "((- a) * a)");
+    }
+
+    #[test]
+    fn test_juxt_prec() {
+        let parser = Grammar::new(WHITESPACE_REGEX)
+            .regex("Var", "[a-zA-Z]+")
+            .rule_l(infix!("Mul", "*"))
+            .rule_l(juxtapose!())
+            .rule_l(infix!("Add", "+"))
+            .build();
+        let parse = |input: &str| run_parser(&parser, input);
+
+        assert_eq!(parse("a+b*c d*e+f"), "((a + ((b * c) ? (d * e))) + f)");
     }
 
     fn parse_c(input: &str) -> String {

@@ -3,20 +3,21 @@ use crate::lexing::Token;
 
 #[derive(Debug, Clone)]
 pub struct ShunterBuilder<T: Token> {
-    juxtapose_prec: Option<(Prec, Prec)>,
     rules: Vec<Rule<T>>,
 }
 
 impl<T: Token> ShunterBuilder<T> {
     pub fn new() -> ShunterBuilder<T> {
-        ShunterBuilder {
-            juxtapose_prec: None,
-            rules: vec![],
-        }
+        ShunterBuilder { rules: vec![] }
     }
 
     pub fn juxtapose_prec(mut self, lprec: Prec, rprec: Prec) -> Self {
-        self.juxtapose_prec = Some((lprec, rprec));
+        self.rules.push(Rule {
+            name: "$Juxtapose".to_owned(),
+            left_prec: Some(lprec),
+            right_prec: Some(rprec),
+            tokens: vec![],
+        });
         self
     }
 
@@ -87,7 +88,7 @@ impl<T: Token> ShunterBuilder<T> {
     }
 
     pub fn build(self) -> Shunter<T> {
-        Shunter::new(self.rules, self.juxtapose_prec)
+        Shunter::new(self.rules)
     }
 }
 
