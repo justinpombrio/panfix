@@ -13,9 +13,12 @@ mod parsing_tests {
             .rules_l(vec![
                 infix!("Plus", "+"),
                 infix!("Minus", "-"),
+                infix!("ListComprehension", "for", "in"),
                 prefix!("Not", "!"),
+                prefix!("Lambda", "λ", "."),
                 suffix!("Div100", "%"),
                 suffix!("Subs", "[", "]"),
+                suffix!("ForthDefn", ":", ";"),
             ])
             .build();
         let parse = |input: &str| run_parser(&parser, input);
@@ -26,6 +29,12 @@ mod parsing_tests {
         assert_eq!(parse("!x%"), "((! x) %)");
         assert_eq!(parse("!x+y%"), "(((! x) + y) %)");
         assert_eq!(parse("x%+!y"), "((x %) + (! y))");
+        assert_eq!(parse("x for x in L"), "(x for x in L)");
+        assert_eq!(
+            parse("x for x in y for y in L"),
+            "((x for x in y) for y in L)"
+        );
+        assert_eq!(parse("λx.y:z;"), "((λ x . y) : z ;)");
     }
 
     #[test]
@@ -37,9 +46,9 @@ mod parsing_tests {
                 infix!("Or", "||"),
                 infix!("Ternary", "?", ":"),
                 prefix!("Not", "!"),
-                prefix!("Lambda", "λ", "->"),
+                prefix!("Lambda", "λ", "."),
                 suffix!("Squared", "²"),
-                suffix!("ForthDefn", ":", ";"),
+                suffix!("ColonThingy", ":", ";"),
             ])
             .build();
         let parse = |input: &str| run_parser(&parser, input);
@@ -50,11 +59,11 @@ mod parsing_tests {
         assert_eq!(parse("x²&&!y||!z²"), "((x ²) && (! (y || (! (z ²)))))");
         assert_eq!(parse("a?b:c"), "(a ? b : c)");
         assert_eq!(parse("a?b:c?d:e"), "(a ? b : (c ? d : e))");
-        assert_eq!(parse("λx->x"), "(λ x -> x)");
-        assert_eq!(parse("λx->λy->x"), "(λ x -> (λ y -> x))");
+        assert_eq!(parse("λx.x"), "(λ x . x)");
+        assert_eq!(parse("λx.λy.x"), "(λ x . (λ y . x))");
         assert_eq!(parse("a:b:c;;"), "(a : (b : c ;) ;)");
-        assert_eq!(parse("λx->y:z;"), "(λ x -> (y : z ;))"); // an unholy combination
-        assert_eq!(parse("λx->a?b:c:z;"), "(λ x -> (a ? b : (c : z ;)))");
+        assert_eq!(parse("λx.y:z;"), "(λ x . (y : z ;))");
+        assert_eq!(parse("λx.a?b:c:z;"), "(λ x . (a ? b : (c : z ;)))");
     }
 
     fn parse_c(input: &str) -> String {
