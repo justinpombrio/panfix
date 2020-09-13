@@ -130,7 +130,14 @@ where
     }
 
     fn lookup_rule(&self, token: T) -> Option<&'g Rule<T>> {
-        self.shunter.token_to_rule[token.as_usize()].as_ref()
+        let index = token.as_usize();
+        let prefixy_rule = self.shunter.token_to_prefixy_rule[index].as_ref();
+        let suffixy_rule = self.shunter.token_to_suffixy_rule[index].as_ref();
+        if self.mode == Mode::Suffix {
+            suffixy_rule.or(prefixy_rule)
+        } else {
+            prefixy_rule.or(suffixy_rule)
+        }
     }
 
     fn push(&mut self) -> Step<'g, T> {

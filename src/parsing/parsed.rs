@@ -139,11 +139,16 @@ impl<'a> Visitor<'a> {
         use Fixity::*;
 
         let rule = self.visitor.node().rule;
-        match (rule.left_prec.is_some(), rule.right_prec.is_some()) {
-            (false, false) => None,
-            (false, true) => Some(Prefix),
-            (true, false) => Some(Suffix),
-            (true, true) => Some(Infix),
+        match (
+            rule.tokens.len(),
+            rule.left_prec.is_some(),
+            rule.right_prec.is_some(),
+        ) {
+            (1, false, false) => None,
+            (_, false, false) => Some(Circumfix),
+            (_, false, true) => Some(Prefix),
+            (_, true, false) => Some(Suffix),
+            (_, true, true) => Some(Infix),
         }
     }
 

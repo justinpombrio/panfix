@@ -38,7 +38,7 @@ fn parenthesize(out: &mut String, visitor: Visitor, parser: &Parser) {
         let mut children = visitor.children();
         let mut delims = visitor.rule_patterns(&parser).into_iter();
         out.push('(');
-        if fixity != Fixity::Prefix {
+        if fixity == Fixity::Infix || fixity == Fixity::Suffix {
             let child = children.next().unwrap();
             if child.name() != "$MissingAtom" {
                 parenthesize(out, child, parser);
@@ -54,7 +54,7 @@ fn parenthesize(out: &mut String, visitor: Visitor, parser: &Parser) {
             out.push(' ');
             out.push_str(pattern_to_const(delim));
         }
-        if fixity != Fixity::Suffix {
+        if fixity == Fixity::Infix || fixity == Fixity::Prefix {
             let child = children.next().unwrap();
             if child.name() != "$MissingAtom" {
                 out.push(' ');
