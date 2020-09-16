@@ -10,8 +10,6 @@ pub type Span = (usize, usize);
 
 pub trait Token: Debug + Clone + Copy + PartialEq + Eq + Hash {
     const LEX_ERROR: Self;
-    const MISSING_ATOM: Self;
-    const JUXTAPOSE: Self;
 
     fn as_usize(self) -> usize;
 }

@@ -33,7 +33,7 @@ impl<'g, T: Token> Rule<T> {
     }
 
     pub fn num_holes(&self) -> usize {
-        self.tokens.len() - 1
+        self.tokens.len().saturating_sub(1)
     }
 }
 
@@ -76,13 +76,13 @@ impl<'g, T: Token> Shunter<T> {
             name: "$MissingAtom".to_owned(),
             left_prec: None,
             right_prec: None,
-            tokens: vec![T::MISSING_ATOM],
+            tokens: vec![],
         };
         let juxtapose = Rule {
             name: "$Juxtapose".to_owned(),
             left_prec: Some(juxtapose_prec.0),
             right_prec: Some(juxtapose_prec.1),
-            tokens: vec![T::JUXTAPOSE],
+            tokens: vec![],
         };
         // TODO: unwrap -> Err
         Shunter {

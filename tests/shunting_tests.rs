@@ -7,8 +7,6 @@ mod shunting_tests {
 
     impl Token for CharToken {
         const LEX_ERROR: CharToken = CharToken('L');
-        const MISSING_ATOM: CharToken = CharToken('M');
-        const JUXTAPOSE: CharToken = CharToken('J');
 
         fn as_usize(self) -> usize {
             self.0 as usize
@@ -71,7 +69,11 @@ mod shunting_tests {
                     break;
                 }
                 Ok(node) => {
-                    let ch = node.rule.tokens[0].0;
+                    let ch = match node.rule.name.as_ref() {
+                        "$Juxtapose" => 'J',
+                        "$MissingAtom" => 'M',
+                        _ => node.rule.tokens[0].0,
+                    };
                     output.push(ch);
                 }
             }

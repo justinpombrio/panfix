@@ -45,7 +45,7 @@ fn parenthesize(out: &mut String, visitor: Visitor, parser: &Parser) {
                 out.push(' ');
             }
         }
-        let delim = delims.next().unwrap();
+        let delim = delims.next().unwrap_or(None);
         out.push_str(pattern_to_const(delim));
         while let Some(delim) = delims.next() {
             let child = children.next().unwrap();

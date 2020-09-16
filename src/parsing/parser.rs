@@ -11,8 +11,6 @@ type Name = String;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Token {
     LexError,
-    Juxtapose,
-    MissingAtom,
     Normal(u32),
 }
 
@@ -64,16 +62,12 @@ struct TokenSet {
 
 impl TokenTrait for Token {
     const LEX_ERROR: Token = Token::LexError;
-    const JUXTAPOSE: Token = Token::Juxtapose;
-    const MISSING_ATOM: Token = Token::MissingAtom;
 
     fn as_usize(self) -> usize {
         use Token::*;
         match self {
             LexError => 0,
-            Juxtapose => 1,
-            MissingAtom => 2,
-            Normal(tok) => tok as usize + 5,
+            Normal(tok) => tok as usize + 1,
         }
     }
 }

@@ -16,8 +16,6 @@ mod lexing_tests {
         Colon,
         Comma,
         _LexError,
-        _MissingAtom,
-        _Juxtapose,
     }
 
     #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -35,14 +33,10 @@ mod lexing_tests {
         AngryWord,
         ShortWord,
         _LexError,
-        _MissingAtom,
-        _Juxtapose,
     }
 
     impl Token for JsonToken {
         const LEX_ERROR: JsonToken = JsonToken::_LexError;
-        const MISSING_ATOM: JsonToken = JsonToken::_MissingAtom;
-        const JUXTAPOSE: JsonToken = JsonToken::_Juxtapose;
 
         fn as_usize(self) -> usize {
             self as usize
@@ -51,8 +45,6 @@ mod lexing_tests {
 
     impl Token for TokenThatHatesYou {
         const LEX_ERROR: TokenThatHatesYou = TokenThatHatesYou::_LexError;
-        const MISSING_ATOM: TokenThatHatesYou = TokenThatHatesYou::_MissingAtom;
-        const JUXTAPOSE: TokenThatHatesYou = TokenThatHatesYou::_Juxtapose;
 
         fn as_usize(self) -> usize {
             (self as usize) + 13
