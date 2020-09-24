@@ -1,0 +1,181 @@
+\documentclass{article}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{semantic}
+
+\newenvironment{Table}
+  {\begin{center}\begin{tabular}{l l l l @{\quad}l}}
+  {\end{tabular}\end{center}}
+
+\begin{document}
+
+% General utility
+\newcommand{\seq}[1]{\overline{#1}}
+\newcommand{\spaced}{\quad\quad}
+\newcommand{\twolines}[2]{\begin{array}{l}#1 \\ #2\end{array}}
+\newcommand{\threelines}[3]{\begin{array}{l}#1 \\ #2 \\ #3\end{array}}
+\newcommand{\fourlines}[4]{\begin{array}{l}#1 \\ #2 \\ #3 \\ #4\end{array}}
+\newcommand{\ifempty}[3]{\ifx\foobaz#1\foobaz #2 \else #3 \fi}
+\newcommand{\inabox}[1]{\vspace{0.5em}\boxed{#1}\vspace{0.5em}}
+
+% Operators
+\newcommand{\ld}{\lessdot}
+\newcommand{\gd}{\gtrdot}
+\newcommand{\head}[1]{\textit{head}(#1)}
+
+% Fixity
+\newcommand{\atom}{\text{atom}}
+\newcommand{\prefix}[2]{\ifempty{#1}{\text{prefix}}{\text{prefix}_{#1}(#2)}}
+\newcommand{\suffix}[2]{\ifempty{#1}{\text{suffix}}{\text{suffix}_{#1}(#2)}}
+\newcommand{\infix}[2]{\ifempty{#1}{\text{infix}}{\text{infix}_{#1}(#2)}}
+
+% States
+\newcommand{\state}[3]{#1\, \big\langle \,#2\, \big\rangle \,#3}
+\newcommand{\qstate}[3]{#1\,?\, \big\langle \,#2\, \big\rangle \,#3}
+
+% Judgements
+\newcommand{\hasfix}[3]{#1\ #2 \in #3}
+\newcommand{\sld}[3]{#1 \vdash #2 \ld #3}
+\newcommand{\sgd}[3]{#1 \vdash #2 \gd #3}
+\newcommand{\stree}[2]{#1 \vdash #2}
+\newcommand{\sstate}[3]{#1 \vdash #2\, \big\langle \,#3\, \big\rangle}
+\newcommand{\sqstate}[4]{#1 \vdash #2\,#3\, \big\langle \,#4\, \big\rangle}
+
+\begin{Table}
+token &$t,u,v,w$ &$::=$& $\textit{string}$ \\
+associativity &$a$ &$::=$& $L$ & (left assoc) \\
+&&$|$& $R$ & (right assoc) \\
+precedence &$n,m$ &$::=$& $\mathbb{N}$ \\
+fixity &\textit{fix} &$::=$& $\atom$ & (has no children) \\
+&&$|$& $\prefix{a}{n}$ \\
+&&$|$& $\suffix{a}{n}$ \\
+&&$|$& $\infix{a}{n}$ \\
+rule &$r$ &$::=$& $t\;\textit{fix}$ \\
+grammar &$G$ &$::=$& $\seq{r}$ \\
+\\
+tree & $x,y,z$ &$::=$& $(\seq{x} t)$ & (tree in RPN) \\
+state & $s$ &$::=$& $\state{\seq{x}}{\seq{t}}{\seq{t}}$ & (parsing state) \\
+&&$|$& $\qstate{\seq{x}}{\seq{t}}{\seq{t}}$ & (parsing state w/ hole) \\
+\end{Table}
+
+Precedence rules:
+
+\begin{figure}
+
+\inabox{
+  \sld{G}{n}{t}\spaced\sgd{G}{t}{n}\spaced
+  \sld{G}{t}{n}\spaced\sgd{G}{n}{t}\spaced
+  \sld{G}{\emptyset}{t}\spaced\sgd{G}{t}{\emptyset}}
+\[
+\inference{\hasfix{t}{\atom}{G}}{\twolines{\sld{G}{t}{0}}{\sgd{G}{0}{t}}}
+\quad
+\inference{\hasfix{t}{\infix{L}{n}}{G}}{\fourlines
+  {\sld{G}{n}{t}}
+  {\sgd{G}{t}{n-1}}
+  {\sld{G}{t}{n}}
+  {\sgd{G}{n}{t}}}
+\quad
+\inference{\hasfix{t}{\infix{L}{n}}{G}}{\fourlines
+  {\sld{G}{n-1}{t}}
+  {\sgd{G}{t}{n}}
+  {\sld{G}{t}{n}}
+  {\sgd{G}{n}{t}}}
+\]
+
+\[
+\inference{\hasfix{t}{\prefix{L}{n}}{G}}{\fourlines
+  {\sld{G}{\emptyset}{t}}
+  {\sgd{G}{t}{n-1}}
+  {\sld{G}{t}{n}}
+  {\sgd{G}{0}{t}}}
+\quad
+\inference{\hasfix{t}{\prefix{R}{n}}{G}}{\fourlines
+  {\sld{G}{\emptyset}{t}}
+  {\sgd{G}{t}{n}}
+  {\sld{G}{t}{n}}
+  {\sgd{G}{0}{t}}}
+\quad
+\inference{\hasfix{t}{\suffix{L}{n}}{G}}{\fourlines
+  {\sld{G}{n}{t}}
+  {\sgd{G}{t}{\emptyset}}
+  {\sld{G}{t}{0}}
+  {\sgd{G}{n}{t}}}
+\quad
+\inference{\hasfix{t}{\suffix{R}{n}}{G}}{\fourlines
+  {\sld{G}{n-1}{t}}
+  {\sgd{G}{t}{\emptyset}}
+  {\sld{G}{t}{0}}
+  {\sgd{G}{n}{t}}}
+\]
+
+\inabox{\sld{G}{t}{t}}
+\[
+\inference{\sld{G}{t}{n} & n \leq m & \sld{G}{m}{u}}{\sld{G}{t}{u}}
+\quad
+\inference{\sgd{G}{t}{n} & n \geq m & \sgd{G}{m}{u}}{\sgd{G}{t}{u}}
+\]
+
+\inabox{\stree{G}{x}}
+\[
+\inference{\hasfix{t}{\atom}{G}}{\stree{G}{(t)}}
+\quad
+\inference
+  {\hasfix{t}{\infix{}{}}{G} \\ \stree{G}{x} & \sld{G}{\head{x}}{t}
+   \\ \stree{G}{y} & \sgd{G}{t}{\head{y}}}
+  {\stree{G}{(x\ t)}}
+\]
+
+\[
+\inference
+  {\hasfix{t}{\prefix{}{}}{G} \\ \stree{G}{x} & \sgd{G}{t}{\head{x}}}
+  {\stree{G}{(x\ t)}}
+\quad
+\inference
+  {\hasfix{t}{\suffix{}{}}{G} \\ \stree{G}{x} & \sld{G}{\head{x}}{t}}
+  {\stree{G}{(x\ t)}}
+\]
+
+\caption{Precedence Rules and validity of parse trees}
+\end{figure}
+
+\begin{figure}
+
+\inabox{\sstate{G}{\seq{x}}{\seq{t}}}
+\[
+\inference{\stree{G}{x}}{\sstate{G}{x}{}}
+\quad
+\inference{
+  \hasfix{u}{\prefix{}{}}{G} \\
+  \stree{G}{y} & \sgd{G}{u}{\head{y}} \\
+  \sqstate{G}{\seq{x}}{0}{\seq{t}}}
+  {\sstate{G}{\seq{x}\,y}{\seq{t}\,u}}
+\quad
+\inference{
+  \hasfix{u}{\infix{}{}}{G} & \sgd{G}{n}{u} \\
+  \stree{G}{y} & \sld{G}{\head{y}}{u} \\
+  \stree{G}{z} & \sgd{G}{u}{\head{z}} \\
+  \sqstate{G}{\seq{x}}{n}{\seq{t}}}
+  {\sstate{G}{\seq{x}\,y\,z}{\seq{t}\,u}}
+\]
+
+\inabox{\sqstate{G}{\seq{x}}{n}{\seq{t}}}
+\[
+\inference{}{\sqstate{G}{}{n}{}}
+\quad
+\inference{
+  \hasfix{u}{\prefix{}{}} & \sgd{G}{u}{m} \\
+  \sgd{G}{n}{u} & \sqstate{G}{\seq{x}}{n}{\seq{t}}}
+  {\sqstate{G}{\seq{x}}{m}{\seq{t}\,u}}
+\quad
+\inference{
+  \hasfix{u}{\infix{}{}} & \sgd{G}{u}{m} \\
+  \stree{G}{y} & \sld{G}{\head{y}}{u} \\
+  \sgd{G}{n}{u} & \sqstate{G}{\seq{x}}{n}{\seq{t}}}
+  {\sqstate{G}{\seq{x}\,y}{m}{\seq{t}\,u}}
+\]
+
+\caption{Validity of parsing states}
+\end{figure}
+
+\end{document}
