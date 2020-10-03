@@ -3,6 +3,7 @@
 \usepackage{amsmath}
 \usepackage{amssymb}
 \usepackage{semantic}
+\usepackage{listings}
 
 \newenvironment{Table}
   {\begin{center}\begin{tabular}{l l l l @{\quad}l}}
@@ -39,8 +40,8 @@
 % States
 \newcommand{\state}[3]{#1\, \big\langle \,#2\, \big\rangle \,#3}
 \newcommand{\qstate}[3]{#1\,?\, \big\langle \,#2\, \big\rangle \,#3}
-\newcommand{\sstate}[3]{#1 \vdash #2\, \big\langle \,#3\, \big\rangle}
-\newcommand{\sqstate}[4]{#1 \vdash #2\,#3\, \big\langle \,#4\, \big\rangle}
+\newcommand{\sstate}[4]{#1 \vdash #2\, \big\langle \,#3\, \big\rangle \,#4}
+\newcommand{\sqstate}[5]{#1 \vdash #2\,#3\, \big\langle \,#4\, \big\rangle \,#5}
 \newcommand{\sstep}[3]{#1 \vdash #2 \rightarrow #3}
 
 \begin{Table}
@@ -108,30 +109,40 @@ Precedence rules:
     {\sld{G}{t}{0}}
     {\sgd{G}{n}{t}}}
   \]
+
+  \[
+    \inference
+      {\sld{G}{t}{n} & n \leq m}
+      {\sld{G}{t}{m}}
+    \quad
+    \inference
+      {\sgd{G}{t}{n} & n \geq m}
+      {\sgd{G}{t}{m}}
+  \]
   
   \inabox{\sld{G}{t}{t}}
   \[
-  \inference{\sld{G}{t}{n} & n \leq m & \sld{G}{m}{u}}{\sld{G}{t}{u}}
+  \inference{\sld{G}{t}{n} & \sld{G}{n}{u}}{\sld{G}{t}{u}}
   \quad
-  \inference{\sgd{G}{t}{n} & n \geq m & \sgd{G}{m}{u}}{\sgd{G}{t}{u}}
+  \inference{\sgd{G}{t}{n} & \sgd{G}{n}{u}}{\sgd{G}{t}{u}}
   \]
   
   \inabox{\stree{G}{x}}
   \[
-  \inference{\hasfix{t}{\atom}{G}}{\stree{G}{(t)}}
+  \inference[T-Atom]{\hasfix{t}{\atom}{G}}{\stree{G}{(t)}}
   \quad
-  \inference
+  \inference[T-Infix]
     {\hasfix{t}{\infix{}{}}{G} \\ \stree{G}{x} & \sld{G}{\head{x}}{t}
      \\ \stree{G}{y} & \sgd{G}{t}{\head{y}}}
     {\stree{G}{(x\,t)}}
   \]
   
   \[
-  \inference
+  \inference[T-Prefix]
     {\hasfix{t}{\prefix{}{}}{G} \\ \stree{G}{x} & \sgd{G}{t}{\head{x}}}
     {\stree{G}{(x\,t)}}
   \quad
-  \inference
+  \inference[T-Suffix]
     {\hasfix{t}{\suffix{}{}}{G} \\ \stree{G}{x} & \sld{G}{\head{x}}{t}}
     {\stree{G}{(x\,t)}}
   \]
@@ -140,38 +151,40 @@ Precedence rules:
 \end{figure}
 
 \begin{figure}
-  \inabox{\sstate{G}{\seq{x}}{\seq{t}}}
+  \inabox{\sstate{G}{\seq{x}}{\seq{t}}{\seq{t}}}
   \[
-  \inference{\stree{G}{x}}{\sstate{G}{x}{}}
+  \inference{\stree{G}{x}}{\sstate{G}{x}{}{\seq{w}}}
   \quad
   \inference{
     \hasfix{u}{\prefix{}{}}{G} \\
     \stree{G}{y} & \sgd{G}{u}{\head{y}} \\
-    \sqstate{G}{\seq{x}}{0}{\seq{t}}}
-    {\sstate{G}{\seq{x}\,y}{\seq{t}\,u}}
+    \sqstate{G}{\seq{x}}{0}{\seq{t}}{\seq{w}} \\
+  \sld{G}{y}{\textit{first}(\seq{w})} \textit{ or } \seq{w}=\epsilon}
+    {\sstate{G}{\seq{x}\,y}{\seq{t}\,u}{\seq{w}}}
   \quad
   \inference{
-    \hasfix{u}{\infix{}{}}{G} & \sgd{G}{n}{u} \\
+    \hasfix{u}{\infix{}{}}{G} \\
     \stree{G}{y} & \sld{G}{\head{y}}{u} \\
     \stree{G}{z} & \sgd{G}{u}{\head{z}} \\
-    \sqstate{G}{\seq{x}}{n}{\seq{t}}}
-    {\sstate{G}{\seq{x}\,y\,z}{\seq{t}\,u}}
+    \sgd{G}{n}{u} & \sqstate{G}{\seq{x}}{n}{\seq{t}}{\seq{w}} \\
+    \sld{G}{z}{\textit{first}(\seq{w})} \textit{ or } \seq{w}=\epsilon}
+    {\sstate{G}{\seq{x}\,y\,z}{\seq{t}\,u}{\seq{w}}}
   \]
   
-  \inabox{\sqstate{G}{\seq{x}}{n}{\seq{t}}}
+  \inabox{\sqstate{G}{\seq{x}}{n}{\seq{t}}{\seq{t}}}
   \[
-  \inference{}{\sqstate{G}{}{n}{}}
+  \inference{}{\sqstate{G}{}{n}{}{}}
   \quad
   \inference{
-    \hasfix{u}{\prefix{}{}} & \sgd{G}{u}{m} \\
-    \sgd{G}{n}{u} & \sqstate{G}{\seq{x}}{n}{\seq{t}}}
-    {\sqstate{G}{\seq{x}}{m}{\seq{t}\,u}}
+    \hasfix{u}{\prefix{}{}}{G} & \sgd{G}{u}{m} \\
+    \sqstate{G}{\seq{x}}{0}{\seq{t}}{\seq{w}}}
+    {\sqstate{G}{\seq{x}}{m}{\seq{t}\,u}{\seq{w}}}
   \quad
   \inference{
-    \hasfix{u}{\infix{}{}} & \sgd{G}{u}{m} \\
+    \hasfix{u}{\infix{}{}}{G} & \sgd{G}{u}{m} \\
     \stree{G}{y} & \sld{G}{\head{y}}{u} \\
-    \sgd{G}{n}{u} & \sqstate{G}{\seq{x}}{n}{\seq{t}}}
-    {\sqstate{G}{\seq{x}\,y}{m}{\seq{t}\,u}}
+    \sgd{G}{n}{u} & \sqstate{G}{\seq{x}}{n}{\seq{t}}{\seq{w}}}
+    {\sqstate{G}{\seq{x}\,y}{m}{\seq{t}\,u}{\seq{w}}}
   \]
 
 \caption{Validity of parsing states}
@@ -186,70 +199,74 @@ Precedence rules:
       {\qstate{\seq{x}}{\seq{t}}{v\,\seq{w}}}
       {\state{\seq{x}\,v}{\seq{t}}{\seq{w}}}}
   \quad
-  \inference[P-ApplyS]
-    {\hasfix{v}{\suffix{}{}}{G} & \sgd{G}{u}{v}}
+  \inference[P-Suffix]
+    {\hasfix{v}{\suffix{}{}}{G} \\
+     \sgd{G}{\textit{last}(\seq{t})}{v} \textit{ or } \seq{t}=\epsilon}
     {\sstep{G}
-      {\state{\seq{x}\,y}{\seq{t}\,u}{v\,\seq{w}}}
-      {\state{\seq{x}\,(y\,v)}{\seq{t}\,u}{\seq{w}}}}
+      {\state{\seq{x}\,y}{\seq{t}}{v\,\seq{w}}}
+      {\state{\seq{x}\,(y\,v)}{\seq{t}}{\seq{w}}}}
   \]
 
   \[
-  \inference[P-PopP]
-    {\hasfix{u}{\prefix{}{}}{G} & \sld{G}{u}{v}}
-    {\sstep{G}
-      {\state{\seq{x}\,y}{\seq{t}\,u}{v\,\seq{w}}}
-      {\state{\seq{x}\,(y\,u)}{\seq{t}}{v\,\seq{w}}}}
-  \quad
-  \inference[P-PopI]
-    {\hasfix{u}{\infix{}{}}{G} & \sld{G}{u}{v}}
-    {\sstep{G}
-      {\state{\seq{x}\,y\,z}{\seq{t}\,u}{v\,\seq{w}}}
-      {\state{\seq{x}\,(y\,z\,u)}{\seq{t}}{v\,\seq{w}}}}
-  \]
-
-  \[
-  \inference[P-PushP]
+  \inference[P-PushPrefix]
     {\hasfix{v}{\prefix{}{}}{G}}
     {\sstep{G}
       {\qstate{\seq{x}}{\seq{t}}{v\,\seq{w}}}
       {\qstate{\seq{x}}{\seq{t}\,v}{\seq{w}}}}
   \quad
-  \inference[P-PushI]
-    {\hasfix{v}{\infix{}{}}{G} & \sgd{G}{u}{v}}
+  \inference[P-PushInfix]
+    {\hasfix{v}{\infix{}{}}{G} \\
+     \sgd{G}{\textit{last}(\seq{t})}{v} \textit{ or } \seq{t}=\epsilon}
     {\sstep{G}
-      {\state{\seq{x}}{\seq{t}\,u}{v\,\seq{w}}}
-      {\qstate{\seq{x}}{\seq{t}\,u\,v}{\seq{w}}}}
+      {\state{\seq{x}}{\seq{t}}{v\,\seq{w}}}
+      {\qstate{\seq{x}}{\seq{t}\,v}{\seq{w}}}}
   \]
 
   \[
-  \inference[P-EmptyS]
-    {\hasfix{v}{\suffix{}{}}{G}}
+  \inference[P-PopPrefix]
+    {\hasfix{u}{\prefix{}{}}{G} \\
+     \sld{G}{u}{\textit{first}(\seq{w})} \textit{ or } \seq{w}=\epsilon}
     {\sstep{G}
-      {\state{\seq{x}\,y}{}{v\,\seq{w}}}
-      {\state{\seq{x}\,(y\,v)}{}{\seq{w}}}}
+      {\state{\seq{x}\,y}{\seq{t}\,u}{\seq{w}}}
+      {\state{\seq{x}\,(y\,u)}{\seq{t}}{\seq{w}}}}
   \quad
-  \inference[P-EmptyI]
-    {\hasfix{u}{\infix{}{}}{G}}
+  \inference[P-PopInfix]
+    {\hasfix{u}{\infix{}{}}{G} \\
+     \sld{G}{u}{\textit{first}(\seq{w})} \textit{ or } \seq{w}=\epsilon}
     {\sstep{G}
-      {\state{\seq{x}}{}{v\,\seq{w}}}
-      {\qstate{\seq{x}}{v}{\seq{w}}}}
-  \]
-
-  \[
-  \inference[P-FinishP]
-    {\hasfix{u}{\prefix{}{}}{G}}
-    {\sstep{G}
-      {\state{\seq{x}\,y}{\seq{t}\,u}{}}
-      {\state{\seq{x}\,(y\,u)}{\seq{t}}{}}}
-  \quad
-  \inference[P-FinishI]
-    {\hasfix{u}{\infix{}{}}{G}}
-    {\sstep{G}
-      {\state{\seq{x}\,y\,z}{\seq{t}\,u}{}}
-      {\state{\seq{x}\,(y\,z\,u)}{\seq{t}}{}}}
+      {\state{\seq{x}\,y\,z}{\seq{t}\,u}{\seq{w}}}
+      {\state{\seq{x}\,(y\,z\,u)}{\seq{t}}{\seq{w}}}}
   \]
 
   \caption{Parsing algorithm}
+\end{figure}
+
+\begin{figure}
+  \begin{lstlisting}
+  function parse(ts):
+    let (x, vs) = parseRightArg(top, ts) in
+    assert vs is empty
+    return (x, vs)
+
+  function parseRightArg(u, v ts):
+    case v of
+      atom => parseSuffix(u, (v), ts)
+      prefix => let (x, ts') = parseRightArg(v, ts)
+                parseSuffix(u, (x v), ts')
+
+  function parseSuffix(u, x, ts):
+    case ts of
+      empty => (x, empty)
+      v ts =>
+        if u *> v and x <* v
+        then case v of
+          suffix => parseSuffix(u, (x v), ts)
+          infix => let (y, ts') = parseRightArg(v, ts)
+                   parseSuffix(u, (x y v), ts')
+        else (x, v ts)
+  \end{lstlisting}
+
+  \caption{Parsing algorithm (code)}
 \end{figure}
 
 \end{document}
