@@ -1,9 +1,9 @@
 mod builder;
-mod rule_stack;
+mod op;
+mod op_stack;
 mod shunt;
-mod shunter;
 
 pub use crate::lexing::{Lexeme, Span, Token};
-pub use builder::ShunterBuilder;
-pub use shunt::{Node, ShuntError};
-pub use shunter::{Prec, Rule, Shunter};
+pub use builder::{OpSpec, ShunterBuilder};
+pub use op::{Assoc, Fixity, Op, Prec};
+pub use shunt::{Node, ShuntError, Shunter};

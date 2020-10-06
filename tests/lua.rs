@@ -1,3 +1,6 @@
+// TODO: Work in progress
+#![allow(dead_code)]
+
 mod common;
 
 #[cfg(test)]
@@ -16,7 +19,7 @@ mod lua_tests {
             .constant("False", "false")
             .constant("Ellipses", "...")
             .constant("Break", "break")
-            .rules(vec![
+            .ops(vec![
                 circumfix!("Do", "do", "end"),
                 circumfix!("While", "while", "do", "end"),
                 circumfix!("If", "if", "then", "end"),
@@ -25,20 +28,20 @@ mod lua_tests {
                 circumfix!("Table", "{", "}"),
                 circumfix!("Parens", "(", ")"),
             ])
-            .rule_r(infix!("Exp", "^"))
-            .rules_r(vec![
+            .op_r(infix!("Exp", "^"))
+            .ops_r(vec![
                 prefix!("Not", "not"),
                 prefix!("?", "#"),
                 prefix!("Neg", "-"),
             ])
-            .rules_l(vec![
+            .ops_l(vec![
                 infix!("Mul", "*"),
                 infix!("Div", "/"),
                 infix!("Mod", "%"),
             ])
-            .rules_l(vec![infix!("Add", "+"), infix!("Sub", "-")])
-            .rule_l(infix!("Range", ".."))
-            .rules_l(vec![
+            .ops_l(vec![infix!("Add", "+"), infix!("Sub", "-")])
+            .op_l(infix!("Range", ".."))
+            .ops_l(vec![
                 infix!("Lt", "<"),
                 infix!("Gt", ">"),
                 infix!("Lte", "<="),
@@ -46,26 +49,26 @@ mod lua_tests {
                 infix!("Neq", "~="),
                 infix!("Eq", "=="),
             ])
-            .rule_r(infix!("And", "and"))
-            .rule_r(infix!("Or", "or"))
-            .rule_r(infix!("Colon", ":"))
-            .rules_l(vec![
+            .op_r(infix!("And", "and"))
+            .op_r(infix!("Or", "or"))
+            .op_r(infix!("Colon", ":"))
+            .ops_l(vec![
                 infix!("Dot", "."),
                 suffix!("Get", "[", "]"),
                 suffix!("Call", "(", ")"),
                 suffix!("CallTable", "{", "}"),
                 juxtapose!(),
             ])
-            .rule_r(infix!("Comma", ","))
-            .rule_r(infix!("Equals", "="))
-            .rule(prefix!("Return", "return"))
-            .rules_r(vec![
+            .op_r(infix!("Comma", ","))
+            .op_r(infix!("Equals", "="))
+            .op(prefix!("Return", "return"))
+            .ops_r(vec![
                 infix!("Else", "else"),
                 infix!("ElseIf", "elseif", "then"),
                 infix!("Repeat", "repeat", "until"),
                 infix!("Local", "local"),
             ])
-            .rule_r(infix!("Semi", ";"))
+            .op_r(infix!("Semi", ";"))
             .build()
     }
 

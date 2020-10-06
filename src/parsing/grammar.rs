@@ -1,7 +1,7 @@
 use crate::lexing::Lexer;
 use crate::lexing::Token as TokenTrait;
-use crate::shunting::Rule as CompiledRule;
-use crate::shunting::Shunter;
+use crate::shunting::OpSpec as RealOpSpec;
+use crate::shunting::{Assoc, Fixity, Shunter, ShunterBuilder};
 use std::collections::HashMap;
 
 pub type RegexPattern = String;
@@ -14,15 +14,7 @@ pub enum Token {
     Normal(u32),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Fixity {
-    Prefix,
-    Suffix,
-    Infix,
-    Circumfix,
-}
-
-pub struct Rule {
+pub struct OpSpec {
     pub name: String,
     pub fixity: Fixity,
     pub tokens: Vec<String>,
@@ -34,18 +26,12 @@ pub enum Pattern {
     Regex(RegexPattern),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Assoc {
-    Left,
-    Right,
-    NoAssoc,
-}
-
 pub struct Grammar {
     whitespace: RegexPattern,
     atoms: Vec<(Name, Pattern)>,
-    rules_by_name: HashMap<Name, Rule>,
-    rules_by_prec: Vec<(Assoc, Vec<Name>)>,
+    // TODO: Is this split needed?
+    ops_by_name: HashMap<Name, OpSpec>,
+    ops_by_prec: Vec<(Assoc, Vec<Name>)>,
 }
 
 pub struct Parser {
@@ -77,8 +63,8 @@ impl Grammar {
         Grammar {
             whitespace: whitespace.to_string(),
             atoms: Vec::new(),
-            rules_by_name: HashMap::new(),
-            rules_by_prec: Vec::new(),
+            ops_by_name: HashMap::new(),
+            ops_by_prec: Vec::new(),
         }
     }
 
@@ -94,39 +80,39 @@ impl Grammar {
         self
     }
 
-    pub fn rule_l(self, rule: Rule) -> Self {
-        self.add_rule(Assoc::Left, rule)
+    pub fn op_l(self, op: OpSpec) -> Self {
+        self.add_op(Assoc::Left, op)
     }
 
-    pub fn rule_r(self, rule: Rule) -> Self {
-        self.add_rule(Assoc::Right, rule)
+    pub fn op_r(self, op: OpSpec) -> Self {
+        self.add_op(Assoc::Right, op)
     }
 
-    pub fn rule(self, rule: Rule) -> Self {
-        assert!(rule.fixity != Fixity::Infix);
-        self.add_rule(Assoc::NoAssoc, rule)
+    pub fn op(self, op: OpSpec) -> Self {
+        assert!(op.fixity != Fixity::Infix);
+        self.add_op(Assoc::NoAssoc, op)
     }
 
-    fn add_rule(mut self, assoc: Assoc, rule: Rule) -> Self {
-        self.rules_by_prec.push((assoc, vec![rule.name.clone()]));
-        self.rules_by_name.insert(rule.name.clone(), rule);
+    fn add_op(mut self, assoc: Assoc, op: OpSpec) -> Self {
+        self.ops_by_prec.push((assoc, vec![op.name.clone()]));
+        self.ops_by_name.insert(op.name.clone(), op);
         self
     }
 
-    pub fn rules_l(self, rules: Vec<Rule>) -> Self {
-        self.add_rules(Assoc::Left, rules)
+    pub fn ops_l(self, ops: Vec<OpSpec>) -> Self {
+        self.add_ops(Assoc::Left, ops)
     }
 
-    pub fn rules_r(self, rules: Vec<Rule>) -> Self {
-        self.add_rules(Assoc::Right, rules)
+    pub fn ops_r(self, ops: Vec<OpSpec>) -> Self {
+        self.add_ops(Assoc::Right, ops)
     }
 
-    pub fn rules(self, rules: Vec<Rule>) -> Self {
+    pub fn ops(self, ops: Vec<OpSpec>) -> Self {
         let mut lprec_exists = false;
         let mut rprec_exists = false;
-        for rule in &rules {
-            match rule.fixity {
-                Fixity::Circumfix => (),
+        for op in &ops {
+            match op.fixity {
+                Fixity::Nilfix => (),
                 Fixity::Infix => {
                     lprec_exists = true;
                     rprec_exists = true;
@@ -142,25 +128,22 @@ impl Grammar {
         if lprec_exists && rprec_exists {
             panic!("Must specify associativity");
         }
-        self.add_rules(Assoc::NoAssoc, rules)
+        self.add_ops(Assoc::NoAssoc, ops)
     }
 
-    fn add_rules(mut self, assoc: Assoc, rules: Vec<Rule>) -> Self {
-        self.rules_by_prec
-            .push((assoc, rules.iter().map(|r| r.name.clone()).collect()));
-        for rule in rules {
-            self.rules_by_name.insert(rule.name.clone(), rule);
+    fn add_ops(mut self, assoc: Assoc, ops: Vec<OpSpec>) -> Self {
+        self.ops_by_prec
+            .push((assoc, ops.iter().map(|r| r.name.clone()).collect()));
+        for op in ops {
+            self.ops_by_name.insert(op.name.clone(), op);
         }
         self
     }
 
     // TODO: Errors
     pub fn build(mut self) -> Parser {
-        use Assoc::*;
-        use Fixity::*;
-
         let mut token_set = TokenSet::new();
-        let mut rules: Vec<CompiledRule<Token>> = Vec::new();
+        let mut shunter_builder = ShunterBuilder::new();
         let mut token_patterns: HashMap<Token, Pattern> = HashMap::new();
         for (name, pattern) in self.atoms {
             let token = match pattern.clone() {
@@ -168,51 +151,33 @@ impl Grammar {
                 Pattern::Regex(regex) => token_set.insert_regex(regex),
             };
             token_patterns.insert(token, pattern);
-            rules.push(CompiledRule {
+            let op = RealOpSpec {
                 name,
-                left_prec: None,
-                right_prec: None,
                 tokens: vec![token],
-            });
+                fixity: Fixity::Nilfix,
+            };
+            shunter_builder = shunter_builder.op(Assoc::NoAssoc, op);
         }
-        let mut prec = 10;
-        for (assoc, prec_group) in self.rules_by_prec {
-            for rule_name in prec_group {
-                let rule = self.rules_by_name.remove(&rule_name).unwrap();
-                let Rule {
-                    name,
-                    fixity,
-                    tokens: constants,
-                } = rule;
-                let (left_prec, right_prec) = match (fixity, assoc) {
-                    (Prefix, Left) => (None, Some(prec)),
-                    (Prefix, Right) => (None, Some(prec + 1)),
-                    (Prefix, NoAssoc) => (None, Some(prec)),
-                    (Suffix, Left) => (Some(prec + 1), None),
-                    (Suffix, Right) => (Some(prec), None),
-                    (Suffix, NoAssoc) => (Some(prec), None),
-                    (Infix, Left) => (Some(prec + 1), Some(prec)),
-                    (Infix, Right) => (Some(prec), Some(prec + 1)),
-                    (Circumfix, _) => (None, None),
-                    (Infix, NoAssoc) => panic!("Must specify an associativity"),
-                };
+        for (assoc, prec_group) in self.ops_by_prec {
+            let mut ops = vec![];
+            for op_name in prec_group {
+                let op = self.ops_by_name.remove(&op_name).unwrap();
                 let mut tokens = Vec::new();
-                for constant in constants {
+                for constant in op.tokens {
                     let token = token_set.insert_constant(constant.clone());
                     token_patterns.insert(token, Pattern::Constant(constant));
                     tokens.push(token);
                 }
-                rules.push(CompiledRule {
-                    name,
-                    left_prec,
-                    right_prec,
+                ops.push(RealOpSpec {
+                    name: op.name,
                     tokens,
+                    fixity: op.fixity,
                 });
             }
-            prec += 10;
+            shunter_builder = shunter_builder.ops(assoc, ops);
         }
         let lexer = token_set.into_lexer(self.whitespace);
-        let shunter = Shunter::new(rules);
+        let shunter = shunter_builder.build();
         Parser {
             lexer,
             shunter,
@@ -265,7 +230,7 @@ impl TokenSet {
 #[macro_export]
 macro_rules! prefix {
     ( $name:expr, $( $token:expr ),* ) => {
-        $crate::parsing::Rule {
+        $crate::parsing::OpSpec {
             name: ::std::primitive::str::to_owned($name),
             fixity: $crate::parsing::Fixity::Prefix,
             tokens: vec![$( ::std::primitive::str::to_owned($token) ),*],
@@ -276,7 +241,7 @@ macro_rules! prefix {
 #[macro_export]
 macro_rules! suffix {
     ( $name:expr, $( $token:expr ),* ) => {
-        $crate::parsing::Rule {
+        $crate::parsing::OpSpec {
             name: ::std::primitive::str::to_owned($name),
             fixity: $crate::parsing::Fixity::Suffix,
             tokens: vec![$( ::std::primitive::str::to_owned($token) ),*],
@@ -287,7 +252,7 @@ macro_rules! suffix {
 #[macro_export]
 macro_rules! infix {
     ( $name:expr, $( $token:expr ),* ) => {
-        $crate::parsing::Rule {
+        $crate::parsing::OpSpec {
             name: ::std::primitive::str::to_owned($name),
             fixity: $crate::parsing::Fixity::Infix,
             tokens: vec![$( ::std::primitive::str::to_owned($token) ),*],
@@ -298,9 +263,9 @@ macro_rules! infix {
 #[macro_export]
 macro_rules! circumfix {
     ( $name:expr, $( $token:expr ),* ) => {
-        $crate::parsing::Rule {
+        $crate::parsing::OpSpec {
             name: ::std::primitive::str::to_owned($name),
-            fixity: $crate::parsing::Fixity::Circumfix,
+            fixity: $crate::parsing::Fixity::Nilfix,
             tokens: vec![$( ::std::primitive::str::to_owned($token) ),*],
         }
     };
@@ -309,7 +274,7 @@ macro_rules! circumfix {
 #[macro_export]
 macro_rules! juxtapose {
     () => {
-        $crate::parsing::Rule {
+        $crate::parsing::OpSpec {
             name: "$Juxtapose".to_owned(),
             fixity: $crate::parsing::Fixity::Infix,
             tokens: vec![],

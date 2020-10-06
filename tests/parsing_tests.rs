@@ -10,7 +10,7 @@ mod parsing_tests {
     fn test_left_associativity() {
         let parser = Grammar::new(WHITESPACE_REGEX)
             .regex("Var", "[a-zA-Z]+")
-            .rules_l(vec![
+            .ops_l(vec![
                 infix!("Plus", "+"),
                 infix!("Minus", "-"),
                 infix!("ListComprehension", "for", "in"),
@@ -41,7 +41,7 @@ mod parsing_tests {
     fn test_right_associativity() {
         let parser = Grammar::new(WHITESPACE_REGEX)
             .regex("Var", "[a-zA-Z]+")
-            .rules_r(vec![
+            .ops_r(vec![
                 infix!("And", "&&"),
                 infix!("Or", "||"),
                 infix!("Ternary", "?", ":"),
@@ -70,8 +70,9 @@ mod parsing_tests {
     fn test_circumfix() {
         let parser = Grammar::new(WHITESPACE_REGEX)
             .regex("Var", "[a-zA-Z]+")
-            .rule_l(infix!("Mul", "*"))
-            .rules_l(vec![infix!("Add", "+"), circumfix!("Parens", "(", ")")])
+            .op(circumfix!("Parens", "(", ")"))
+            .op_l(infix!("Mul", "*"))
+            .op_l(infix!("Add", "+"))
             .build();
         let parse = |input: &str| run_parser(&parser, input);
 
@@ -83,9 +84,9 @@ mod parsing_tests {
     fn test_variable_precedence() {
         let parser = Grammar::new(WHITESPACE_REGEX)
             .regex("Var", "[a-zA-Z]+")
-            .rule_l(prefix!("Neg", "-"))
-            .rules_l(vec![infix!("Mul", "*"), infix!("Div", "/")])
-            .rules_l(vec![infix!("Add", "+"), infix!("Sub", "-")])
+            .op_l(prefix!("Neg", "-"))
+            .ops_l(vec![infix!("Mul", "*"), infix!("Div", "/")])
+            .ops_l(vec![infix!("Add", "+"), infix!("Sub", "-")])
             .build();
         let parse = |input: &str| run_parser(&parser, input);
 
@@ -97,9 +98,9 @@ mod parsing_tests {
     fn test_juxt_prec() {
         let parser = Grammar::new(WHITESPACE_REGEX)
             .regex("Var", "[a-zA-Z]+")
-            .rule_l(infix!("Mul", "*"))
-            .rule_l(juxtapose!())
-            .rule_l(infix!("Add", "+"))
+            .op_l(infix!("Mul", "*"))
+            .op_l(juxtapose!())
+            .op_l(infix!("Add", "+"))
             .build();
         let parse = |input: &str| run_parser(&parser, input);
 
@@ -112,7 +113,7 @@ mod parsing_tests {
             .regex("Number", "0|[1-9][0-9]*")
             .constant("True", "true")
             .constant("False", "false")
-            .rules_l(vec![
+            .ops_l(vec![
                 infix!("Inc", "++"),
                 suffix!("Subs", "[", "]"),
                 infix!("Dot", "."),

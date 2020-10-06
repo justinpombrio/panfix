@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod shunting_tests {
-    use panfix::shunting::{Lexeme, ShuntError, Shunter, ShunterBuilder, Token};
+    use panfix::shunting::{Assoc, Lexeme, OpSpec, ShuntError, Shunter, ShunterBuilder, Token};
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct CharToken(char);
@@ -21,34 +21,40 @@ mod shunting_tests {
     }
 
     fn grammar() -> Shunter<CharToken> {
+        fn nilfix(name: &str, tokens: &str) -> OpSpec<CharToken> {
+            OpSpec::nilfix(name.to_owned(), to_tokens(tokens))
+        }
+        fn prefix(name: &str, tokens: &str) -> OpSpec<CharToken> {
+            OpSpec::prefix(name.to_owned(), to_tokens(tokens))
+        }
+        fn suffix(name: &str, tokens: &str) -> OpSpec<CharToken> {
+            OpSpec::suffix(name.to_owned(), to_tokens(tokens))
+        }
+        fn infix(name: &str, tokens: &str) -> OpSpec<CharToken> {
+            OpSpec::infix(name.to_owned(), to_tokens(tokens))
+        }
+        fn to_tokens(tokens_str: &str) -> Vec<CharToken> {
+            tokens_str.chars().map(CharToken).collect()
+        }
+
         ShunterBuilder::new()
-            .nilfix("1", CharToken('1'))
-            .nilfix("2", CharToken('2'))
-            .nilfix("3", CharToken('3'))
-            .prefix("-", CharToken('-'), 20)
-            .prefix("^", CharToken('^'), 80)
-            .suffix("!", CharToken('!'), 20)
-            .infixl("+", CharToken('+'), 60)
-            .infixr("*", CharToken('*'), 40)
-            // Suffix mixfix
-            .mixfix("@", Some(50), None, vec![CharToken('('), CharToken(')')])
-            // Prefix mixfix
-            .mixfix(
-                "s",
-                None,
-                Some(80),
-                vec![CharToken('['), CharToken('/'), CharToken(']')],
+            .ops(
+                Assoc::NoAssoc,
+                vec![
+                    nilfix("1", "1"),
+                    nilfix("2", "2"),
+                    nilfix("3", "3"),
+                    nilfix("b", "{}"),
+                ],
             )
-            // Circumfix mixfix
-            .mixfix("b", None, None, vec![CharToken('{'), CharToken('}')])
-            // Infix mixfix
-            .mixfix(
-                "?",
-                Some(50),
-                Some(51),
-                vec![CharToken('?'), CharToken(':')],
+            .ops(Assoc::Left, vec![prefix("-", "-"), suffix("!", "!")])
+            .op(Assoc::Right, infix("*", "*"))
+            .ops(
+                Assoc::Right,
+                vec![infix("?", "?:"), OpSpec::juxtapose(), suffix("@", "()")],
             )
-            .juxtapose_prec(50, 50)
+            .op(Assoc::Left, infix("+", "+"))
+            .ops(Assoc::Right, vec![prefix("^", "^"), prefix("s", "[/]")])
             .build()
     }
 
@@ -69,10 +75,10 @@ mod shunting_tests {
                     break;
                 }
                 Ok(node) => {
-                    let ch = match node.rule.name.as_ref() {
+                    let ch = match node.op.name() {
                         "$Juxtapose" => 'J',
                         "$MissingAtom" => 'M',
-                        _ => node.rule.tokens[0].0,
+                        _ => node.op.tokens()[0].0,
                     };
                     output.push(ch);
                 }
@@ -95,10 +101,10 @@ mod shunting_tests {
     }
 
     #[test]
-    fn test_missing_atom() {
+    fn test_missing() {
         assert_eq!(shunt(""), "M");
         assert_eq!(shunt("+"), "MM+");
-        assert_eq!(shunt("123"), "12J3J");
+        assert_eq!(shunt("123"), "123JJ");
     }
 
     #[test]

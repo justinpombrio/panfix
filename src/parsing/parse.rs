@@ -1,9 +1,9 @@
-use super::parser::{Fixity, Parser, Pattern, Token};
+use super::grammar::{Parser, Pattern, Token};
 use crate::lexing::Span;
 use crate::rpn_visitor::Stack as RpnStack;
 use crate::rpn_visitor::Visitor as RpnVisitor;
 use crate::rpn_visitor::VisitorIter as RpnVisitorIter;
-use crate::shunting::{Node, ShuntError};
+use crate::shunting::{Fixity, Node, ShuntError};
 use std::error::Error;
 use std::fmt;
 
@@ -20,6 +20,7 @@ pub struct Parsed<'a> {
     stack: RpnStack<Node<'a, Token>>,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct Visitor<'a> {
     source: &'a str,
     visitor: RpnVisitor<'a, Node<'a, Token>>,
@@ -36,7 +37,7 @@ pub enum ParseError {
         pos: Position,
     },
     MissingSeparator {
-        rule_name: String,
+        op_name: String,
         separator: String,
         pos: Position,
     },
@@ -59,10 +60,10 @@ impl fmt::Display for ParseError {
                "Parsing failed. It did not expect to find '{}' on its own. Line {} ({}:{})",
                separator, pos.line, pos.line, pos.column
             ),
-            MissingSeparator{rule_name, separator, pos} => write!(
+            MissingSeparator{op_name, separator, pos} => write!(
             f,
             "Parsing failed. It expected to find '{}' as part of {}, but could not. Line {} ({}:{})",
-            rule_name, separator, pos.line, pos.line, pos.column
+            op_name, separator, pos.line, pos.line, pos.column
             ),
         }
     }
@@ -92,7 +93,7 @@ impl Parser {
                     return Err(ParseError::ExtraSeparator { separator, pos });
                 }
                 Err(ShuntError::MissingSep {
-                    rule_name,
+                    op_name,
                     span,
                     token,
                 }) => {
@@ -105,7 +106,7 @@ impl Parser {
                         Pattern::Regex(regex) => format!("/{}/", regex),
                     };
                     return Err(ParseError::MissingSeparator {
-                        rule_name,
+                        op_name,
                         separator,
                         pos,
                     });
@@ -132,31 +133,18 @@ impl<'a> Parsed<'a> {
 
 impl<'a> Visitor<'a> {
     pub fn name(&self) -> &'a str {
-        &self.visitor.node().rule.name
+        &self.visitor.node().op.name()
     }
 
-    pub fn fixity(&self) -> Option<Fixity> {
-        use Fixity::*;
-
-        let rule = self.visitor.node().rule;
-        match (
-            rule.tokens.len(),
-            rule.left_prec.is_some(),
-            rule.right_prec.is_some(),
-        ) {
-            (1, false, false) => None,
-            (_, false, false) => Some(Circumfix),
-            (_, false, true) => Some(Prefix),
-            (_, true, false) => Some(Suffix),
-            (_, true, true) => Some(Infix),
-        }
+    pub fn fixity(&self) -> Fixity {
+        self.visitor.node().op.fixity()
     }
 
-    pub fn rule_patterns<'p>(&self, parser: &'p Parser) -> Vec<Option<&'p Pattern>> {
+    pub fn op_patterns<'p>(&self, parser: &'p Parser) -> Vec<Option<&'p Pattern>> {
         self.visitor
             .node()
-            .rule
-            .tokens
+            .op
+            .tokens()
             .iter()
             .map(|tok| parser.token_patterns.get(tok))
             .collect()
