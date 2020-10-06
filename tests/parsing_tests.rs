@@ -84,7 +84,7 @@ mod parsing_tests {
     fn test_variable_precedence() {
         let parser = Grammar::new(WHITESPACE_REGEX)
             .regex("Var", "[a-zA-Z]+")
-            .op_l(prefix!("Neg", "-"))
+            .op(prefix!("Neg", "-"))
             .ops_l(vec![infix!("Mul", "*"), infix!("Div", "/")])
             .ops_l(vec![infix!("Add", "+"), infix!("Sub", "-")])
             .build();

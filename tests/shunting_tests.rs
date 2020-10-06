@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod shunting_tests {
-    use panfix::shunting::{Assoc, Lexeme, OpSpec, ShuntError, Shunter, ShunterBuilder, Token};
+    use panfix::shunting::{Lexeme, OpSpec, ShuntError, Shunter, ShunterBuilder, Token};
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct CharToken(char);
@@ -38,23 +38,19 @@ mod shunting_tests {
         }
 
         ShunterBuilder::new()
-            .ops(
-                Assoc::NoAssoc,
-                vec![
-                    nilfix("1", "1"),
-                    nilfix("2", "2"),
-                    nilfix("3", "3"),
-                    nilfix("b", "{}"),
-                ],
-            )
-            .ops(Assoc::Left, vec![prefix("-", "-"), suffix("!", "!")])
-            .op(Assoc::Right, infix("*", "*"))
-            .ops(
-                Assoc::Right,
-                vec![infix("?", "?:"), OpSpec::juxtapose(), suffix("@", "()")],
-            )
-            .op(Assoc::Left, infix("+", "+"))
-            .ops(Assoc::Right, vec![prefix("^", "^"), prefix("s", "[/]")])
+            .op(nilfix("1", "1"))
+            .op(nilfix("2", "2"))
+            .op(nilfix("3", "3"))
+            .op(nilfix("b", "{}"))
+            .ops_l(vec![prefix("-", "-"), suffix("!", "!")])
+            .op_r(infix("*", "*"))
+            .ops_r(vec![
+                infix("?", "?:"),
+                OpSpec::juxtapose(),
+                suffix("@", "()"),
+            ])
+            .op_l(infix("+", "+"))
+            .ops_r(vec![prefix("^", "^"), prefix("s", "[/]")])
             .build()
     }
 

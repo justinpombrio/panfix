@@ -6,7 +6,6 @@ pub type Prec = u16;
 pub enum Assoc {
     Left,
     Right,
-    NoAssoc,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -59,22 +58,16 @@ impl<'g, T: Token> Op<T> {
 
 impl<T: Token> Op<T> {
     pub fn new(name: String, tokens: Vec<T>, prec: Prec, assoc: Assoc, fixity: Fixity) -> Op<T> {
-        use Assoc::{Left, NoAssoc, Right};
+        use Assoc::{Left, Right};
         use Fixity::{Infix, Nilfix, Prefix, Suffix};
         let (left_prec, right_prec) = match (fixity, assoc) {
-            (Nilfix, NoAssoc) => (None, None),
-            (Nilfix, Left) | (Nilfix, Right) => {
-                panic!("Nilfix op {} can't have an associativity", name)
-            }
+            (Nilfix, _) => (None, None),
             (Prefix, Left) => (None, Some(prec)),
             (Prefix, Right) => (None, Some(prec)),
-            (Prefix, NoAssoc) => (None, Some(prec)), // allowed if only op in group
             (Suffix, Left) => (Some(prec), None),
             (Suffix, Right) => (Some(prec - 1), None),
-            (Suffix, NoAssoc) => (Some(prec), None), // allowed if only op in group
             (Infix, Left) => (Some(prec), Some(prec)),
             (Infix, Right) => (Some(prec - 1), Some(prec)),
-            (Infix, NoAssoc) => panic!("Op {} must have an associativity", name),
         };
         Op {
             name,

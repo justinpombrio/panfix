@@ -17,47 +17,31 @@ pub struct ShunterBuilder<T: Token> {
 
 impl<T: Token> OpSpec<T> {
     pub fn juxtapose() -> Self {
-        OpSpec {
-            name: "$Juxtapose".to_owned(),
-            tokens: vec![],
-            fixity: Fixity::Infix,
-        }
+        Self::new("$Juxtapose".to_owned(), vec![], Fixity::Infix)
     }
 
     pub fn nilfix(name: String, tokens: Vec<T>) -> Self {
-        OpSpec {
-            name,
-            tokens,
-            fixity: Fixity::Nilfix,
-        }
+        Self::new(name, tokens, Fixity::Nilfix)
     }
 
     pub fn prefix(name: String, tokens: Vec<T>) -> Self {
-        OpSpec {
-            name,
-            tokens,
-            fixity: Fixity::Prefix,
-        }
+        Self::new(name, tokens, Fixity::Prefix)
     }
 
     pub fn suffix(name: String, tokens: Vec<T>) -> Self {
-        OpSpec {
-            name,
-            tokens,
-            fixity: Fixity::Suffix,
-        }
+        Self::new(name, tokens, Fixity::Suffix)
     }
 
     pub fn infix(name: String, tokens: Vec<T>) -> Self {
+        Self::new(name, tokens, Fixity::Infix)
+    }
+
+    fn new(name: String, tokens: Vec<T>, fixity: Fixity) -> Self {
         OpSpec {
             name,
             tokens,
-            fixity: Fixity::Infix,
+            fixity,
         }
-    }
-
-    fn to_op(self, prec: Prec, assoc: Assoc) -> Op<T> {
-        Op::new(self.name, self.tokens, prec, assoc, self.fixity)
     }
 }
 
@@ -65,21 +49,68 @@ impl<T: Token> ShunterBuilder<T> {
     pub fn new() -> ShunterBuilder<T> {
         ShunterBuilder {
             ops: vec![],
-            prec: 2,
+            prec: 0,
         }
     }
 
-    pub fn op(mut self, assoc: Assoc, op: OpSpec<T>) -> Self {
-        self.ops.push(op.to_op(self.prec, assoc));
+    pub fn op(self, op: OpSpec<T>) -> Self {
+        use Fixity::*;
+        match op.fixity {
+            Nilfix => self.add_nilfix_op(op),
+            Prefix | Suffix => self.add_op(Assoc::Left, op),
+            Infix => panic!("Must provide associativity for infix operator {}", op.name),
+        }
+    }
+
+    pub fn op_l(self, op: OpSpec<T>) -> Self {
+        use Fixity::*;
+        match op.fixity {
+            Infix => self.add_op(Assoc::Left, op),
+            _ => panic!("The operator {} is at its own precedence level, so it does not need an associativity", op.name),
+        }
+    }
+
+    pub fn op_r(self, op: OpSpec<T>) -> Self {
+        use Fixity::*;
+        match op.fixity {
+            Infix => self.add_op(Assoc::Right, op),
+            _ => panic!("The operator {} is at its own precedence level, so it does not need an associativity", op.name),
+        }
+    }
+
+    pub fn ops_l(self, ops: Vec<OpSpec<T>>) -> Self {
+        self.add_ops(Assoc::Left, ops)
+    }
+
+    pub fn ops_r(self, ops: Vec<OpSpec<T>>) -> Self {
+        self.add_ops(Assoc::Right, ops)
+    }
+
+    fn add_op(mut self, assoc: Assoc, op: OpSpec<T>) -> Self {
         self.prec += 1;
+        self.ops
+            .push(Op::new(op.name, op.tokens, self.prec, assoc, op.fixity));
         self
     }
 
-    pub fn ops(mut self, assoc: Assoc, ops: Vec<OpSpec<T>>) -> Self {
-        for op in ops {
-            self.ops.push(op.to_op(self.prec, assoc));
-        }
+    fn add_nilfix_op(mut self, op: OpSpec<T>) -> Self {
+        assert_eq!(self.prec, 0, "Since they have the tightest precedence, nilfix operators like {} must be listed first", op.name);
+        self.ops
+            .push(Op::new(op.name, op.tokens, 0, Assoc::Left, Fixity::Nilfix));
+        self
+    }
+
+    fn add_ops(mut self, assoc: Assoc, ops: Vec<OpSpec<T>>) -> Self {
         self.prec += 1;
+        for op in ops {
+            assert!(
+                op.fixity != Fixity::Nilfix,
+                "The operator {} does not need an associativity",
+                op.name
+            );
+            self.ops
+                .push(Op::new(op.name, op.tokens, self.prec, assoc, op.fixity));
+        }
         self
     }
 
@@ -129,7 +160,7 @@ impl<T: Token> ShunterBuilder<T> {
             "$MissingAtom".to_owned(),
             vec![],
             0,
-            Assoc::NoAssoc,
+            Assoc::Left,
             Fixity::Nilfix,
         );
         let juxtapose = juxtapose.unwrap_or(Op::new(

@@ -19,15 +19,13 @@ mod lua_tests {
             .constant("False", "false")
             .constant("Ellipses", "...")
             .constant("Break", "break")
-            .ops(vec![
-                circumfix!("Do", "do", "end"),
-                circumfix!("While", "while", "do", "end"),
-                circumfix!("If", "if", "then", "end"),
-                circumfix!("For", "for", "do", "end"),
-                circumfix!("Function", "function", "(", ")", "end"),
-                circumfix!("Table", "{", "}"),
-                circumfix!("Parens", "(", ")"),
-            ])
+            .op(circumfix!("Do", "do", "end"))
+            .op(circumfix!("While", "while", "do", "end"))
+            .op(circumfix!("If", "if", "then", "end"))
+            .op(circumfix!("For", "for", "do", "end"))
+            .op(circumfix!("Function", "function", "(", ")", "end"))
+            .op(circumfix!("Table", "{", "}"))
+            .op(circumfix!("Parens", "(", ")"))
             .op_r(infix!("Exp", "^"))
             .ops_r(vec![
                 prefix!("Not", "not"),

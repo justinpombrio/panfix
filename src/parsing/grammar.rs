@@ -1,11 +1,10 @@
 use crate::lexing::Lexer;
 use crate::lexing::Token as TokenTrait;
 use crate::shunting::OpSpec as RealOpSpec;
-use crate::shunting::{Assoc, Fixity, Shunter, ShunterBuilder};
+use crate::shunting::{Fixity, Shunter, ShunterBuilder};
 use std::collections::HashMap;
 
 pub type RegexPattern = String;
-type Name = String;
 
 #[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -28,10 +27,9 @@ pub enum Pattern {
 
 pub struct Grammar {
     whitespace: RegexPattern,
-    atoms: Vec<(Name, Pattern)>,
-    // TODO: Is this split needed?
-    ops_by_name: HashMap<Name, OpSpec>,
-    ops_by_prec: Vec<(Assoc, Vec<Name>)>,
+    token_set: TokenSet,
+    builder: ShunterBuilder<Token>,
+    token_patterns: HashMap<Token, Pattern>,
 }
 
 pub struct Parser {
@@ -62,126 +60,90 @@ impl Grammar {
     pub fn new(whitespace: &str) -> Grammar {
         Grammar {
             whitespace: whitespace.to_string(),
-            atoms: Vec::new(),
-            ops_by_name: HashMap::new(),
-            ops_by_prec: Vec::new(),
+            token_set: TokenSet::new(),
+            builder: ShunterBuilder::new(),
+            token_patterns: HashMap::new(),
         }
     }
 
-    pub fn regex(mut self, name: &str, regex: &str) -> Self {
+    pub fn regex(self, name: &str, regex: &str) -> Self {
         let pattern = Pattern::Regex(regex.to_owned());
-        self.atoms.push((name.to_owned(), pattern));
-        self
+        self.add_atom(name.to_owned(), pattern)
     }
 
-    pub fn constant(mut self, name: &str, constant: &str) -> Self {
+    pub fn constant(self, name: &str, constant: &str) -> Self {
         let pattern = Pattern::Constant(constant.to_owned());
-        self.atoms.push((name.to_owned(), pattern));
+        self.add_atom(name.to_owned(), pattern)
+    }
+
+    pub fn op_l(mut self, op: OpSpec) -> Self {
+        let op = self.convert_op(op);
+        self.builder = self.builder.op_l(op);
         self
     }
 
-    pub fn op_l(self, op: OpSpec) -> Self {
-        self.add_op(Assoc::Left, op)
-    }
-
-    pub fn op_r(self, op: OpSpec) -> Self {
-        self.add_op(Assoc::Right, op)
-    }
-
-    pub fn op(self, op: OpSpec) -> Self {
-        assert!(op.fixity != Fixity::Infix);
-        self.add_op(Assoc::NoAssoc, op)
-    }
-
-    fn add_op(mut self, assoc: Assoc, op: OpSpec) -> Self {
-        self.ops_by_prec.push((assoc, vec![op.name.clone()]));
-        self.ops_by_name.insert(op.name.clone(), op);
+    pub fn op_r(mut self, op: OpSpec) -> Self {
+        let op = self.convert_op(op);
+        self.builder = self.builder.op_r(op);
         self
     }
 
-    pub fn ops_l(self, ops: Vec<OpSpec>) -> Self {
-        self.add_ops(Assoc::Left, ops)
-    }
-
-    pub fn ops_r(self, ops: Vec<OpSpec>) -> Self {
-        self.add_ops(Assoc::Right, ops)
-    }
-
-    pub fn ops(self, ops: Vec<OpSpec>) -> Self {
-        let mut lprec_exists = false;
-        let mut rprec_exists = false;
-        for op in &ops {
-            match op.fixity {
-                Fixity::Nilfix => (),
-                Fixity::Infix => {
-                    lprec_exists = true;
-                    rprec_exists = true;
-                }
-                Fixity::Prefix => {
-                    rprec_exists = true;
-                }
-                Fixity::Suffix => {
-                    lprec_exists = true;
-                }
-            }
-        }
-        if lprec_exists && rprec_exists {
-            panic!("Must specify associativity");
-        }
-        self.add_ops(Assoc::NoAssoc, ops)
-    }
-
-    fn add_ops(mut self, assoc: Assoc, ops: Vec<OpSpec>) -> Self {
-        self.ops_by_prec
-            .push((assoc, ops.iter().map(|r| r.name.clone()).collect()));
-        for op in ops {
-            self.ops_by_name.insert(op.name.clone(), op);
-        }
+    pub fn op(mut self, op: OpSpec) -> Self {
+        let op = self.convert_op(op);
+        self.builder = self.builder.op(op);
         self
+    }
+
+    pub fn ops_l(mut self, ops: Vec<OpSpec>) -> Self {
+        let ops = ops.into_iter().map(|op| self.convert_op(op)).collect();
+        self.builder = self.builder.ops_l(ops);
+        self
+    }
+
+    pub fn ops_r(mut self, ops: Vec<OpSpec>) -> Self {
+        let ops = ops.into_iter().map(|op| self.convert_op(op)).collect();
+        self.builder = self.builder.ops_r(ops);
+        self
+    }
+
+    fn add_atom(mut self, name: String, pattern: Pattern) -> Self {
+        let token = match pattern.clone() {
+            Pattern::Constant(constant) => self.token_set.insert_constant(constant),
+            Pattern::Regex(regex) => self.token_set.insert_regex(regex),
+        };
+        self.token_patterns.insert(token, pattern);
+        let op = RealOpSpec {
+            name,
+            tokens: vec![token],
+            fixity: Fixity::Nilfix,
+        };
+        self.builder = self.builder.op(op);
+        self
+    }
+
+    fn convert_op(&mut self, op: OpSpec) -> RealOpSpec<Token> {
+        let mut tokens = vec![];
+        for constant in op.tokens {
+            let token = self.token_set.insert_constant(constant.clone());
+            self.token_patterns
+                .insert(token, Pattern::Constant(constant));
+            tokens.push(token);
+        }
+        RealOpSpec {
+            name: op.name,
+            tokens,
+            fixity: op.fixity,
+        }
     }
 
     // TODO: Errors
-    pub fn build(mut self) -> Parser {
-        let mut token_set = TokenSet::new();
-        let mut shunter_builder = ShunterBuilder::new();
-        let mut token_patterns: HashMap<Token, Pattern> = HashMap::new();
-        for (name, pattern) in self.atoms {
-            let token = match pattern.clone() {
-                Pattern::Constant(constant) => token_set.insert_constant(constant),
-                Pattern::Regex(regex) => token_set.insert_regex(regex),
-            };
-            token_patterns.insert(token, pattern);
-            let op = RealOpSpec {
-                name,
-                tokens: vec![token],
-                fixity: Fixity::Nilfix,
-            };
-            shunter_builder = shunter_builder.op(Assoc::NoAssoc, op);
-        }
-        for (assoc, prec_group) in self.ops_by_prec {
-            let mut ops = vec![];
-            for op_name in prec_group {
-                let op = self.ops_by_name.remove(&op_name).unwrap();
-                let mut tokens = Vec::new();
-                for constant in op.tokens {
-                    let token = token_set.insert_constant(constant.clone());
-                    token_patterns.insert(token, Pattern::Constant(constant));
-                    tokens.push(token);
-                }
-                ops.push(RealOpSpec {
-                    name: op.name,
-                    tokens,
-                    fixity: op.fixity,
-                });
-            }
-            shunter_builder = shunter_builder.ops(assoc, ops);
-        }
-        let lexer = token_set.into_lexer(self.whitespace);
-        let shunter = shunter_builder.build();
+    pub fn build(self) -> Parser {
+        let lexer = self.token_set.into_lexer(self.whitespace);
+        let shunter = self.builder.build();
         Parser {
             lexer,
             shunter,
-            token_patterns,
+            token_patterns: self.token_patterns,
         }
     }
 }
