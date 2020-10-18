@@ -83,7 +83,6 @@ impl Op {
             None => "_".to_owned(),
             Some(right) => format!("{}", right),
         };
-        println!("op {} {} {}", left, name, right);
         Op {
             name: name.to_owned(),
             prec,

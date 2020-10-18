@@ -101,16 +101,13 @@ impl<'s, I: Iterator<Item = Lexeme>> Parser<'s, I> {
                     let last_child = self.parse_expr(g, rprec)?;
                     children.push(last_child);
                 }
-                println!("  parse -- found atom: {}", lexeme.text(self.source));
                 ParseTree::new(self.source, op, lexeme.span, children)
             } else {
                 // E.g. "2 + *".
-                println!("  parse -- missing atom");
                 ParseTree::new_missing_atom(self.source, g, lexeme.span.0)
             }
         } else {
             // E.g. the entire file is "2 +".
-            println!("  parse -- missing atom (EOF)");
             ParseTree::new_missing_atom(self.source, g, self.source.len())
         };
         self.parse_suffix(g, tree, prec)
@@ -126,7 +123,6 @@ impl<'s, I: Iterator<Item = Lexeme>> Parser<'s, I> {
             if let Some(op) = g.token_to_suffixy_op[lexeme.token].as_ref() {
                 if op.left_prec.unwrap() <= prec {
                     self.lexemes.next();
-                    println!("  parse -- suffix {}", op.name);
                     let mut children = vec![expr];
                     let followers = self.parse_followers(op)?;
                     children.extend(followers);
@@ -144,7 +140,6 @@ impl<'s, I: Iterator<Item = Lexeme>> Parser<'s, I> {
                 // E.g. you're looking to extend the expr "2 * 3" and find the next token is "4"
                 let op = &g.juxtapose;
                 if op.left_prec.unwrap() <= prec {
-                    println!("  parse -- juxtapose");
                     let last_child = self.parse_expr(g, op.right_prec.unwrap())?;
                     let children = vec![expr, last_child];
                     let tree = ParseTree::new(self.source, op, lexeme.span, children);
@@ -173,7 +168,6 @@ impl<'s, I: Iterator<Item = Lexeme>> Parser<'s, I> {
                 return Err(self.err_waiting_for(*expected_token, lexeme));
             }
             children.push(tree);
-            println!("  parse -- follower of {}", op.name);
         }
         Ok(children)
     }

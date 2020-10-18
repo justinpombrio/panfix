@@ -3,21 +3,21 @@ mod common;
 mod parsing {
     use super::common::run_parser;
     use panfix::parsing::{Grammar, WHITESPACE_REGEX};
-    use panfix::{circumfix, infix, juxtapose, prefix, suffix};
+    use panfix::{juxtapose, op};
 
     #[test]
     fn test_left_associativity() {
         let parser = Grammar::new(WHITESPACE_REGEX)
             .regex("Var", "[a-zA-Z]+")
             .ops_l(vec![
-                infix!("Plus", "+"),
-                infix!("Minus", "-"),
-                infix!("ListComprehension", "for", "in"),
-                prefix!("Not", "!"),
-                prefix!("Lambda", "λ", "."),
-                suffix!("Div100", "%"),
-                suffix!("Subs", "[", "]"),
-                suffix!("ForthDefn", ":", ";"),
+                op!(Plus: _ "+" _),
+                op!(Minus: _ "-" _),
+                op!(ListComprehension: _ "for" "in" _),
+                op!(Not: "!" _),
+                op!(Lambda: "λ" "." _),
+                op!(Div100: _ "%"),
+                op!(Subs: "[" "]" _),
+                op!(ForthDefn: _ ":" ";"),
             ])
             .build();
         let parse = |input: &str| run_parser(&parser, input);
@@ -41,13 +41,13 @@ mod parsing {
         let parser = Grammar::new(WHITESPACE_REGEX)
             .regex("Var", "[a-zA-Z]+")
             .ops_r(vec![
-                infix!("And", "&&"),
-                infix!("Or", "||"),
-                infix!("Ternary", "?", ":"),
-                prefix!("Not", "!"),
-                prefix!("Lambda", "λ", "."),
-                suffix!("Squared", "²"),
-                suffix!("ColonThingy", ":", ";"),
+                op!(And: _ "&&" _),
+                op!(Or: _ "||" _),
+                op!(Ternary: _ "?" ":" _),
+                op!(Not: "!" _),
+                op!(Lambda: "λ" "." _),
+                op!(Squared: _ "²"),
+                op!(ColonThingy: _ ":" ";"),
             ])
             .build();
         let parse = |input: &str| run_parser(&parser, input);
@@ -69,9 +69,9 @@ mod parsing {
     fn test_circumfix() {
         let parser = Grammar::new(WHITESPACE_REGEX)
             .regex("Var", "[a-zA-Z]+")
-            .op(circumfix!("Parens", "(", ")"))
-            .op_l(infix!("Mul", "*"))
-            .op_l(infix!("Add", "+"))
+            .op(op!(Parens: "(" ")"))
+            .op_l(op!(Mul: _ "*" _))
+            .op_l(op!(Add: _ "+" _))
             .build();
         let parse = |input: &str| run_parser(&parser, input);
 
@@ -83,9 +83,9 @@ mod parsing {
     fn test_variable_precedence() {
         let parser = Grammar::new(WHITESPACE_REGEX)
             .regex("Var", "[a-zA-Z]+")
-            .op(prefix!("Neg", "-"))
-            .ops_l(vec![infix!("Mul", "*"), infix!("Div", "/")])
-            .ops_l(vec![infix!("Add", "+"), infix!("Sub", "-")])
+            .op(op!(Neg: "-" _))
+            .ops_l(vec![op!(Mul: _ "*" _), op!(Div: _ "/" _)])
+            .ops_l(vec![op!(Add: _ "+" _), op!(Sub: _ "-" _)])
             .build();
         let parse = |input: &str| run_parser(&parser, input);
 
@@ -97,9 +97,9 @@ mod parsing {
     fn test_juxt_prec() {
         let parser = Grammar::new(WHITESPACE_REGEX)
             .regex("Var", "[a-zA-Z]+")
-            .op_l(infix!("Mul", "*"))
+            .op_l(op!(Mul: _ "*" _))
             .op_l(juxtapose!())
-            .op_l(infix!("Add", "+"))
+            .op_l(op!(Add: _ "+" _))
             .build();
         let parse = |input: &str| run_parser(&parser, input);
 
@@ -113,9 +113,9 @@ mod parsing {
             .constant("True", "true")
             .constant("False", "false")
             .ops_l(vec![
-                infix!("Inc", "++"),
-                suffix!("Subs", "[", "]"),
-                infix!("Dot", "."),
+                op!(Inc: _ "++" _),
+                op!(Subs: _ "[" "]"),
+                op!(Dot: _ "." _),
             ])
             .build();
         run_parser(&parser, input)

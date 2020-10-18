@@ -170,6 +170,9 @@ impl TokenSet {
     }
 
     fn insert_constant(&mut self, constant: String) -> Token {
+        if constant.is_empty() {
+            panic!("Constants cannot be empty! Add at least one character to the token.");
+        }
         if let Some(token) = self.constants.get(&constant) {
             *token
         } else {
@@ -190,47 +193,40 @@ impl TokenSet {
 }
 
 #[macro_export]
-macro_rules! prefix {
-    ( $name:expr, $( $token:expr ),* ) => {
+macro_rules! op {
+    ($name:ident : _ $($tokens:literal)* _) => {
+        op!(@ $name ($crate::parsing::Fixity::Infix) [] $($tokens)*)
+    };
+
+    ($name:ident : $($tokens:literal)* _) => {
+        op!(@ $name ($crate::parsing::Fixity::Prefix) [] $($tokens)*)
+    };
+
+    ($name:ident : _ $($tokens:literal)*) => {
+        op!(@ $name ($crate::parsing::Fixity::Suffix) [] $($tokens)*)
+    };
+
+    ($name:ident : $($tokens:literal)*) => {
+        op!(@ $name ($crate::parsing::Fixity::Nilfix) [] $($tokens)*)
+    };
+
+    (@ $name:ident ($fixity:expr) [$($tokens:tt)*] $token:literal $($rest:literal)*) => {
+        op!(@ $name ($fixity) [$($tokens)* $token.to_string() ,] $($rest)*)
+    };
+
+    (@ $name:ident ($fixity:expr) [$($tokens:tt)*]) => {
         $crate::parsing::OpSpec {
-            name: ::std::primitive::str::to_owned($name),
-            fixity: $crate::parsing::Fixity::Prefix,
-            tokens: vec![$( ::std::primitive::str::to_owned($token) ),*],
+            name: stringify!($name).to_string(),
+            fixity: $fixity,
+            tokens: vec![$($tokens)*],
         }
     };
 }
 
-#[macro_export]
-macro_rules! suffix {
-    ( $name:expr, $( $token:expr ),* ) => {
-        $crate::parsing::OpSpec {
-            name: ::std::primitive::str::to_owned($name),
-            fixity: $crate::parsing::Fixity::Suffix,
-            tokens: vec![$( ::std::primitive::str::to_owned($token) ),*],
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! infix {
-    ( $name:expr, $( $token:expr ),* ) => {
-        $crate::parsing::OpSpec {
-            name: ::std::primitive::str::to_owned($name),
-            fixity: $crate::parsing::Fixity::Infix,
-            tokens: vec![$( ::std::primitive::str::to_owned($token) ),*],
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! circumfix {
-    ( $name:expr, $( $token:expr ),* ) => {
-        $crate::parsing::OpSpec {
-            name: ::std::primitive::str::to_owned($name),
-            fixity: $crate::parsing::Fixity::Nilfix,
-            tokens: vec![$( ::std::primitive::str::to_owned($token) ),*],
-        }
-    };
+#[test]
+fn test_op_macro() {
+    assert_eq!(op!(Colon: _ ":" _).fixity, Fixity::Infix);
+    assert_eq!(op!(Parens: "(" ")").fixity, Fixity::Nilfix);
 }
 
 #[macro_export]

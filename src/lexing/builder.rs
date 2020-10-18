@@ -55,6 +55,9 @@ impl<T: Token> LexerBuilder<T> {
     }
 
     pub fn constant(&mut self, constant: &str, token: T) -> &mut LexerBuilder<T> {
+        if constant.is_empty() {
+            panic!("Constants cannot be empty! Add at least one character to the token.");
+        }
         self.constants.push((constant.to_owned(), token));
         self
     }

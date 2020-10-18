@@ -118,8 +118,8 @@ where
     I: Iterator<Item = Lexeme<T>>,
 {
     fn new(shunter: &'g Shunter<T>, lexemes: I) -> Shunt<'g, T, I> {
-        println!();
-        println!("Shunting:");
+        // println!();
+        // println!("Shunting:");
         Shunt {
             shunter,
             lexemes: lexemes.peekable(),
@@ -153,7 +153,7 @@ where
     fn push(&mut self) -> Step<'g, T> {
         let lexeme = self.lexemes.next().unwrap();
         let op = self.lookup_op(lexeme.token).unwrap();
-        println!("  Push    {}", op.name);
+        // println!("  Push    {}", op.name);
         self.op_stack.push(op, lexeme.span);
         self.mode = Mode::Expr;
         Step::Continue
@@ -162,13 +162,13 @@ where
     fn forward(&mut self) -> Step<'g, T> {
         let lexeme = self.lexemes.next().unwrap();
         let op = self.lookup_op(lexeme.token).unwrap();
-        println!("  Forward {}", op.name);
+        // println!("  Forward {}", op.name);
         self.mode = Mode::Suffix;
         Step::Produce(op, lexeme.span)
     }
 
     fn missing_atom(&mut self) -> Step<'g, T> {
-        println!("  Missing");
+        // println!("  Missing");
         let op = &self.shunter.missing_atom;
         let span = (self.last_pos, self.last_pos);
         self.mode = Mode::Suffix;
@@ -176,7 +176,7 @@ where
     }
 
     fn juxtapose(&mut self) -> Step<'g, T> {
-        println!("  Juxt");
+        // println!("  Juxt");
         let op = &self.shunter.juxtapose;
         let span = (self.last_pos, self.last_pos);
         self.op_stack.push(op, span);
@@ -185,7 +185,7 @@ where
     }
 
     fn pop(&mut self) -> Step<'g, T> {
-        println!("  Pop");
+        // println!("  Pop");
         match self.op_stack.top() {
             OpStackTop::RightPrec(_) => {
                 let (op, span) = self.op_stack.pop();

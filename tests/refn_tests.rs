@@ -1,6 +1,6 @@
 mod refn {
-    use panfix::op;
     use panfix::refn_impl::{parse, Fixity, Grammar, GrammarBuilder, ParseTree};
+    use panfix::rule;
 
     fn write_sexpr(out: &mut String, tree: &ParseTree) {
         if tree.arity() == 0 {
@@ -41,8 +41,8 @@ mod refn {
             .subgrammar("main", |builder| {
                 builder
                     .regex("Var", "[a-zA-Z]+")
-                    .ops_r(vec![op!(Dot: _ "." _)])
-                    .ops_l(vec![op!(Plus: _ "+" _), op!(Minus: _ "-" _)])
+                    .ops_r(vec![rule!(Dot: _ "." _)])
+                    .ops_l(vec![rule!(Plus: _ "+" _), rule!(Minus: _ "-" _)])
             })
             .build();
 

@@ -172,17 +172,17 @@ pub struct OpSpec {
 }
 
 #[macro_export]
-macro_rules! op {
+macro_rules! rule {
     ($name:ident : _ $token:literal $($followers:tt)*) => {
-        op!(@ $name Y $token [ ] $($followers)*)
+        rule!(@ $name Y $token [ ] $($followers)*)
     };
 
     ($name:ident : $token:literal $($followers:tt)*) => {
-        op!(@ $name N $token [ ] $($followers)*)
+        rule!(@ $name N $token [ ] $($followers)*)
     };
 
     (@ $name:ident $l:ident $token:literal [ $($followers:tt)* ] $nt:ident $tok:literal $($rest:tt)*) => {
-        op!(@ $name $l $token [ $($followers)* (std::stringify!($nt), $tok), ] $($rest)*)
+        rule!(@ $name $l $token [ $($followers)* (std::stringify!($nt), $tok), ] $($rest)*)
     };
 
     (@ $name:ident Y $token:literal [ $($followers:tt)* ] _) => {
@@ -229,7 +229,7 @@ fn new_regex(regex: &str) -> Regex {
 #[test]
 fn test_macro() {
     assert_eq!(
-        op!(Plus: _ "+" _),
+        rule!(Plus: _ "+" _),
         OpSpec {
             name: "Plus",
             token: "+",
@@ -238,7 +238,7 @@ fn test_macro() {
         }
     );
     assert_eq!(
-        op!(Apply: _ "(" Expr ")"),
+        rule!(Apply: _ "(" Expr ")"),
         OpSpec {
             name: "Apply",
             token: "(",
@@ -247,7 +247,7 @@ fn test_macro() {
         }
     );
     assert_eq!(
-        op!(Neg: "-" _),
+        rule!(Neg: "-" _),
         OpSpec {
             name: "Neg",
             token: "-",
@@ -256,7 +256,7 @@ fn test_macro() {
         }
     );
     assert_eq!(
-        op!(Zero: "0"),
+        rule!(Zero: "0"),
         OpSpec {
             name: "Zero",
             token: "0",
@@ -265,7 +265,7 @@ fn test_macro() {
         }
     );
     assert_eq!(
-        op!(Ifte: "if" Expr1 "then" Expr2 "end"),
+        rule!(Ifte: "if" Expr1 "then" Expr2 "end"),
         OpSpec {
             name: "Ifte",
             token: "if",
