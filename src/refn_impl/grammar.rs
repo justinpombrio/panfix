@@ -44,10 +44,6 @@ pub struct Op {
 }
 
 impl Op {
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
     pub fn arity(&self) -> usize {
         if self.name == "$Juxtapose" {
             return 2;
@@ -55,15 +51,11 @@ impl Op {
         self.fixity.arity() + self.followers.len()
     }
 
-    pub fn fixity(&self) -> Fixity {
-        self.fixity
-    }
-
-    pub(super) fn new_atom(name: &str, token: Option<Token>) -> Op {
+    pub fn new_atom(name: &str, token: Option<Token>) -> Op {
         Self::new(name, 0, Assoc::Right, token, vec![], Fixity::Nilfix)
     }
 
-    pub(super) fn new(
+    pub fn new(
         name: &str,
         prec: Prec,
         assoc: Assoc,
@@ -76,13 +68,22 @@ impl Op {
         let prec = prec;
         let (left_prec, right_prec) = match (fixity, assoc) {
             (Nilfix, _) => (None, None),
-            (Prefix, Left) => (None, Some(prec)),
+            (Prefix, Left) => (None, Some(prec - 1)),
             (Prefix, Right) => (None, Some(prec)),
             (Suffix, Left) => (Some(prec), None),
             (Suffix, Right) => (Some(prec - 1), None),
-            (Infix, Left) => (Some(prec), Some(prec)),
+            (Infix, Left) => (Some(prec), Some(prec - 1)),
             (Infix, Right) => (Some(prec - 1), Some(prec)),
         };
+        let left = match left_prec {
+            None => "_".to_owned(),
+            Some(left) => format!("{}", left),
+        };
+        let right = match right_prec {
+            None => "_".to_owned(),
+            Some(right) => format!("{}", right),
+        };
+        println!("op {} {} {}", left, name, right);
         Op {
             name: name.to_owned(),
             prec,
@@ -96,6 +97,7 @@ impl Op {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Grammar {
     // Lexing
     pub(super) whitespace: Regex,
@@ -106,6 +108,7 @@ pub struct Grammar {
     pub(super) subgrammars: HashMap<String, Subgrammar>,
 }
 
+#[derive(Debug, Clone)]
 pub struct Subgrammar {
     pub name: String,
     // Map from the first token in a Prefix or Nilfix op, to that op.

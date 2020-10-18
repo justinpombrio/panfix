@@ -1,5 +1,4 @@
-#[cfg(test)]
-mod shunting_tests {
+mod shunting {
     use panfix::shunting::{Lexeme, OpSpec, ShuntError, Shunter, ShunterBuilder, Token};
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

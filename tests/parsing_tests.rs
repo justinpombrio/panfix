@@ -1,7 +1,6 @@
 mod common;
 
-#[cfg(test)]
-mod parsing_tests {
+mod parsing {
     use super::common::run_parser;
     use panfix::parsing::{Grammar, WHITESPACE_REGEX};
     use panfix::{circumfix, infix, juxtapose, prefix, suffix};

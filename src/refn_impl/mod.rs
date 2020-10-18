@@ -1,4 +1,8 @@
-pub mod grammar;
-pub mod grammar_builder;
-pub mod lex;
-pub mod parse;
+mod grammar;
+mod grammar_builder;
+mod lex;
+mod parse;
+
+pub use grammar::{Fixity, Grammar};
+pub use grammar_builder::{GrammarBuilder, OpSpec, SubgrammarBuilder};
+pub use parse::{parse, ParseError, ParseTree};

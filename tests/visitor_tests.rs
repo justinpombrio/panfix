@@ -1,5 +1,4 @@
-#[cfg(test)]
-mod visitor_tests {
+mod visitor {
     use panfix::rpn_visitor::{Node, Stack, Visitor};
 
     #[derive(Debug)]

@@ -13,11 +13,20 @@
 //! - Can gracefully handle some kinds of parse errors, producing (TODO) excellent error messages
 //! in those cases.
 //!
+//! This crate is incomplete, and in a messy state. For now, you should use the reference
+//! implementation:
+//!
+//! [**Reference Implementation**](refn_impl)
+//!
+//! Below is information about the (incomplete!) more robust/efficient implementation.
+//!
+//! ------------------------
+//!
 //! The Panfix parser is here. It is probably what you want to view:
 //!
-//! [**☞ The Panfix Parser**](parser)
+//! [**☞ The Panfix Parser**](parsing)
 //!
-//! The parser is made up of (TODO) N pieces. If you want more control over the parsing process,
+//! The parser is made up of three pieces. If you want more control over the parsing process,
 //! you can use or replace any combination of these pieces (they are all independent). Here are the
 //! pieces, in the order that they run in the parsing pipeline:
 //!

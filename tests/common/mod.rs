@@ -32,9 +32,6 @@ pub fn run_parser(parser: &Parser, input: &str) -> String {
 }
 
 fn parenthesize(out: &mut String, visitor: Visitor, parser: &Parser) {
-    if visitor.name() == "$MissingAtom" {
-        ()
-    }
     let fixity = visitor.fixity();
     let mut children = visitor.children();
     if children.len() == 0 {

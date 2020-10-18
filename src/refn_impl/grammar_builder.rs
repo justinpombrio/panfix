@@ -18,7 +18,7 @@ impl GrammarBuilder {
             next_token: 1,
             constants: HashMap::new(),
             grammar: Grammar {
-                whitespace: Regex::new(WHITESPACE_REGEX).unwrap(),
+                whitespace: new_regex(WHITESPACE_REGEX),
                 regexes: vec![],
                 constants: vec![],
                 token_display: vec!["LEX_ERROR".to_owned()],
@@ -28,14 +28,17 @@ impl GrammarBuilder {
     }
 
     pub fn whitespace(mut self, whitespace_regex: &str) -> Self {
-        self.grammar.whitespace = Regex::new(whitespace_regex).unwrap();
+        self.grammar.whitespace = new_regex(whitespace_regex);
         self
     }
 
-    pub fn subgrammar(self, name: &str) -> SubgrammarBuilder {
+    pub fn subgrammar<F>(self, name: &str, build: F) -> Self
+    where
+        F: FnOnce(SubgrammarBuilder) -> SubgrammarBuilder,
+    {
         let missing_atom = Op::new_atom("$MissingAtom", None);
-        let juxtapose = Op::new("$Juxtapose", 0, Assoc::Right, None, vec![], Fixity::Infix);
-        SubgrammarBuilder {
+        let juxtapose = Op::new("$Juxtapose", 1, Assoc::Right, None, vec![], Fixity::Infix);
+        let builder = SubgrammarBuilder {
             grammar_builder: self,
             subgrammar: Subgrammar {
                 name: name.to_owned(),
@@ -44,8 +47,13 @@ impl GrammarBuilder {
                 missing_atom,
                 juxtapose,
             },
-            prec_level: 1,
-        }
+            prec_level: 2,
+        };
+        build(builder).done()
+    }
+
+    pub fn build(self) -> Grammar {
+        self.grammar
     }
 
     fn new_token(&mut self) -> Token {
@@ -55,7 +63,7 @@ impl GrammarBuilder {
     }
 
     fn insert_regex(&mut self, name: &str, regex: &str) -> Token {
-        let regex = Regex::new(regex).unwrap();
+        let regex = new_regex(regex);
         let token = self.new_token();
         self.grammar.regexes.push((regex, token));
         self.grammar.token_display.push(name.to_owned());
@@ -95,26 +103,41 @@ impl SubgrammarBuilder {
         self
     }
 
-    pub fn ops_l(self) -> OpsBuilder {
-        OpsBuilder {
-            subgrammar_builder: self,
-            assoc: Assoc::Left,
+    pub fn ops_l(mut self, ops: Vec<OpSpec>) -> Self {
+        for op in ops {
+            self.add_op_spec(op, Assoc::Left);
         }
+        self.prec_level += 1;
+        self
     }
 
-    pub fn ops_r(self) -> OpsBuilder {
-        OpsBuilder {
-            subgrammar_builder: self,
-            assoc: Assoc::Right,
+    pub fn ops_r(mut self, ops: Vec<OpSpec>) -> Self {
+        for op in ops {
+            self.add_op_spec(op, Assoc::Right);
         }
+        self.prec_level += 1;
+        self
     }
 
-    pub fn done(mut self) -> GrammarBuilder {
-        self.grammar_builder
-            .grammar
-            .subgrammars
-            .insert(self.subgrammar.name.clone(), self.subgrammar);
-        self.grammar_builder
+    fn add_op_spec(&mut self, op: OpSpec, assoc: Assoc) {
+        let token = self.grammar_builder.insert_constant(op.token);
+        let followers = op
+            .followers
+            .into_iter()
+            .map(|(nonterminal, constant)| {
+                let token = self.grammar_builder.insert_constant(constant);
+                (nonterminal, token)
+            })
+            .collect();
+        let op = Op::new(
+            op.name,
+            self.prec_level,
+            assoc,
+            Some(token),
+            followers,
+            op.fixity,
+        );
+        self.add_op(op);
     }
 
     fn add_op(&mut self, op: Op) {
@@ -130,68 +153,124 @@ impl SubgrammarBuilder {
             Suffix | Infix => self.subgrammar.token_to_suffixy_op[token] = Some(op),
         }
     }
+
+    fn done(mut self) -> GrammarBuilder {
+        self.grammar_builder
+            .grammar
+            .subgrammars
+            .insert(self.subgrammar.name.clone(), self.subgrammar);
+        self.grammar_builder
+    }
 }
 
-pub struct OpsBuilder {
-    subgrammar_builder: SubgrammarBuilder,
-    assoc: Assoc,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpSpec {
+    pub name: &'static str,
+    pub token: &'static str,
+    pub fixity: Fixity,
+    pub followers: Vec<(NonTerminal, &'static str)>,
 }
 
-impl OpsBuilder {
-    pub fn nilfix(mut self, name: &str, token: &str, followers: Vec<(NonTerminal, &str)>) -> Self {
-        self.add_op(name, token, followers, Fixity::Nilfix);
-        self
-    }
+#[macro_export]
+macro_rules! op {
+    ($name:ident : _ $token:literal $($followers:tt)*) => {
+        op!(@ $name Y $token [ ] $($followers)*)
+    };
 
-    pub fn prefix(mut self, name: &str, token: &str, followers: Vec<(NonTerminal, &str)>) -> Self {
-        self.add_op(name, token, followers, Fixity::Prefix);
-        self
-    }
+    ($name:ident : $token:literal $($followers:tt)*) => {
+        op!(@ $name N $token [ ] $($followers)*)
+    };
 
-    pub fn suffix(mut self, name: &str, token: &str, followers: Vec<(NonTerminal, &str)>) -> Self {
-        self.add_op(name, token, followers, Fixity::Suffix);
-        self
-    }
+    (@ $name:ident $l:ident $token:literal [ $($followers:tt)* ] $nt:ident $tok:literal $($rest:tt)*) => {
+        op!(@ $name $l $token [ $($followers)* (std::stringify!($nt), $tok), ] $($rest)*)
+    };
 
-    pub fn infix(mut self, name: &str, token: &str, followers: Vec<(NonTerminal, &str)>) -> Self {
-        self.add_op(name, token, followers, Fixity::Infix);
-        self
-    }
+    (@ $name:ident Y $token:literal [ $($followers:tt)* ] _) => {
+        $crate::refn_impl::OpSpec {
+            name: stringify!($name),
+            token: $token,
+            fixity: $crate::refn_impl::Fixity::Infix,
+            followers: vec![$($followers)*],
+        }
+    };
 
-    pub fn done(mut self) -> SubgrammarBuilder {
-        self.subgrammar_builder.prec_level += 1;
-        self.subgrammar_builder
-    }
+    (@ $name:ident Y $token:literal [ $($followers:tt)* ]) => {
+        $crate::refn_impl::OpSpec {
+            name: stringify!($name),
+            token: $token,
+            fixity: $crate::refn_impl::Fixity::Suffix,
+            followers: vec![$($followers)*],
+        }
+    };
 
-    fn add_op(
-        &mut self,
-        name: &str,
-        constant: &str,
-        followers: Vec<(NonTerminal, &str)>,
-        fixity: Fixity,
-    ) {
-        let token = self
-            .subgrammar_builder
-            .grammar_builder
-            .insert_constant(constant);
-        let followers = followers
-            .into_iter()
-            .map(|(nonterminal, constant)| {
-                let token = self
-                    .subgrammar_builder
-                    .grammar_builder
-                    .insert_constant(constant);
-                (nonterminal, token)
-            })
-            .collect();
-        let op = Op::new(
-            name,
-            self.subgrammar_builder.prec_level,
-            self.assoc,
-            Some(token),
-            followers,
-            fixity,
-        );
-        self.subgrammar_builder.add_op(op)
-    }
+    (@ $name:ident N $token:literal [ $($followers:tt)* ] _) => {
+        $crate::refn_impl::OpSpec {
+            name: stringify!($name),
+            token: $token,
+            fixity: $crate::refn_impl::Fixity::Prefix,
+            followers: vec![$($followers)*],
+        }
+    };
+
+    (@ $name:ident N $token:literal [ $($followers:tt)* ]) => {
+        $crate::refn_impl::OpSpec {
+            name: stringify!($name),
+            token: $token,
+            fixity: $crate::refn_impl::Fixity::Nilfix,
+            followers: vec![$($followers)*],
+        }
+    };
+}
+
+fn new_regex(regex: &str) -> Regex {
+    Regex::new(&format!("^({})", regex)).unwrap()
+}
+
+#[test]
+fn test_macro() {
+    assert_eq!(
+        op!(Plus: _ "+" _),
+        OpSpec {
+            name: "Plus",
+            token: "+",
+            fixity: Fixity::Infix,
+            followers: vec![]
+        }
+    );
+    assert_eq!(
+        op!(Apply: _ "(" Expr ")"),
+        OpSpec {
+            name: "Apply",
+            token: "(",
+            fixity: Fixity::Suffix,
+            followers: vec![("Expr", ")")]
+        }
+    );
+    assert_eq!(
+        op!(Neg: "-" _),
+        OpSpec {
+            name: "Neg",
+            token: "-",
+            fixity: Fixity::Prefix,
+            followers: vec![]
+        }
+    );
+    assert_eq!(
+        op!(Zero: "0"),
+        OpSpec {
+            name: "Zero",
+            token: "0",
+            fixity: Fixity::Nilfix,
+            followers: vec![]
+        }
+    );
+    assert_eq!(
+        op!(Ifte: "if" Expr1 "then" Expr2 "end"),
+        OpSpec {
+            name: "Ifte",
+            token: "if",
+            fixity: Fixity::Nilfix,
+            followers: vec![("Expr1", "then"), ("Expr2", "end")],
+        }
+    );
 }

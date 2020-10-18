@@ -1,5 +1,4 @@
-use super::grammar::Token;
-use regex::Regex;
+use super::grammar::{Grammar, Token};
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::iter::Iterator;
@@ -20,40 +19,31 @@ impl Lexeme {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Lexer {
-    pub(super) whitespace: Regex,
-    pub(super) regexes: Vec<(Regex, Token)>,
-    pub(super) constants: Vec<(String, Token)>,
-}
-
 #[derive(Debug)]
-pub struct Lex<'s> {
-    lexer: &'s Lexer,
+pub struct Lexer<'s> {
     source: &'s str,
+    grammar: &'s Grammar,
     index: usize,
 }
 
-impl Lexer {
-    pub fn lex<'s>(&'s self, source: &'s str) -> impl Iterator<Item = Lexeme> + 's {
-        Lex {
-            lexer: self,
-            source,
-            index: 0,
-        }
+pub fn lex<'s>(grammar: &'s Grammar, source: &'s str) -> impl Iterator<Item = Lexeme> + 's {
+    Lexer {
+        source,
+        grammar,
+        index: 0,
     }
 }
 
-impl<'s> Iterator for Lex<'s> {
+impl<'s> Iterator for Lexer<'s> {
     type Item = Lexeme;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.eat_whitespace();
-        for (regex, token) in &self.lexer.regexes {
+        for (regex, token) in &self.grammar.regexes {
             if let Some(matched) = regex.find(self.remaining()) {
                 // TODO: Reduce the number of cases in which this is checked.
                 // In case a constant also matches the regex
-                for (constant, constant_token) in &self.lexer.constants {
+                for (constant, constant_token) in &self.grammar.constants {
                     if matched.as_str() == constant {
                         return Some(self.eat_token(*constant_token, constant.len()));
                     }
@@ -61,7 +51,7 @@ impl<'s> Iterator for Lex<'s> {
                 return Some(self.eat_token(*token, matched.end()));
             }
         }
-        for (constant, token) in &self.lexer.constants {
+        for (constant, token) in &self.grammar.constants {
             if self.remaining().starts_with(constant) {
                 let len = constant.len();
                 return Some(self.eat_token(*token, len));
@@ -75,13 +65,13 @@ impl<'s> Iterator for Lex<'s> {
     }
 }
 
-impl<'s> Lex<'s> {
+impl<'s> Lexer<'s> {
     pub fn remaining(&self) -> &'s str {
         &self.source[self.index..]
     }
 
     fn eat_whitespace(&mut self) {
-        if let Some(matched) = self.lexer.whitespace.find(self.remaining()) {
+        if let Some(matched) = self.grammar.whitespace.find(self.remaining()) {
             self.index += matched.end();
         }
     }
