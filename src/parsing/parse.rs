@@ -162,11 +162,50 @@ impl<'a> Visitor<'a> {
         self.visitor.node().text(self.source)
     }
 
-    pub fn children(&self) -> VisitorIter {
+    pub fn children(&self) -> VisitorIter<'a> {
         VisitorIter {
             source: self.source,
             iter: self.visitor.children(),
         }
+    }
+
+    pub fn expect_2_children(&self) -> (Visitor<'a>, Visitor<'a>) {
+        let mut children = self.children();
+        assert_eq!(
+            children.len(),
+            2,
+            "Visitor.expected_2_children: there weren't 2 children"
+        );
+        let child_1 = children.next().unwrap();
+        let child_2 = children.next().unwrap();
+        (child_1, child_2)
+    }
+
+    pub fn expect_3_children(&self) -> (Visitor<'a>, Visitor<'a>, Visitor<'a>) {
+        let mut children = self.children();
+        assert_eq!(
+            children.len(),
+            3,
+            "Visitor.expected_3_children: there weren't 3 children"
+        );
+        let child_1 = children.next().unwrap();
+        let child_2 = children.next().unwrap();
+        let child_3 = children.next().unwrap();
+        (child_1, child_2, child_3)
+    }
+
+    pub fn expect_4_children(&self) -> (Visitor<'a>, Visitor<'a>, Visitor<'a>, Visitor<'a>) {
+        let mut children = self.children();
+        assert_eq!(
+            children.len(),
+            4,
+            "Visitor.expected_4_children: there weren't 4 children"
+        );
+        let child_1 = children.next().unwrap();
+        let child_2 = children.next().unwrap();
+        let child_3 = children.next().unwrap();
+        let child_4 = children.next().unwrap();
+        (child_1, child_2, child_3, child_4)
     }
 }
 
