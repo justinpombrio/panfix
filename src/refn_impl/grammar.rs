@@ -75,14 +75,6 @@ impl Op {
             (Infix, Left) => (Some(prec), Some(prec - 1)),
             (Infix, Right) => (Some(prec - 1), Some(prec)),
         };
-        let left = match left_prec {
-            None => "_".to_owned(),
-            Some(left) => format!("{}", left),
-        };
-        let right = match right_prec {
-            None => "_".to_owned(),
-            Some(right) => format!("{}", right),
-        };
         Op {
             name: name.to_owned(),
             prec,
