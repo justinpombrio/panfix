@@ -169,12 +169,22 @@ impl<'a> Visitor<'a> {
         }
     }
 
+    pub fn expect_1_child(&self) -> Visitor<'a> {
+        let mut children = self.children();
+        assert_eq!(
+            children.len(),
+            1,
+            "Visitor.expect_1_child: there wasn't 1 child"
+        );
+        children.next().unwrap()
+    }
+
     pub fn expect_2_children(&self) -> (Visitor<'a>, Visitor<'a>) {
         let mut children = self.children();
         assert_eq!(
             children.len(),
             2,
-            "Visitor.expected_2_children: there weren't 2 children"
+            "Visitor.expect_2_children: there weren't 2 children"
         );
         let child_1 = children.next().unwrap();
         let child_2 = children.next().unwrap();
@@ -186,7 +196,7 @@ impl<'a> Visitor<'a> {
         assert_eq!(
             children.len(),
             3,
-            "Visitor.expected_3_children: there weren't 3 children"
+            "Visitor.expect_3_children: there weren't 3 children"
         );
         let child_1 = children.next().unwrap();
         let child_2 = children.next().unwrap();
@@ -199,7 +209,7 @@ impl<'a> Visitor<'a> {
         assert_eq!(
             children.len(),
             4,
-            "Visitor.expected_4_children: there weren't 4 children"
+            "Visitor.expect_4_children: there weren't 4 children"
         );
         let child_1 = children.next().unwrap();
         let child_2 = children.next().unwrap();
