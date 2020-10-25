@@ -170,4 +170,16 @@ mod parsing {
         assert_eq!(parse_c("x[y.z]"), "(x [ (y . z) ])");
         assert_eq!(parse_c("x.y[1]"), "((x . y) [ 1 ])");
     }
+
+    #[test]
+    fn test_bug_1() {
+        let parser = Grammar::new(WHITESPACE_REGEX)
+            .regex("Var", "[a-zA-Z]+")
+            .op_l(op!(Dot: _ "." _))
+            .op_r(op!(Comma: _ "," _))
+            .op(op!(Lambda: "/" "." _))
+            .build();
+        let parse = |input: &str| run_parser(&parser, input);
+        assert_eq!(parse("/x,y.x"), "(/ (x , y) . x)");
+    }
 }

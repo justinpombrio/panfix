@@ -255,6 +255,19 @@ where
         let juxt_prec: Prec = self.shunter.juxtapose.left_prec.unwrap();
         let this_pos = self.lexemes.peek().map(|lex| lex.span.1);
 
+        // This is a horrible hack that can be eliminated once subgrammars are implemented.
+        if let Some(lexeme) = self.lexemes.peek() {
+            if self.op_stack.is_expecting_sep(lexeme.token) {
+                if self.mode == Mode::Suffix {
+                    let step = self.pop();
+                    if let Some(pos) = this_pos {
+                        self.last_pos = pos;
+                    }
+                    return step;
+                }
+            }
+        }
+
         let step = match (self.mode, op_left_prec, op_right_prec) {
             // Rule 1.
             (Mode::Expr, None, None) => self.forward(),

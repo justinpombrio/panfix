@@ -2,6 +2,7 @@
 // - ParsrConstructionError
 // - Proper Source data structure, with line numbers
 // - Thorough testing
+// - Grammar validation! If you have an op `t1 NT t2`, then no op in `NT` can begin with `t2`.
 
 //! # Panfix
 //!

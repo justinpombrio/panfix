@@ -59,4 +59,14 @@ impl<'g, T: Token> OpStack<'g, T> {
         let (op, span, _) = self.stack.pop().unwrap();
         (op, span)
     }
+
+    // TODO: Horrible hack! Can be removed after subgrammars are implemented.
+    pub fn is_expecting_sep(&self, sep: T) -> bool {
+        for (op, _, i) in &self.stack {
+            if *i < op.num_holes() && op.tokens[*i + 1] == sep {
+                return true;
+            }
+        }
+        false
+    }
 }
