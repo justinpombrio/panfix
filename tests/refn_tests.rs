@@ -1,5 +1,5 @@
 mod refn {
-    use panfix::refn_impl::{parse, Fixity, Grammar, GrammarBuilder, ParseTree};
+    use panfix::refn_impl::{parse, Grammar, GrammarBuilder, ParseTree};
     use panfix::rule;
 
     fn write_sexpr(out: &mut String, tree: &ParseTree) {

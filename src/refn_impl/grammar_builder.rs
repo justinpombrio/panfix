@@ -1,15 +1,23 @@
 use super::grammar::{Assoc, Fixity, Grammar, NonTerminal, Op, Prec, Subgrammar, Token};
 use regex::Regex;
 use std::collections::HashMap;
+use std::default::Default;
 
 /// White space, according to the Pattern_White_Space Unicode property.
 const WHITESPACE_REGEX: &str =
     "[\\u0009\\u000A\\u000B\\u000C\\u000D\\u0020\\u0085\\u200E\\u200F\\u2028\\u2029]*";
 
+#[derive(Debug)]
 pub struct GrammarBuilder {
     grammar: Grammar,
     next_token: usize,
     constants: HashMap<String, Token>,
+}
+
+impl Default for GrammarBuilder {
+    fn default() -> GrammarBuilder {
+        GrammarBuilder::new()
+    }
 }
 
 impl GrammarBuilder {

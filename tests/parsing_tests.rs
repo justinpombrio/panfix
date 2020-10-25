@@ -66,6 +66,34 @@ mod parsing {
     }
 
     #[test]
+    fn test_infix_iter() {
+        let parser = Grammar::new(WHITESPACE_REGEX)
+            .regex("Var", "[a-zA-Z]+")
+            .op_l(op!(Plus: _ "+" _))
+            .op_r(op!(Comma: _ "," _))
+            .build();
+
+        let source = "a + b, c + d + e, f";
+
+        let parsed = parser.parse(source).unwrap();
+        let visitor = parsed.groups().next().unwrap();
+        let elems = visitor.iter_right("Comma").collect::<Vec<_>>();
+        assert_eq!(elems.len(), 3);
+        let first = elems[0].iter_left_vec("Plus");
+        assert_eq!(first.len(), 2);
+        assert_eq!(first[0].text(), "a");
+        assert_eq!(first[1].text(), "b");
+        let second = elems[1].iter_left_vec("Plus");
+        assert_eq!(second.len(), 3);
+        assert_eq!(second[0].text(), "c");
+        assert_eq!(second[1].text(), "d");
+        assert_eq!(second[2].text(), "e");
+        let third = elems[2].iter_left_vec("Plus");
+        assert_eq!(third.len(), 1);
+        assert_eq!(third[0].text(), "f");
+    }
+
+    #[test]
     fn test_circumfix() {
         let parser = Grammar::new(WHITESPACE_REGEX)
             .regex("Var", "[a-zA-Z]+")

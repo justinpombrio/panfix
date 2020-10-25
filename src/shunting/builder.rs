@@ -163,13 +163,15 @@ impl<T: Token> ShunterBuilder<T> {
             Assoc::Left,
             Fixity::Nilfix,
         );
-        let juxtapose = juxtapose.unwrap_or(Op::new(
-            "$Juxtapose".to_owned(),
-            vec![],
-            1,
-            Assoc::Right,
-            Fixity::Infix,
-        ));
+        let juxtapose = juxtapose.unwrap_or_else(|| {
+            Op::new(
+                "$Juxtapose".to_owned(),
+                vec![],
+                1,
+                Assoc::Right,
+                Fixity::Infix,
+            )
+        });
         // TODO: unwrap -> Err
         Shunter {
             token_to_prefixy_op,

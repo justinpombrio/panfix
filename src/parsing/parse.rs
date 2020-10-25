@@ -3,7 +3,7 @@ use crate::lexing::Span;
 use crate::rpn_visitor::Stack as RpnStack;
 use crate::rpn_visitor::Visitor as RpnVisitor;
 use crate::rpn_visitor::VisitorIter as RpnVisitorIter;
-use crate::shunting::{Fixity, Node, ShuntError};
+use crate::shunting::{Assoc, Fixity, Node, ShuntError};
 use std::error::Error;
 use std::fmt;
 
@@ -102,7 +102,7 @@ impl Parser {
                         column: span.0 + 1,
                     };
                     let separator = match self.token_patterns.get(&token).unwrap() {
-                        Pattern::Constant(constant) => format!("{}", constant),
+                        Pattern::Constant(constant) => constant.to_string(),
                         Pattern::Regex(regex) => format!("/{}/", regex),
                     };
                     return Err(ParseError::MissingSeparator {
@@ -132,15 +132,15 @@ impl<'a> Parsed<'a> {
 }
 
 impl<'a> Visitor<'a> {
-    pub fn name(&self) -> &'a str {
-        &self.visitor.node().op.name()
+    pub fn name(self) -> &'a str {
+        self.visitor.node().op.name()
     }
 
-    pub fn fixity(&self) -> Fixity {
+    pub fn fixity(self) -> Fixity {
         self.visitor.node().op.fixity()
     }
 
-    pub fn op_patterns<'p>(&self, parser: &'p Parser) -> Vec<Option<&'p Pattern>> {
+    pub fn op_patterns(self, parser: &Parser) -> Vec<Option<&Pattern>> {
         self.visitor
             .node()
             .op
@@ -150,26 +150,26 @@ impl<'a> Visitor<'a> {
             .collect()
     }
 
-    pub fn span(&self) -> Span {
+    pub fn span(self) -> Span {
         self.visitor.node().span
     }
 
-    pub fn arity(&self) -> usize {
+    pub fn arity(self) -> usize {
         self.visitor.node().arity()
     }
 
-    pub fn text(&self) -> &'a str {
+    pub fn text(self) -> &'a str {
         self.visitor.node().text(self.source)
     }
 
-    pub fn children(&self) -> VisitorIter<'a> {
+    pub fn children(self) -> VisitorIter<'a> {
         VisitorIter {
             source: self.source,
             iter: self.visitor.children(),
         }
     }
 
-    pub fn expect_1_child(&self) -> Visitor<'a> {
+    pub fn expect_1_child(self) -> Visitor<'a> {
         let mut children = self.children();
         assert_eq!(
             children.len(),
@@ -179,7 +179,7 @@ impl<'a> Visitor<'a> {
         children.next().unwrap()
     }
 
-    pub fn expect_2_children(&self) -> (Visitor<'a>, Visitor<'a>) {
+    pub fn expect_2_children(self) -> (Visitor<'a>, Visitor<'a>) {
         let mut children = self.children();
         assert_eq!(
             children.len(),
@@ -191,7 +191,7 @@ impl<'a> Visitor<'a> {
         (child_1, child_2)
     }
 
-    pub fn expect_3_children(&self) -> (Visitor<'a>, Visitor<'a>, Visitor<'a>) {
+    pub fn expect_3_children(self) -> (Visitor<'a>, Visitor<'a>, Visitor<'a>) {
         let mut children = self.children();
         assert_eq!(
             children.len(),
@@ -204,7 +204,7 @@ impl<'a> Visitor<'a> {
         (child_1, child_2, child_3)
     }
 
-    pub fn expect_4_children(&self) -> (Visitor<'a>, Visitor<'a>, Visitor<'a>, Visitor<'a>) {
+    pub fn expect_4_children(self) -> (Visitor<'a>, Visitor<'a>, Visitor<'a>, Visitor<'a>) {
         let mut children = self.children();
         assert_eq!(
             children.len(),
@@ -216,6 +216,44 @@ impl<'a> Visitor<'a> {
         let child_3 = children.next().unwrap();
         let child_4 = children.next().unwrap();
         (child_1, child_2, child_3, child_4)
+    }
+
+    /// Iterate over the elements of a right-associative list.
+    /// For example, if "Comma" is a right-associative infix operator and `self` is the tree:
+    ///
+    /// ```(Comma A (Comma B (Comma C D)))```
+    ///
+    /// then iterator over A, B, C, D.
+    pub fn iter_right(self, op: &'static str) -> InfixIter<'a> {
+        InfixIter {
+            visitor: Some(self),
+            op,
+            assoc: Assoc::Right,
+        }
+    }
+
+    /// Iterate over the elements of a left-associative list, in reverse order.
+    /// For example, if "Plus" is left-associative infix operator and `self` is the tree:
+    ///
+    /// ```(Plus (Plus (Plus A B) C) D)```
+    ///
+    /// then iterator over D, C, B, A.
+    ///
+    /// This method exists because iterating in order requires allocation, and this library prides
+    /// itself on avoiding allocations. To get the elements in order, you can use [Visitor::iter_left_vec].
+    pub fn iter_left_rev(self, op: &'static str) -> InfixIter<'a> {
+        InfixIter {
+            visitor: Some(self),
+            op,
+            assoc: Assoc::Left,
+        }
+    }
+
+    /// Like [Visitor::iter_left_rev], but in order and allocated in a `Vec`.
+    pub fn iter_left_vec(self, op: &'static str) -> Vec<Visitor<'a>> {
+        let mut vec = self.iter_left_rev(op).collect::<Vec<_>>();
+        vec.reverse();
+        vec
     }
 }
 
@@ -240,5 +278,35 @@ impl<'a> Iterator for VisitorIter<'a> {
 impl<'a> ExactSizeIterator for VisitorIter<'a> {
     fn len(&self) -> usize {
         self.iter.len()
+    }
+}
+
+pub struct InfixIter<'a> {
+    visitor: Option<Visitor<'a>>,
+    op: &'a str,
+    assoc: Assoc,
+}
+
+impl<'a> Iterator for InfixIter<'a> {
+    type Item = Visitor<'a>;
+    fn next(&mut self) -> Option<Visitor<'a>> {
+        self.visitor.map(|visitor| {
+            if visitor.name() == self.op {
+                let (left, right) = visitor.expect_2_children();
+                match self.assoc {
+                    Assoc::Left => {
+                        self.visitor = Some(left);
+                        right
+                    }
+                    Assoc::Right => {
+                        self.visitor = Some(right);
+                        left
+                    }
+                }
+            } else {
+                self.visitor = None;
+                visitor
+            }
+        })
     }
 }

@@ -150,7 +150,7 @@ impl<'s, I: Iterator<Item = Lexeme>> Parser<'s, I> {
                 }
             } else {
                 // Unknown token. Someone else will deal with it.
-                return Ok(expr);
+                Ok(expr)
             }
         } else {
             // EOF (totally expected)
