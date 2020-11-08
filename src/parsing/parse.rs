@@ -103,7 +103,7 @@ impl Parser {
                     };
                     let separator = match self.lexer.get_token_pattern(token).unwrap() {
                         Pattern::Constant(constant) => constant.to_string(),
-                        Pattern::Regex(regex) => format!("/{}/", regex),
+                        Pattern::Regex { name, .. } => format!("{}", name),
                     };
                     return Err(ParseError::MissingSeparator {
                         op_name,

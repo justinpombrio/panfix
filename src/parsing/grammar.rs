@@ -53,7 +53,7 @@ pub struct Parser {
 #[derive(Debug)]
 struct TokenSet {
     next_token: u32,
-    regexes: Vec<(RegexPattern, Token)>,
+    regexes: Vec<(String, RegexPattern, Token)>,
     constants: HashMap<String, Token>,
 }
 
@@ -97,7 +97,9 @@ impl Grammar {
     }
 
     pub fn regex(mut self, name: &str, regex: &str) -> Self {
-        let token = self.token_set.insert_regex(regex.to_owned());
+        let token = self
+            .token_set
+            .insert_regex(name.to_owned(), regex.to_owned());
         self.ops.push(RealOpSpec {
             nonterminal: "".to_owned(), // sentinal value
             name: name.to_owned(),
@@ -260,9 +262,9 @@ impl TokenSet {
         token
     }
 
-    fn insert_regex(&mut self, regex: RegexPattern) -> Token {
+    fn insert_regex(&mut self, name: String, regex: RegexPattern) -> Token {
         let token = self.new_token();
-        self.regexes.push((regex, token));
+        self.regexes.push((name, regex, token));
         token
     }
 

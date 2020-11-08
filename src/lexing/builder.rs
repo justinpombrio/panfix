@@ -10,7 +10,7 @@ pub type RegexPattern = String;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Pattern {
     Constant(String),
-    Regex(RegexPattern),
+    Regex { name: String, regex: String },
 }
 
 #[derive(Debug, Clone)]
@@ -21,7 +21,7 @@ pub enum LexerConstructionError {
 #[derive(Debug, Clone)]
 pub struct LexerBuilder<T: Token> {
     whitespace: String,
-    regexes: Vec<(String, T)>,
+    regexes: Vec<(String, RegexPattern, T)>,
     constants: Vec<(String, T)>,
 }
 
@@ -59,8 +59,9 @@ impl<T: Token> LexerBuilder<T> {
         }
     }
 
-    pub fn regex(&mut self, regex: &str, token: T) -> &mut LexerBuilder<T> {
-        self.regexes.push((regex.to_owned(), token));
+    pub fn regex(&mut self, name: &str, regex: &str, token: T) -> &mut LexerBuilder<T> {
+        self.regexes
+            .push((name.to_owned(), regex.to_owned(), token));
         self
     }
 
@@ -82,16 +83,22 @@ impl<T: Token> LexerBuilder<T> {
 }
 
 impl<T: Token> Lexer<T> {
-    pub fn new(
+    pub(crate) fn new(
         whitespace: String,
-        regexes: Vec<(String, T)>,
+        regexes: Vec<(String, RegexPattern, T)>,
         mut constants: Vec<(String, T)>,
     ) -> Result<Lexer<T>, LexerConstructionError> {
         let whitespace = Regex::new(&format!("^({})", whitespace))?;
         // Construct a map from token to its pattern, for convenience to library users
         let mut patterns = HashMap::new();
-        for (regex, token) in &regexes {
-            patterns.insert(*token, Pattern::Regex(regex.to_owned()));
+        for (name, regex, token) in &regexes {
+            patterns.insert(
+                *token,
+                Pattern::Regex {
+                    name: name.to_owned(),
+                    regex: regex.to_owned(),
+                },
+            );
         }
         for (constant, token) in &constants {
             patterns.insert(*token, Pattern::Constant(constant.to_owned()));
@@ -99,7 +106,7 @@ impl<T: Token> Lexer<T> {
         // In case one constant is a prefix of another
         constants.sort_by_key(|(c, _)| -(c.chars().count() as i32));
         let mut compiled_regexes = vec![];
-        for (regex, token) in regexes {
+        for (_, regex, token) in regexes {
             compiled_regexes.push((Regex::new(&format!("^({})", regex))?, token));
         }
         Ok(Lexer {

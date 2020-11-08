@@ -59,8 +59,8 @@ mod lexing_tests {
         let whitespace_regex = "[ \\t\\n\\r\\v]*";
 
         LexerBuilder::new(whitespace_regex)
-            .regex(string_regex, JString)
-            .regex(number_regex, Number)
+            .regex("STR", string_regex, JString)
+            .regex("NUM", number_regex, Number)
             .constant("true", True)
             .constant("false", False)
             .constant("null", Null)
@@ -83,9 +83,9 @@ mod lexing_tests {
         let whitespace_regex = "[ \\t\\n\\re]*";
 
         LexerBuilder::new(whitespace_regex)
-            .regex(angry_word_regex, AngryWord)
-            .regex(word_regex, Word)
-            .regex(short_word_regex, ShortWord)
+            .regex("ANG", angry_word_regex, AngryWord)
+            .regex("WORD", word_regex, Word)
+            .regex("SWORD", short_word_regex, ShortWord)
             .constant(":", Colon)
             .constant(":::", TripleColon)
             .constant("::", DoubleColon)
