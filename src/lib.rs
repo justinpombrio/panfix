@@ -41,3 +41,9 @@ pub mod rpn_visitor;
 pub mod shunting;
 
 pub mod refn_impl;
+
+impl<'g, T: lexing::Token> rpn_visitor::Node for shunting::Node<'g, T> {
+    fn arity(&self) -> usize {
+        shunting::Node::arity(*self)
+    }
+}

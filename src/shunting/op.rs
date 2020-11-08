@@ -1,6 +1,7 @@
 use crate::lexing::Token;
 
 pub type Prec = u16;
+pub type NT = u16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Assoc {
@@ -22,18 +23,22 @@ pub struct Op<T: Token> {
     pub(super) prec: Prec,
     pub(super) assoc: Assoc,
     pub(super) fixity: Fixity,
-    pub(super) left_prec: Option<Prec>,
-    pub(super) right_prec: Option<Prec>,
-    pub(super) tokens: Vec<T>,
+    pub(super) first_token: Option<T>,
+    pub(super) followers: Vec<Follower<T>>,
+    pub(super) subgrammar: NT,
+    pub(super) left_prec: Option<Prec>,  // computed
+    pub(super) right_prec: Option<Prec>, // computed
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct Follower<T> {
+    pub(super) subgrammar_index: NT,
+    pub(super) token: T,
 }
 
 impl<'g, T: Token> Op<T> {
     pub fn name(&self) -> &str {
         &self.name
-    }
-
-    pub fn tokens(&self) -> &[T] {
-        &self.tokens
     }
 
     pub fn arity(&self) -> usize {
@@ -48,16 +53,35 @@ impl<'g, T: Token> Op<T> {
     }
 
     pub fn num_holes(&self) -> usize {
-        self.tokens.len().saturating_sub(1)
+        self.followers.len()
     }
 
     pub fn fixity(&self) -> Fixity {
         self.fixity
     }
+
+    pub fn first_token(&self) -> Option<T> {
+        self.first_token
+    }
+
+    pub fn tokens(&self) -> impl Iterator<Item = T> + '_ {
+        self.first_token
+            .iter()
+            .copied()
+            .chain(self.followers.iter().map(|f| f.token))
+    }
 }
 
 impl<T: Token> Op<T> {
-    pub fn new(name: String, tokens: Vec<T>, prec: Prec, assoc: Assoc, fixity: Fixity) -> Op<T> {
+    pub(super) fn new(
+        name: String,
+        first_token: Option<T>,
+        followers: Vec<Follower<T>>,
+        prec: Prec,
+        assoc: Assoc,
+        fixity: Fixity,
+        subgrammar: NT,
+    ) -> Op<T> {
         use Assoc::{Left, Right};
         use Fixity::{Infix, Nilfix, Prefix, Suffix};
         let (left_prec, right_prec) = match (fixity, assoc) {
@@ -74,9 +98,11 @@ impl<T: Token> Op<T> {
             prec,
             assoc,
             fixity,
+            first_token,
+            followers,
+            subgrammar,
             left_prec,
             right_prec,
-            tokens,
         }
     }
 }

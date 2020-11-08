@@ -1,22 +1,59 @@
+use super::grammar::{Grammar, Subgrammar};
 use super::op::{Op, Prec};
 use crate::lexing::{Span, Token};
 
 #[derive(Debug, Clone)]
 pub struct OpStack<'g, T: Token> {
+    grammar: &'g Grammar<T>,
+    starting_subgrammar: &'g Subgrammar<T>,
     stack: Vec<(&'g Op<T>, Span, usize)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OpStackTop<T: Token> {
+    /// The top op is waiting for its rightmost argument, with the given prec.
     RightPrec(Prec),
+    /// The top op is waiting for a separator.
     Separator(T),
-    Empty,
+    /// The top op is done, and has no right prec. (So it's time to pop it.)
     FinishedOp,
+    /// The op stack is empty.
+    Empty,
 }
 
 impl<'g, T: Token> OpStack<'g, T> {
-    pub fn new() -> OpStack<'g, T> {
-        OpStack { stack: vec![] }
+    pub fn new(grammar: &'g Grammar<T>) -> OpStack<'g, T> {
+        OpStack {
+            grammar,
+            starting_subgrammar: &grammar.subgrammars[grammar.starting_nonterminal as usize],
+            stack: vec![],
+        }
+    }
+
+    pub fn current_subgrammar(&self) -> &'g Subgrammar<T> {
+        if let Some((op, _, h)) = self.stack.last() {
+            if *h < op.num_holes() {
+                &self.grammar.subgrammars[op.followers[*h].subgrammar_index as usize]
+            } else {
+                &self.grammar.subgrammars[op.subgrammar as usize]
+            }
+        } else {
+            self.starting_subgrammar
+        }
+    }
+
+    pub fn top(&self) -> OpStackTop<T> {
+        if let Some((op, _, h)) = self.stack.last() {
+            if *h < op.num_holes() {
+                OpStackTop::Separator(op.followers[*h].token)
+            } else if op.right_prec.is_some() {
+                OpStackTop::RightPrec(op.right_prec.unwrap())
+            } else {
+                OpStackTop::FinishedOp
+            }
+        } else {
+            OpStackTop::Empty
+        }
     }
 
     pub fn push(&mut self, op: &'g Op<T>, span: Span) {
@@ -30,20 +67,6 @@ impl<'g, T: Token> OpStack<'g, T> {
         (op, span)
     }
 
-    pub fn top(&self) -> OpStackTop<T> {
-        if let Some((op, _, h)) = self.stack.last() {
-            if *h < op.num_holes() {
-                OpStackTop::Separator(op.tokens[*h + 1])
-            } else if op.right_prec.is_some() {
-                OpStackTop::RightPrec(op.right_prec.unwrap())
-            } else {
-                OpStackTop::FinishedOp
-            }
-        } else {
-            OpStackTop::Empty
-        }
-    }
-
     pub fn found_sep(&mut self, sep_span: Span) -> Option<(&'g Op<T>, Span)> {
         let (op, op_span, h) = self.stack.pop().unwrap();
         let span = (op_span.0, sep_span.1);
@@ -55,18 +78,9 @@ impl<'g, T: Token> OpStack<'g, T> {
         }
     }
 
+    // TODO: Is this behavior right if there are 2 seps, and the first is missing?
     pub fn missing_sep(&mut self) -> (&'g Op<T>, Span) {
         let (op, span, _) = self.stack.pop().unwrap();
         (op, span)
-    }
-
-    // TODO: Horrible hack! Can be removed after subgrammars are implemented.
-    pub fn is_expecting_sep(&self, sep: T) -> bool {
-        for (op, _, i) in &self.stack {
-            if *i < op.num_holes() && op.tokens[*i + 1] == sep {
-                return true;
-            }
-        }
-        false
     }
 }

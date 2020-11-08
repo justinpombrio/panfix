@@ -1,18 +1,10 @@
+use super::grammar::{Grammar, Subgrammar};
 use super::op::{Op, Prec};
 use super::op_stack::{OpStack, OpStackTop};
 use crate::lexing::{Lexeme, Span, Token};
-use crate::rpn_visitor::Node as NodeTrait;
 use std::iter::Peekable;
 
-#[derive(Debug, Clone)]
-pub struct Shunter<T: Token> {
-    // Map from the first token in a Prefix or Nilfix op, to that op.
-    pub(super) token_to_prefixy_op: Vec<Option<Op<T>>>,
-    // Map from the first token in a Suffix or Infix op, to that op.
-    pub(super) token_to_suffixy_op: Vec<Option<Op<T>>>,
-    pub(super) missing_atom: Op<T>,
-    pub(super) juxtapose: Op<T>,
-}
+const DEBUG: bool = false;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Node<'g, T: Token> {
@@ -50,7 +42,7 @@ where
     T: Token,
     I: Iterator<Item = Lexeme<T>>,
 {
-    shunter: &'g Shunter<T>,
+    grammar: &'g Grammar<T>,
     // The input stream of lexemes, in their original order.
     lexemes: Peekable<I>,
     // Mode::Expr: looking for an expr.
@@ -58,12 +50,14 @@ where
     mode: Mode,
     // Ops that are still waiting for args or seps.
     op_stack: OpStack<'g, T>,
+    // The current subgrammar. Stateful and constantly changing!
+    subgrammar: &'g Subgrammar<T>,
     // The right position of the last seen token.
     last_pos: usize,
     done: bool,
 }
 
-impl<'g, T: Token> Shunter<T> {
+impl<'g, T: Token> Grammar<T> {
     pub fn shunt<I>(&self, lexemes: I) -> impl Iterator<Item = Result<Node<T>, ShuntError<T>>>
     where
         I: Iterator<Item = Lexeme<T>>,
@@ -117,14 +111,17 @@ where
     T: Token,
     I: Iterator<Item = Lexeme<T>>,
 {
-    fn new(shunter: &'g Shunter<T>, lexemes: I) -> Shunt<'g, T, I> {
-        // println!();
-        // println!("Shunting:");
+    fn new(grammar: &'g Grammar<T>, lexemes: I) -> Shunt<'g, T, I> {
+        if DEBUG {
+            println!();
+            println!("Shunting:");
+        }
         Shunt {
-            shunter,
+            grammar,
             lexemes: lexemes.peekable(),
             mode: Mode::Expr,
-            op_stack: OpStack::new(),
+            op_stack: OpStack::new(grammar),
+            subgrammar: &grammar.subgrammars[grammar.starting_nonterminal as usize],
             last_pos: 0,
             done: false,
         }
@@ -141,8 +138,8 @@ where
 
     fn lookup_op(&self, token: T) -> Option<&'g Op<T>> {
         let index = token.as_usize();
-        let prefixy_op = self.shunter.token_to_prefixy_op[index].as_ref();
-        let suffixy_op = self.shunter.token_to_suffixy_op[index].as_ref();
+        let prefixy_op = self.subgrammar.token_to_prefixy_op[index].as_ref();
+        let suffixy_op = self.subgrammar.token_to_suffixy_op[index].as_ref();
         if self.mode == Mode::Suffix {
             suffixy_op.or(prefixy_op)
         } else {
@@ -153,7 +150,9 @@ where
     fn push(&mut self) -> Step<'g, T> {
         let lexeme = self.lexemes.next().unwrap();
         let op = self.lookup_op(lexeme.token).unwrap();
-        // println!("  Push    {}", op.name);
+        if DEBUG {
+            println!("  Push    {}", op.name);
+        }
         self.op_stack.push(op, lexeme.span);
         self.mode = Mode::Expr;
         Step::Continue
@@ -162,22 +161,28 @@ where
     fn forward(&mut self) -> Step<'g, T> {
         let lexeme = self.lexemes.next().unwrap();
         let op = self.lookup_op(lexeme.token).unwrap();
-        // println!("  Forward {}", op.name);
+        if DEBUG {
+            println!("  Forward {}", op.name);
+        }
         self.mode = Mode::Suffix;
         Step::Produce(op, lexeme.span)
     }
 
     fn missing_atom(&mut self) -> Step<'g, T> {
-        // println!("  Missing");
-        let op = &self.shunter.missing_atom;
+        if DEBUG {
+            println!("  Missing");
+        }
+        let op = &self.subgrammar.missing_atom;
         let span = (self.last_pos, self.last_pos);
         self.mode = Mode::Suffix;
         Step::Produce(op, span)
     }
 
     fn juxtapose(&mut self) -> Step<'g, T> {
-        // println!("  Juxt");
-        let op = &self.shunter.juxtapose;
+        if DEBUG {
+            println!("  Juxt");
+        }
+        let op = &self.subgrammar.juxtapose;
         let span = (self.last_pos, self.last_pos);
         self.op_stack.push(op, span);
         self.mode = Mode::Expr;
@@ -185,7 +190,9 @@ where
     }
 
     fn pop(&mut self) -> Step<'g, T> {
-        // println!("  Pop");
+        if DEBUG {
+            println!("  Pop");
+        }
         match self.op_stack.top() {
             OpStackTop::RightPrec(_) => {
                 let (op, span) = self.op_stack.pop();
@@ -250,23 +257,11 @@ where
     }
 
     fn step(&mut self) -> Step<'g, T> {
+        self.subgrammar = self.op_stack.current_subgrammar();
         let (op_left_prec, op_right_prec) = self.next_token_prec();
         let prec = self.current_prec();
-        let juxt_prec: Prec = self.shunter.juxtapose.left_prec.unwrap();
+        let juxt_prec: Prec = self.subgrammar.juxtapose.left_prec.unwrap();
         let this_pos = self.lexemes.peek().map(|lex| lex.span.1);
-
-        // This is a horrible hack that can be eliminated once subgrammars are implemented.
-        if let Some(lexeme) = self.lexemes.peek() {
-            if self.op_stack.is_expecting_sep(lexeme.token) {
-                if self.mode == Mode::Suffix {
-                    let step = self.pop();
-                    if let Some(pos) = this_pos {
-                        self.last_pos = pos;
-                    }
-                    return step;
-                }
-            }
-        }
 
         let step = match (self.mode, op_left_prec, op_right_prec) {
             // Rule 1.
@@ -290,11 +285,5 @@ where
             self.last_pos = pos;
         }
         step
-    }
-}
-
-impl<'g, T: Token> NodeTrait for Node<'g, T> {
-    fn arity(&self) -> usize {
-        Node::arity(*self)
     }
 }

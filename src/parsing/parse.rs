@@ -1,5 +1,5 @@
-use super::grammar::{Parser, Pattern, Token};
-use crate::lexing::Span;
+use super::grammar::{Parser, Token};
+use crate::lexing::{Pattern, Span};
 use crate::rpn_visitor::Stack as RpnStack;
 use crate::rpn_visitor::Visitor as RpnVisitor;
 use crate::rpn_visitor::VisitorIter as RpnVisitorIter;
@@ -101,7 +101,7 @@ impl Parser {
                         line: 0,
                         column: span.0 + 1,
                     };
-                    let separator = match self.token_patterns.get(&token).unwrap() {
+                    let separator = match self.lexer.get_token_pattern(token).unwrap() {
                         Pattern::Constant(constant) => constant.to_string(),
                         Pattern::Regex(regex) => format!("/{}/", regex),
                     };
@@ -145,8 +145,7 @@ impl<'a> Visitor<'a> {
             .node()
             .op
             .tokens()
-            .iter()
-            .map(|tok| parser.token_patterns.get(tok))
+            .map(|tok| parser.lexer.get_token_pattern(tok))
             .collect()
     }
 

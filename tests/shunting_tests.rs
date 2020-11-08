@@ -1,5 +1,5 @@
 mod shunting {
-    use panfix::shunting::{Lexeme, OpSpec, ShuntError, Shunter, ShunterBuilder, Token};
+    use panfix::shunting::{Assoc, Fixity, Grammar, Lexeme, OpSpec, Prec, ShuntError, Token};
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct CharToken(char);
@@ -19,38 +19,60 @@ mod shunting {
         })
     }
 
-    fn grammar() -> Shunter<CharToken> {
+    fn grammar() -> Grammar<CharToken> {
+        use Assoc::{Left, Right};
+        use Fixity::*;
+
         fn nilfix(name: &str, tokens: &str) -> OpSpec<CharToken> {
-            OpSpec::nilfix(name.to_owned(), to_tokens(tokens))
+            op(name, tokens, Nilfix, Left, 0)
         }
-        fn prefix(name: &str, tokens: &str) -> OpSpec<CharToken> {
-            OpSpec::prefix(name.to_owned(), to_tokens(tokens))
+        fn op(
+            name: &str,
+            tokens: &str,
+            fixity: Fixity,
+            assoc: Assoc,
+            prec: Prec,
+        ) -> OpSpec<CharToken> {
+            let (first, followers) = to_followers(tokens);
+            OpSpec {
+                nonterminal: "Expr".to_owned(),
+                name: name.to_owned(),
+                fixity,
+                assoc,
+                first_token: Some(first),
+                followers,
+                prec,
+            }
         }
-        fn suffix(name: &str, tokens: &str) -> OpSpec<CharToken> {
-            OpSpec::suffix(name.to_owned(), to_tokens(tokens))
+        fn juxtapose(prec: Prec) -> OpSpec<CharToken> {
+            OpSpec::juxtapose("Expr", prec)
         }
-        fn infix(name: &str, tokens: &str) -> OpSpec<CharToken> {
-            OpSpec::infix(name.to_owned(), to_tokens(tokens))
-        }
-        fn to_tokens(tokens_str: &str) -> Vec<CharToken> {
-            tokens_str.chars().map(CharToken).collect()
+        fn to_followers(tokens_str: &str) -> (CharToken, Vec<(String, CharToken)>) {
+            let mut chars = tokens_str.chars();
+            let first = CharToken(chars.next().unwrap());
+            let followers = chars.map(|c| ("Expr".to_owned(), CharToken(c))).collect();
+            (first, followers)
         }
 
-        ShunterBuilder::new()
-            .op(nilfix("1", "1"))
-            .op(nilfix("2", "2"))
-            .op(nilfix("3", "3"))
-            .op(nilfix("b", "{}"))
-            .ops_l(vec![prefix("-", "-"), suffix("!", "!")])
-            .op_r(infix("*", "*"))
-            .ops_r(vec![
-                infix("?", "?:"),
-                OpSpec::juxtapose(),
-                suffix("@", "()"),
-            ])
-            .op_l(infix("+", "+"))
-            .ops_r(vec![prefix("^", "^"), prefix("s", "[/]")])
-            .build()
+        Grammar::new(
+            "ShuntingTesting".to_owned(),
+            "Expr".to_owned(),
+            vec![
+                nilfix("1", "1"),
+                nilfix("2", "2"),
+                nilfix("3", "3"),
+                nilfix("b", "{}"),
+                op("-", "-", Prefix, Left, 1),
+                op("!", "!", Suffix, Left, 1),
+                op("*", "*", Infix, Right, 2),
+                op("?", "?:", Infix, Right, 3),
+                juxtapose(3),
+                op("@", "()", Suffix, Right, 3),
+                op("+", "+", Infix, Left, 4),
+                op("^", "^", Prefix, Left, 5),
+                op("s", "[/]", Prefix, Left, 5),
+            ],
+        )
     }
 
     fn shunt(source: &str) -> String {
@@ -73,7 +95,7 @@ mod shunting {
                     let ch = match node.op.name() {
                         "$Juxtapose" => 'J',
                         "$MissingAtom" => 'M',
-                        _ => node.op.tokens()[0].0,
+                        _ => node.op.first_token().unwrap().0,
                     };
                     output.push(ch);
                 }

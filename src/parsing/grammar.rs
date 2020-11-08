@@ -1,8 +1,14 @@
 use crate::lexing::Lexer;
 use crate::lexing::Token as TokenTrait;
 use crate::shunting::OpSpec as RealOpSpec;
-use crate::shunting::{Fixity, Shunter, ShunterBuilder};
+use crate::shunting::{Assoc, Fixity, Grammar as ShuntingGrammar, Prec};
 use std::collections::HashMap;
+
+// TODO: Op -> CompiledOp, shunting::OpSpec -> Op, OpSpec -> Op
+
+/// White space, according to the Pattern_White_Space Unicode property.
+const WHITESPACE_REGEX: &str =
+    "[\\u0009\\u000A\\u000B\\u000C\\u000D\\u0020\\u0085\\u200E\\u200F\\u2028\\u2029]*";
 
 pub type RegexPattern = String;
 
@@ -13,35 +19,53 @@ pub enum Token {
     Normal(u32),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpSpec {
     pub name: String,
     pub fixity: Fixity,
-    pub tokens: Vec<String>,
+    pub first_token: String,
+    pub followers: Vec<(String, String)>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Pattern {
-    Constant(String),
-    Regex(RegexPattern),
-}
-
+#[derive(Debug)]
 pub struct Grammar {
-    whitespace: RegexPattern,
+    language_name: String,
+    whitespace: String,
     token_set: TokenSet,
-    builder: ShunterBuilder<Token>,
-    token_patterns: HashMap<Token, Pattern>,
+    ops: Vec<RealOpSpec<Token>>,
+    nonterminals: Vec<String>,
 }
 
+#[derive(Debug)]
+pub struct Subgrammar<'a> {
+    name: String,
+    ops: Vec<RealOpSpec<Token>>,
+    prec: Prec,
+    token_set: &'a mut TokenSet,
+}
+
+#[derive(Debug)]
 pub struct Parser {
     pub(super) lexer: Lexer<Token>,
-    pub(super) shunter: Shunter<Token>,
-    pub(super) token_patterns: HashMap<Token, Pattern>,
+    pub(super) shunter: ShuntingGrammar<Token>,
 }
 
+#[derive(Debug)]
 struct TokenSet {
     next_token: u32,
     regexes: Vec<(RegexPattern, Token)>,
     constants: HashMap<String, Token>,
+}
+
+impl OpSpec {
+    pub fn juxtapose() -> OpSpec {
+        OpSpec {
+            name: "$Juxtapose".to_owned(),
+            fixity: Fixity::Infix,
+            first_token: "".to_owned(),
+            followers: vec![],
+        }
+    }
 }
 
 impl TokenTrait for Token {
@@ -57,94 +81,167 @@ impl TokenTrait for Token {
 }
 
 impl Grammar {
-    pub fn new(whitespace: &str) -> Grammar {
+    pub fn new(language_name: &str) -> Grammar {
         Grammar {
-            whitespace: whitespace.to_string(),
+            language_name: language_name.to_owned(),
+            whitespace: WHITESPACE_REGEX.to_owned(),
             token_set: TokenSet::new(),
-            builder: ShunterBuilder::new(),
-            token_patterns: HashMap::new(),
+            ops: vec![],
+            nonterminals: vec![],
         }
     }
 
-    pub fn regex(self, name: &str, regex: &str) -> Self {
-        let pattern = Pattern::Regex(regex.to_owned());
-        self.add_atom(name.to_owned(), pattern)
+    pub fn with_whitespace(mut self, whitespace: &str) -> Self {
+        self.whitespace = whitespace.to_owned();
+        self
     }
 
-    pub fn constant(self, name: &str, constant: &str) -> Self {
-        let pattern = Pattern::Constant(constant.to_owned());
-        self.add_atom(name.to_owned(), pattern)
+    pub fn regex(mut self, name: &str, regex: &str) -> Self {
+        let token = self.token_set.insert_regex(regex.to_owned());
+        self.ops.push(RealOpSpec {
+            nonterminal: "".to_owned(), // sentinal value
+            name: name.to_owned(),
+            fixity: Fixity::Nilfix,
+            assoc: Assoc::Left, // irrelevant
+            first_token: Some(token),
+            followers: vec![],
+            prec: 0,
+        });
+        self
+    }
+
+    pub fn constant(mut self, name: &str, constant: &str) -> Self {
+        let token = self.token_set.insert_constant(constant.to_owned());
+        self.ops.push(RealOpSpec {
+            nonterminal: "".to_owned(), // sentinal value
+            name: name.to_owned(),
+            fixity: Fixity::Nilfix,
+            assoc: Assoc::Left, // irrelevant
+            first_token: Some(token),
+            followers: vec![],
+            prec: 0,
+        });
+        self
+    }
+
+    pub fn subgrammar(mut self, name: &str, build: impl Fn(Subgrammar) -> Subgrammar) -> Self {
+        assert!(!name.is_empty());
+        let mut subgrammar = Subgrammar::new(name, &mut self.token_set);
+        subgrammar = build(subgrammar);
+        self.ops.extend(subgrammar.ops);
+        self.nonterminals.push(name.to_owned());
+        self
+    }
+
+    // TODO: Errors
+    pub fn build(self, starting_nonterminal: &str) -> Parser {
+        let lexer = self.token_set.into_lexer(self.whitespace);
+        let mut ops = vec![];
+        for op in self.ops {
+            for (nonterminal, _) in &op.followers {
+                if !self.nonterminals.contains(nonterminal) {
+                    panic!("No such subgrammar: {}", nonterminal);
+                }
+            }
+            if op.nonterminal.is_empty() {
+                // These are atoms made with `regex` or `constant`, which should be shared across
+                // all subgrammars.
+                for nonterminal in &self.nonterminals {
+                    let mut op = op.clone();
+                    op.nonterminal = nonterminal.to_owned();
+                    ops.push(op);
+                }
+            } else {
+                ops.push(op);
+            }
+        }
+        let shunter =
+            ShuntingGrammar::new(self.language_name, starting_nonterminal.to_owned(), ops);
+        Parser { lexer, shunter }
+    }
+}
+
+impl<'a> Subgrammar<'a> {
+    fn new(name: &str, token_set: &'a mut TokenSet) -> Subgrammar<'a> {
+        Subgrammar {
+            name: name.to_owned(),
+            ops: vec![],
+            prec: 1,
+            token_set,
+        }
     }
 
     pub fn op_l(mut self, op: OpSpec) -> Self {
-        let op = self.convert_op(op);
-        self.builder = self.builder.op_l(op);
+        assert_ne!(op.fixity, Fixity::Nilfix);
+        self.add_op(op, Assoc::Left);
+        self.prec += 1;
         self
     }
 
     pub fn op_r(mut self, op: OpSpec) -> Self {
-        let op = self.convert_op(op);
-        self.builder = self.builder.op_r(op);
+        assert_ne!(op.fixity, Fixity::Nilfix);
+        self.add_op(op, Assoc::Right);
+        self.prec += 1;
         self
     }
 
     pub fn op(mut self, op: OpSpec) -> Self {
-        let op = self.convert_op(op);
-        self.builder = self.builder.op(op);
+        assert_ne!(op.fixity, Fixity::Infix);
+        if op.fixity == Fixity::Nilfix {
+            assert_eq!(
+                self.prec, 1,
+                "For clarity, please list nilfix operators like {} first.",
+                op.name
+            );
+        }
+        self.add_op(op, Assoc::Left);
         self
     }
 
     pub fn ops_l(mut self, ops: Vec<OpSpec>) -> Self {
-        let ops = ops.into_iter().map(|op| self.convert_op(op)).collect();
-        self.builder = self.builder.ops_l(ops);
+        for op in ops {
+            assert_ne!(op.fixity, Fixity::Nilfix);
+            self.add_op(op, Assoc::Left);
+        }
+        self.prec += 1;
         self
     }
 
     pub fn ops_r(mut self, ops: Vec<OpSpec>) -> Self {
-        let ops = ops.into_iter().map(|op| self.convert_op(op)).collect();
-        self.builder = self.builder.ops_r(ops);
-        self
-    }
-
-    fn add_atom(mut self, name: String, pattern: Pattern) -> Self {
-        let token = match pattern.clone() {
-            Pattern::Constant(constant) => self.token_set.insert_constant(constant),
-            Pattern::Regex(regex) => self.token_set.insert_regex(regex),
-        };
-        self.token_patterns.insert(token, pattern);
-        let op = RealOpSpec {
-            name,
-            tokens: vec![token],
-            fixity: Fixity::Nilfix,
-        };
-        self.builder = self.builder.op(op);
-        self
-    }
-
-    fn convert_op(&mut self, op: OpSpec) -> RealOpSpec<Token> {
-        let mut tokens = vec![];
-        for constant in op.tokens {
-            let token = self.token_set.insert_constant(constant.clone());
-            self.token_patterns
-                .insert(token, Pattern::Constant(constant));
-            tokens.push(token);
+        for op in ops {
+            assert_ne!(op.fixity, Fixity::Nilfix);
+            self.add_op(op, Assoc::Right);
         }
-        RealOpSpec {
+        self.prec += 1;
+        self
+    }
+
+    fn add_op(&mut self, op: OpSpec, assoc: Assoc) {
+        let mut followers = vec![];
+        for (nonterminal, constant) in op.followers {
+            let token = self.token_set.insert_constant(constant);
+            followers.push((nonterminal, token));
+        }
+        let first_token = if op.first_token.is_empty() {
+            assert_eq!(op.name, "$Juxtapose");
+            None
+        } else {
+            Some(self.token_set.insert_constant(op.first_token))
+        };
+        let prec = if op.fixity == Fixity::Nilfix {
+            0
+        } else {
+            self.prec
+        };
+        self.ops.push(RealOpSpec {
+            nonterminal: self.name.clone(),
             name: op.name,
-            tokens,
             fixity: op.fixity,
-        }
-    }
-
-    // TODO: Errors
-    pub fn build(self) -> Parser {
-        let lexer = self.token_set.into_lexer(self.whitespace);
-        let shunter = self.builder.build();
-        Parser {
-            lexer,
-            shunter,
-            token_patterns: self.token_patterns,
-        }
+            assoc,
+            first_token,
+            followers,
+            prec,
+        })
     }
 }
 
@@ -177,7 +274,7 @@ impl TokenSet {
             *token
         } else {
             let token = self.new_token();
-            self.constants.insert(constant, token);
+            self.constants.insert(constant.clone(), token);
             token
         }
     }
@@ -193,49 +290,111 @@ impl TokenSet {
 }
 
 #[macro_export]
+macro_rules! juxtapose {
+    () => {
+        $crate::parsing::OpSpec::juxtapose()
+    };
+}
+
+#[macro_export]
 macro_rules! op {
-    ($name:ident : _ $($tokens:literal)* _) => {
-        op!(@ $name ($crate::parsing::Fixity::Infix) [] $($tokens)*)
+    ($name:ident : _ $token:literal $($followers:tt)*) => {
+        op!(@ $name Y $token [ ] $($followers)*)
     };
 
-    ($name:ident : $($tokens:literal)* _) => {
-        op!(@ $name ($crate::parsing::Fixity::Prefix) [] $($tokens)*)
+    ($name:ident : $token:literal $($followers:tt)*) => {
+        op!(@ $name N $token [ ] $($followers)*)
     };
 
-    ($name:ident : _ $($tokens:literal)*) => {
-        op!(@ $name ($crate::parsing::Fixity::Suffix) [] $($tokens)*)
+    (@ $name:ident $l:ident $token:literal [ $($followers:tt)* ] $nt:ident $tok:literal $($rest:tt)*) => {
+        op!(@ $name $l $token [ $($followers)* (std::stringify!($nt).to_owned(), $tok.to_owned()), ] $($rest)*)
     };
 
-    ($name:ident : $($tokens:literal)*) => {
-        op!(@ $name ($crate::parsing::Fixity::Nilfix) [] $($tokens)*)
-    };
-
-    (@ $name:ident ($fixity:expr) [$($tokens:tt)*] $token:literal $($rest:literal)*) => {
-        op!(@ $name ($fixity) [$($tokens)* $token.to_string() ,] $($rest)*)
-    };
-
-    (@ $name:ident ($fixity:expr) [$($tokens:tt)*]) => {
+    (@ $name:ident Y $token:literal [ $($followers:tt)* ] _) => {
         $crate::parsing::OpSpec {
-            name: stringify!($name).to_string(),
-            fixity: $fixity,
-            tokens: vec![$($tokens)*],
+            name: stringify!($name).to_owned(),
+            first_token: $token.to_owned(),
+            fixity: $crate::parsing::Fixity::Infix,
+            followers: vec![$($followers)*],
+        }
+    };
+
+    (@ $name:ident Y $token:literal [ $($followers:tt)* ]) => {
+        $crate::parsing::OpSpec {
+            name: stringify!($name).to_owned(),
+            first_token: $token.to_owned(),
+            fixity: $crate::parsing::Fixity::Suffix,
+            followers: vec![$($followers)*],
+        }
+    };
+
+    (@ $name:ident N $token:literal [ $($followers:tt)* ] _) => {
+        $crate::parsing::OpSpec {
+            name: stringify!($name).to_owned(),
+            first_token: $token.to_owned(),
+            fixity: $crate::parsing::Fixity::Prefix,
+            followers: vec![$($followers)*],
+        }
+    };
+
+    (@ $name:ident N $token:literal [ $($followers:tt)* ]) => {
+        $crate::parsing::OpSpec {
+            name: stringify!($name).to_owned(),
+            first_token: $token.to_owned(),
+            fixity: $crate::parsing::Fixity::Nilfix,
+            followers: vec![$($followers)*],
         }
     };
 }
 
 #[test]
-fn test_op_macro() {
-    assert_eq!(op!(Colon: _ ":" _).fixity, Fixity::Infix);
-    assert_eq!(op!(Parens: "(" ")").fixity, Fixity::Nilfix);
-}
-
-#[macro_export]
-macro_rules! juxtapose {
-    () => {
-        $crate::parsing::OpSpec {
-            name: "$Juxtapose".to_owned(),
-            fixity: $crate::parsing::Fixity::Infix,
-            tokens: vec![],
+fn test_macro() {
+    assert_eq!(
+        op!(Plus: _ "+" _),
+        OpSpec {
+            name: "Plus".to_owned(),
+            first_token: "+".to_owned(),
+            fixity: Fixity::Infix,
+            followers: vec![]
         }
-    };
+    );
+    assert_eq!(
+        op!(Apply: _ "(" Expr ")"),
+        OpSpec {
+            name: "Apply".to_owned(),
+            first_token: "(".to_owned(),
+            fixity: Fixity::Suffix,
+            followers: vec![("Expr".to_owned(), ")".to_owned())]
+        }
+    );
+    assert_eq!(
+        op!(Neg: "-" _),
+        OpSpec {
+            name: "Neg".to_owned(),
+            first_token: "-".to_owned(),
+            fixity: Fixity::Prefix,
+            followers: vec![]
+        }
+    );
+    assert_eq!(
+        op!(Zero: "0"),
+        OpSpec {
+            name: "Zero".to_owned(),
+            first_token: "0".to_owned(),
+            fixity: Fixity::Nilfix,
+            followers: vec![]
+        }
+    );
+    assert_eq!(
+        op!(Ifte: "if" Expr1 "then" Expr2 "end"),
+        OpSpec {
+            name: "Ifte".to_owned(),
+            first_token: "if".to_owned(),
+            fixity: Fixity::Nilfix,
+            followers: vec![
+                ("Expr1".to_owned(), "then".to_owned()),
+                ("Expr2".to_owned(), "end".to_owned())
+            ],
+        }
+    );
 }

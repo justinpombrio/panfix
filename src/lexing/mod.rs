@@ -4,7 +4,7 @@ use std::iter::Iterator;
 
 mod builder;
 
-pub use builder::{Lexer, LexerBuilder};
+pub use builder::{Lexer, LexerBuilder, Pattern};
 
 pub type Span = (usize, usize);
 
