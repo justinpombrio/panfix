@@ -217,8 +217,8 @@ mod parsing {
             .regex("Var", "[a-zA-Z]+")
             .subgrammar("Expr", |builder| {
                 builder
-                    .op_l(op!(Dot: _ "." _))
-                    .op_r(op!(Comma: _ "," _))
+                    .op(op!(Dot: _ "." _))
+                    .op(op!(Comma: _ "," _))
                     .op(op!(Lambda: "/" Expr "." _))
             })
             .build("Expr");

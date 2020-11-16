@@ -20,7 +20,7 @@ mod lua_tests {
             .constant("Ellipses", "...")
             .constant("Break", "break")
             .subgrammar("FuncName", |builder| {
-                builder.op_r(op!(Colon: _ ":" _)).op_l(op!(Dot: _ "." _))
+                builder.op(op!(Colon: _ ":" _)).op(op!(Dot: _ "." _))
             })
             .subgrammar("Expr", |builder| {
                 builder
@@ -31,43 +31,54 @@ mod lua_tests {
                     .op(op!(Function: "function" FuncName "(" Expr ")" Expr "end"))
                     .op(op!(Table: "{" Expr "}"))
                     .op(op!(Parens: "(" Expr ")"))
-                    .op_r(op!(Exp: _ "^" _))
-                    .ops_r(vec![op!(Not: "not" _), op!(Hash: "#" _), op!(Neg: "-" _)])
-                    .ops_l(vec![
-                        op!(Mul: _ "*" _),
-                        op!(Div: _ "/" _),
-                        op!(Mod: _ "%" _),
-                    ])
-                    .ops_l(vec![op!(Add: _ "+" _), op!(Sub: _ "-" _)])
-                    .op_l(op!(Range: _ ".." _))
-                    .ops_l(vec![
-                        op!(Lt: _ "<" _),
-                        op!(Gt: _ ">" _),
-                        op!(Lte: _ "<=" _),
-                        op!(Gte: _ ">=" _),
-                        op!(Neq: _ "~=" _),
-                        op!(Eq: _ "==" _),
-                    ])
-                    .op_r(op!(And: _ "and" _))
-                    .op_r(op!(Or: _ "or" _))
-                    .op_r(op!(Colon: _ ":" _))
-                    .ops_l(vec![
-                        op!(Dot: _ "." _),
-                        op!(Get: _ "[" Expr "]"),
-                        op!(Call: _ "(" Expr ")"),
-                        op!(CallTable: _ "{" Expr "}"),
-                        juxtapose!(),
-                    ])
-                    .op_r(op!(Comma: _ "," _))
-                    .op_r(op!(Equals: _ "=" _))
+                    .op(op!(Exp: _ "^" _)) // right assoc
+                    .ops(
+                        "Unary",
+                        vec![op!(Not: "not" _), op!(Hash: "#" _), op!(Neg: "-" _)],
+                    )
+                    .ops(
+                        "Multiplication",
+                        vec![op!(Mul: _ "*" _), op!(Div: _ "/" _), op!(Mod: _ "%" _)],
+                    )
+                    .ops("Addition", vec![op!(Add: _ "+" _), op!(Sub: _ "-" _)])
+                    .op(op!(Range: _ ".." _))
+                    .ops(
+                        "Comparison",
+                        vec![
+                            op!(Lt: _ "<" _),
+                            op!(Gt: _ ">" _),
+                            op!(Lte: _ "<=" _),
+                            op!(Gte: _ ">=" _),
+                            op!(Neq: _ "~=" _),
+                            op!(Eq: _ "==" _),
+                        ],
+                    )
+                    .op(op!(And: _ "and" _)) // right assoc
+                    .op(op!(Or: _ "or" _)) // right assoc
+                    .op(op!(Colon: _ ":" _)) // right assoc
+                    .ops(
+                        "Dotting",
+                        vec![
+                            op!(Dot: _ "." _),
+                            op!(Get: _ "[" Expr "]"),
+                            op!(Call: _ "(" Expr ")"),
+                            op!(CallTable: _ "{" Expr "}"),
+                            juxtapose!(),
+                        ],
+                    )
+                    .op(op!(Comma: _ "," _)) // right_assoc
+                    .op(op!(Equals: _ "=" _)) // right assoc
                     .op(op!(Return: "return" _))
-                    .ops_r(vec![
-                        op!(Else: _ "else" _),
-                        op!(ElseIf: _ "elseif" Expr "then" _),
-                        op!(Repeat: _ "repeat" Expr "until" _),
-                        op!(Local: _ "local" _),
-                    ])
-                    .op_r(op!(Semi: _ ";" _))
+                    .ops(
+                        "Conditional",
+                        vec![
+                            op!(Else: _ "else" _),
+                            op!(ElseIf: _ "elseif" Expr "then" _),
+                            op!(Repeat: _ "repeat" Expr "until" _),
+                            op!(Local: _ "local" _),
+                        ],
+                    ) // right assoc
+                    .op(op!(Semi: _ ";" _)) // right assoc
             })
             .build("Expr")
     }

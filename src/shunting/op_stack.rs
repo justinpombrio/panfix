@@ -35,7 +35,7 @@ impl<'g, T: Token> OpStack<'g, T> {
             if *h < op.num_holes() {
                 &self.grammar.subgrammars[op.followers[*h].subgrammar_index as usize]
             } else {
-                &self.grammar.subgrammars[op.subgrammar as usize]
+                &self.grammar.subgrammars[op.nonterminal as usize]
             }
         } else {
             self.starting_subgrammar

@@ -31,6 +31,7 @@ pub struct Visitor<'s, N: Node> {
     ptr: usize,
 }
 
+#[derive(Debug)]
 pub struct VisitorIter<'s, N: Node> {
     stack: &'s [Link<N>],
     ptr: usize,

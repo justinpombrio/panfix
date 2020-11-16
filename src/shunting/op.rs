@@ -17,6 +17,24 @@ pub enum Fixity {
     Infix,
 }
 
+impl Fixity {
+    pub fn has_left_arg(self) -> bool {
+        use Fixity::*;
+        match self {
+            Suffix | Infix => true,
+            Prefix | Nilfix => false,
+        }
+    }
+
+    pub fn has_right_arg(self) -> bool {
+        use Fixity::*;
+        match self {
+            Prefix | Infix => true,
+            Suffix | Nilfix => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Op<T: Token> {
     pub(super) name: String,
@@ -25,7 +43,8 @@ pub struct Op<T: Token> {
     pub(super) fixity: Fixity,
     pub(super) first_token: Option<T>,
     pub(super) followers: Vec<Follower<T>>,
-    pub(super) subgrammar: NT,
+    pub(super) nonterminal: NT,
+    pub(super) op_group_name: String,
     pub(super) left_prec: Option<Prec>,  // computed
     pub(super) right_prec: Option<Prec>, // computed
 }
@@ -39,6 +58,10 @@ pub(super) struct Follower<T> {
 impl<'g, T: Token> Op<T> {
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn op_group_name(&self) -> &str {
+        &self.op_group_name
     }
 
     pub fn arity(&self) -> usize {
@@ -80,7 +103,8 @@ impl<T: Token> Op<T> {
         prec: Prec,
         assoc: Assoc,
         fixity: Fixity,
-        subgrammar: NT,
+        nonterminal: NT,
+        op_group_name: String,
     ) -> Op<T> {
         use Assoc::{Left, Right};
         use Fixity::{Infix, Nilfix, Prefix, Suffix};
@@ -100,7 +124,8 @@ impl<T: Token> Op<T> {
             fixity,
             first_token,
             followers,
-            subgrammar,
+            nonterminal,
+            op_group_name,
             left_prec,
             right_prec,
         }

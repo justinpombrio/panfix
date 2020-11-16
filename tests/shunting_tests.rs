@@ -36,6 +36,7 @@ mod shunting {
             let (first, followers) = to_followers(tokens);
             OpSpec {
                 nonterminal: "Expr".to_owned(),
+                group_name: name.to_owned(),
                 name: name.to_owned(),
                 fixity,
                 assoc,
@@ -45,7 +46,7 @@ mod shunting {
             }
         }
         fn juxtapose(prec: Prec) -> OpSpec<CharToken> {
-            OpSpec::juxtapose("Expr", prec)
+            OpSpec::juxtapose("Expr", "$Juxtapose", prec)
         }
         fn to_followers(tokens_str: &str) -> (CharToken, Vec<(String, CharToken)>) {
             let mut chars = tokens_str.chars();

@@ -23,6 +23,7 @@ pub struct Subgrammar<T: Token> {
 #[derive(Debug, Clone)]
 pub struct OpSpec<T: Token> {
     pub nonterminal: String,
+    pub group_name: String,
     pub name: String,
     pub fixity: Fixity,
     pub assoc: Assoc,
@@ -32,9 +33,10 @@ pub struct OpSpec<T: Token> {
 }
 
 impl<T: Token> OpSpec<T> {
-    pub fn juxtapose(nonterminal: &str, prec: Prec) -> OpSpec<T> {
+    pub fn juxtapose(nonterminal: &str, group_name: &str, prec: Prec) -> OpSpec<T> {
         OpSpec {
             nonterminal: nonterminal.to_owned(),
+            group_name: group_name.to_owned(),
             name: "$Juxtapose".to_owned(),
             fixity: Fixity::Infix,
             assoc: Assoc::Right,
@@ -87,6 +89,7 @@ impl<T: Token> Grammar<T> {
                 op.assoc,
                 op.fixity,
                 nt,
+                op.group_name,
             );
             let subgrammar = &mut grammar_maker.subgrammars[nt as usize];
             if &op.name == "$Juxtapose" {
@@ -208,6 +211,7 @@ impl<T: Token> SubgrammarMaker<T> {
                 Assoc::Right,
                 Fixity::Infix,
                 nt,
+                "$Juxtapose".to_owned(),
             )
         });
         let missing_atom = Op::new(
@@ -218,6 +222,7 @@ impl<T: Token> SubgrammarMaker<T> {
             Assoc::Left,
             Fixity::Nilfix,
             nt,
+            "$MissingAtom".to_owned(),
         );
 
         // Initialize maps from token.as_usize() to the op that starts with that token.

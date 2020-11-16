@@ -1,4 +1,4 @@
-use panfix::parsing::{Fixity, ParseError, Parser, Pattern, Visitor};
+use panfix::parsing::{Fixity, Link, OpChain, ParseError, Parser, Pattern};
 
 pub fn run_parser(parser: &Parser, input: &str) -> String {
     use ParseError::*;
@@ -20,9 +20,9 @@ pub fn run_parser(parser: &Parser, input: &str) -> String {
         },
         Ok(parsed) => {
             let mut expr = String::new();
-            for (i, visitor) in parsed.groups().enumerate() {
+            for (i, visitor) in parsed.root_nodes().enumerate() {
                 parenthesize(&mut expr, visitor, &parser);
-                if i + 1 != parsed.groups().len() {
+                if i + 1 != parsed.root_nodes().len() {
                     expr.push(' ');
                 }
             }
@@ -31,6 +31,11 @@ pub fn run_parser(parser: &Parser, input: &str) -> String {
     }
 }
 
+fn parenthesize(out: &mut String, chain: OpChain, parser: &Parser) {
+    unimplemented!()
+}
+
+/*
 fn parenthesize(out: &mut String, visitor: Visitor, parser: &Parser) {
     let fixity = visitor.fixity();
     let mut children = visitor.children();
@@ -74,3 +79,4 @@ fn pattern_to_const<'a>(pattern: Option<&'a Pattern>, visitor: Visitor<'a>) -> &
         Some(_) => visitor.text(),
     }
 }
+*/

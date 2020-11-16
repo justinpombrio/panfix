@@ -102,6 +102,7 @@ impl Grammar {
             .insert_regex(name.to_owned(), regex.to_owned());
         self.ops.push(RealOpSpec {
             nonterminal: "".to_owned(), // sentinal value
+            group_name: name.to_owned(),
             name: name.to_owned(),
             fixity: Fixity::Nilfix,
             assoc: Assoc::Left, // irrelevant
@@ -116,6 +117,7 @@ impl Grammar {
         let token = self.token_set.insert_constant(constant.to_owned());
         self.ops.push(RealOpSpec {
             nonterminal: "".to_owned(), // sentinal value
+            group_name: name.to_owned(),
             name: name.to_owned(),
             fixity: Fixity::Nilfix,
             assoc: Assoc::Left, // irrelevant
@@ -168,57 +170,35 @@ impl<'a> Subgrammar<'a> {
         Subgrammar {
             name: name.to_owned(),
             ops: vec![],
-            prec: 1,
+            prec: 0,
             token_set,
         }
     }
 
-    pub fn op_l(mut self, op: OpSpec) -> Self {
-        assert_ne!(op.fixity, Fixity::Nilfix);
-        self.add_op(op, Assoc::Left);
-        self.prec += 1;
-        self
-    }
-
-    pub fn op_r(mut self, op: OpSpec) -> Self {
-        assert_ne!(op.fixity, Fixity::Nilfix);
-        self.add_op(op, Assoc::Right);
-        self.prec += 1;
-        self
-    }
-
     pub fn op(mut self, op: OpSpec) -> Self {
-        assert_ne!(op.fixity, Fixity::Infix);
         if op.fixity == Fixity::Nilfix {
             assert_eq!(
-                self.prec, 1,
+                self.prec, 0,
                 "For clarity, please list nilfix operators like {} first.",
                 op.name
             );
+        } else {
+            self.prec += 1;
         }
-        self.add_op(op, Assoc::Left);
+        self.add_op(op.name.clone(), op);
         self
     }
 
-    pub fn ops_l(mut self, ops: Vec<OpSpec>) -> Self {
+    pub fn ops(mut self, group_name: &str, ops: Vec<OpSpec>) -> Self {
+        self.prec += 1;
         for op in ops {
             assert_ne!(op.fixity, Fixity::Nilfix);
-            self.add_op(op, Assoc::Left);
+            self.add_op(group_name.to_owned(), op);
         }
-        self.prec += 1;
         self
     }
 
-    pub fn ops_r(mut self, ops: Vec<OpSpec>) -> Self {
-        for op in ops {
-            assert_ne!(op.fixity, Fixity::Nilfix);
-            self.add_op(op, Assoc::Right);
-        }
-        self.prec += 1;
-        self
-    }
-
-    fn add_op(&mut self, op: OpSpec, assoc: Assoc) {
+    fn add_op(&mut self, group_name: String, op: OpSpec) {
         let mut followers = vec![];
         for (nonterminal, constant) in op.followers {
             let token = self.token_set.insert_constant(constant);
@@ -237,9 +217,10 @@ impl<'a> Subgrammar<'a> {
         };
         self.ops.push(RealOpSpec {
             nonterminal: self.name.clone(),
+            group_name,
             name: op.name,
             fixity: op.fixity,
-            assoc,
+            assoc: Assoc::Right,
             first_token,
             followers,
             prec,
