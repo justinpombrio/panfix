@@ -74,15 +74,15 @@ where
     type Item = Result<Node<'g, T>, ShuntError<T>>;
 
     fn next(&mut self) -> Option<Result<Node<'g, T>, ShuntError<T>>> {
+        if self.done {
+            return None;
+        }
         loop {
-            if self.done {
-                return None;
-            }
             match self.step() {
+                Step::Continue => continue,
                 Step::Produce(op, span) => {
                     return Some(Ok(Node { op, span }));
                 }
-                Step::Continue => continue,
                 Step::Done => {
                     self.done = true;
                     return None;

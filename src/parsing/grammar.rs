@@ -10,6 +10,22 @@ use std::collections::HashMap;
 const WHITESPACE_REGEX: &str =
     "[\\u0009\\u000A\\u000B\\u000C\\u000D\\u0020\\u0085\\u200E\\u200F\\u2028\\u2029]*";
 
+fn foo() {
+    GrammarBuilder::new("MyLang")
+        .literal("zero", Zero)
+        // ========== Statements =========== //
+        .subgrammar("stmt")
+        .op_multi("(", Nilfix, vec![("expr", ")")])
+        .group_l()
+        .op(Infix, "+")
+        .op(Infix, "-")
+        .group_r()
+        .op(Infix, "*")
+        .juxtapose()
+        // ========== Expressions ========== //
+        .subgrammar("expr")
+}
+
 pub type RegexPattern = String;
 
 #[doc(hidden)]

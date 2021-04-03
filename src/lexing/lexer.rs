@@ -1,14 +1,6 @@
 use super::pattern::Pattern;
-use super::Token;
+use super::{Lexeme, Token};
 use regex::{Regex, RegexSet};
-
-pub type Span = (usize, usize);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Lexeme<T: Token> {
-    pub token: T,
-    pub span: Span,
-}
 
 #[derive(Debug, Clone)]
 pub struct Lexer<T: Token> {
