@@ -1,5 +1,6 @@
 use super::op::{Assoc, Fixity, Op, OpName, Prec, Token, NT};
 use std::collections::HashMap;
+use std::iter;
 use thiserror::Error;
 
 #[derive(Debug, Clone)]
@@ -24,6 +25,7 @@ pub struct Subgrammar<N: OpName> {
 #[derive(Debug, Clone)]
 pub struct GrammarBuilder<N: OpName> {
     language_name: String,
+    token_count: usize,
     nonterminals: HashMap<String, NT>,
     subgrammars: Vec<Subgrammar<N>>,
     starting_nonterminal: Option<NT>,
@@ -62,9 +64,10 @@ pub enum GrammarBuilderError<N: OpName> {
 }
 
 impl<N: OpName> GrammarBuilder<N> {
-    pub fn new(language_name: &str) -> GrammarBuilder<N> {
+    pub fn new(language_name: &str, token_count: usize) -> GrammarBuilder<N> {
         GrammarBuilder {
             language_name: language_name.to_owned(),
+            token_count,
             nonterminals: HashMap::new(),
             subgrammars: vec![],
             starting_nonterminal: None,
@@ -216,8 +219,8 @@ impl<N: OpName> GrammarBuilder<N> {
                 let nt = self.subgrammars.len();
                 let subgrammar = Subgrammar {
                     name: name.to_owned(),
-                    token_to_prefixy_op: vec![],
-                    token_to_suffixy_op: vec![],
+                    token_to_prefixy_op: iter::repeat(None).take(self.token_count).collect(),
+                    token_to_suffixy_op: iter::repeat(None).take(self.token_count).collect(),
                     missing_atom: Op::new_missing_atom(nt),
                     juxtapose: Op::new_juxtapose(nt, 1),
                     starting_tokens: HashMap::new(),

@@ -1,7 +1,7 @@
 use super::grammar::{Grammar, Subgrammar};
 use super::op::{Op, Prec};
 use super::op_stack::{OpStack, OpStackTop};
-use crate::lexing::{Lexeme, Span, Token};
+use crate::lexing::{Lexeme, Span};
 use std::iter::Peekable;
 
 const DEBUG: bool = false;
@@ -14,7 +14,9 @@ pub struct Node<'g, T: Token> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mode {
+    /// Looking for an expression.
     Expr,
+    /// Looking to extend an expression with a suffix.
     Suffix,
 }
 
