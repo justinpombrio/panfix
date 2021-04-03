@@ -1,263 +1,232 @@
-use super::op::{Assoc, Fixity, Follower, Op, Prec, NT};
-use crate::lexing::Token;
+use super::op::{Assoc, Fixity, Op, OpName, Prec, Token, NT};
 use std::collections::HashMap;
+use thiserror::Error;
 
 #[derive(Debug, Clone)]
-pub struct Grammar<T: Token> {
+pub struct Grammar<N: OpName> {
     pub(super) language_name: String,
     pub(super) starting_nonterminal: NT,
-    pub(super) subgrammars: Vec<Subgrammar<T>>,
+    pub(super) subgrammars: Vec<Subgrammar<N>>,
 }
 
 #[derive(Debug, Clone)]
-pub struct Subgrammar<T: Token> {
+pub struct Subgrammar<N: OpName> {
     pub(super) name: String,
     // Map from the first token in a Prefix or Nilfix op, to that op.
-    pub(super) token_to_prefixy_op: Vec<Option<Op<T>>>,
+    pub(super) token_to_prefixy_op: Vec<Option<Op<N>>>,
     // Map from the first token in a Suffix or Infix op, to that op.
-    pub(super) token_to_suffixy_op: Vec<Option<Op<T>>>,
-    pub(super) missing_atom: Op<T>,
-    pub(super) juxtapose: Op<T>,
+    pub(super) token_to_suffixy_op: Vec<Option<Op<N>>>,
+    pub(super) missing_atom: Op<N>,
+    pub(super) juxtapose: Op<N>,
+    starting_tokens: HashMap<Token, N>,
 }
 
 #[derive(Debug, Clone)]
-pub struct OpSpec<T: Token> {
-    pub nonterminal: String,
-    pub name: String,
-    pub fixity: Fixity,
-    pub assoc: Assoc,
-    pub first_token: Option<T>,
-    pub followers: Vec<(String, T)>,
-    pub prec: Prec,
-}
-
-impl<T: Token> OpSpec<T> {
-    pub fn juxtapose(nonterminal: &str, prec: Prec) -> OpSpec<T> {
-        OpSpec {
-            nonterminal: nonterminal.to_owned(),
-            name: "$Juxtapose".to_owned(),
-            fixity: Fixity::Infix,
-            assoc: Assoc::Right,
-            first_token: None,
-            followers: vec![],
-            prec,
-        }
-    }
-
-    fn validate(&self) {
-        if self.name == "$Juxtapose" {
-            assert_eq!(self.fixity, Fixity::Infix);
-            assert_eq!(self.first_token, None);
-            assert!(self.followers.is_empty());
-        } else {
-            assert!(!self.name.starts_with("$"));
-            assert!(self.first_token.is_some());
-            if self.fixity == Fixity::Nilfix {
-                assert_eq!(self.prec, 0);
-            }
-        }
-    }
-}
-
-impl<T: Token> Grammar<T> {
-    pub fn new(
-        language_name: String,
-        starting_nonterminal: String,
-        ops: Vec<OpSpec<T>>,
-    ) -> Grammar<T> {
-        let mut grammar_maker = GrammarMaker::new(language_name, starting_nonterminal);
-        for op in ops {
-            op.validate();
-            // Convert nonterminal names into subgrammar indices
-            let nt = grammar_maker.add_subgrammar(&op.nonterminal);
-            let followers = op
-                .followers
-                .into_iter()
-                .map(|(nt, token)| Follower {
-                    subgrammar_index: grammar_maker.add_subgrammar(&nt),
-                    token,
-                })
-                .collect();
-            // Make the real op and add it to the subgrammar
-            let op = Op::new(
-                op.name,
-                op.first_token,
-                followers,
-                op.prec,
-                op.assoc,
-                op.fixity,
-                nt,
-            );
-            let subgrammar = &mut grammar_maker.subgrammars[nt as usize];
-            if &op.name == "$Juxtapose" {
-                subgrammar.juxtapose = Some(op);
-            } else {
-                subgrammar.ops.push(op);
-            }
-        }
-        grammar_maker.into_grammar()
-    }
-
-    // TODO: Method to display the grammar as a pretty table, given a way to display a token
-}
-
-struct GrammarMaker<T: Token> {
+pub struct GrammarBuilder<N: OpName> {
     language_name: String,
-    starting_nonterminal: String,
-    subgrammar_name_to_index: HashMap<String, usize>,
-    subgrammars: Vec<SubgrammarMaker<T>>,
+    nonterminals: HashMap<String, NT>,
+    subgrammars: Vec<Subgrammar<N>>,
+    starting_nonterminal: Option<NT>,
+    current_nonterminal: Option<NT>,
+    current_assoc: Option<Assoc>,
+    current_prec: Prec,
 }
 
-impl<T: Token> GrammarMaker<T> {
-    fn new(language_name: String, starting_nonterminal: String) -> GrammarMaker<T> {
-        GrammarMaker {
-            language_name,
-            starting_nonterminal,
-            subgrammar_name_to_index: HashMap::new(),
+// TODO: Check that a follower doesn't reference a subgrammar that doesn't exist.
+#[derive(Debug, Clone, Error)]
+pub enum GrammarBuilderError<N: OpName> {
+    #[error("The operator {0:?} appeared outside of any subgrammar declaration. But every call to `op()` must be preceded by a call to `subgrammar()`.")]
+    OpOutsideSubgrammar(N),
+    #[error("The operator {0:?} requires an associativity, but it was declared outside a group. Every call to `op()` with a fixity that is not Nilfix must be preceded by a call to `assoc_l()` or `assoc_r()`, to declare whether it is left-associative or right-associative.")]
+    OpRequiresAssoc(N),
+    #[error("The operator {0:?} is Nilfix, so it does not require an associativity. For clarity, atoms and Nilfix ops must all be declared before any calls to `assoc_l()` or `assoc_r()`.")]
+    OpForbidsAssoc(N),
+    #[error("In subgrammar {subgrammar}, two operators {op_1:?} and {op_2:?} start with the same token. To avoid ambiguitiy, all operators must start with unique tokens.")]
+    DuplicateOp {
+        subgrammar: String,
+        op_1: N,
+        op_2: N,
+    },
+    #[error("The `JUXTAPOSE` and `MISSING_ATOM` operator names are reserved by the parser, and cannot be used for user-declared operators. However, you may declare the precedence of juxtaposition with the `juxtapose()` method.")]
+    ReservedOpName,
+    #[error("Ambiguous grammar. If argument number {arg_index} of {op:?} contains a {conflicting_op:?}, it could either be parsed as a {conflicting_op:?}, or it could progress the parsing of {op:?}.")]
+    AmbiguousFollower {
+        op: N,
+        arg_index: usize,
+        conflicting_op: N,
+    },
+    #[error(
+        "Every grammar must have at least one subgrammar, started with the `subgrammar()` method."
+    )]
+    NoSubgrammars,
+}
+
+impl<N: OpName> GrammarBuilder<N> {
+    pub fn new(language_name: &str) -> GrammarBuilder<N> {
+        GrammarBuilder {
+            language_name: language_name.to_owned(),
+            nonterminals: HashMap::new(),
             subgrammars: vec![],
+            starting_nonterminal: None,
+            current_nonterminal: None,
+            current_assoc: None,
+            current_prec: 0,
         }
     }
 
-    fn add_subgrammar(&mut self, name: &str) -> NT {
-        if let Some(i) = self.subgrammar_name_to_index.get(name) {
-            *i as NT
-        } else {
-            let nt = self.subgrammars.len();
-            let subgrammar = SubgrammarMaker::new(name, nt as NT);
-            self.subgrammars.push(subgrammar);
-            self.subgrammar_name_to_index.insert(name.to_owned(), nt);
-            nt as NT
+    pub fn subgrammar(mut self, name: &str) -> Result<GrammarBuilder<N>, GrammarBuilderError<N>> {
+        let nt = self.insert_nonterminal(name);
+        if self.starting_nonterminal.is_none() {
+            self.starting_nonterminal = Some(nt);
         }
+        self.current_nonterminal = Some(nt);
+        Ok(self)
     }
 
-    fn into_grammar(self) -> Grammar<T> {
-        let starting_nonterminal = *self
-            .subgrammar_name_to_index
-            .get(&self.starting_nonterminal)
-            .unwrap_or_else(|| panic!("No such nonterminal: {}", self.starting_nonterminal))
-            as NT;
-        let mut largest_token_index: usize = 0;
-        for subgrammar in &self.subgrammars {
-            for op in &subgrammar.ops {
-                if let Some(token) = op.first_token {
-                    largest_token_index = largest_token_index.max(token.as_usize());
-                }
-                for follower in &op.followers {
-                    largest_token_index = largest_token_index.max(follower.token.as_usize());
-                }
-            }
-        }
-        let subgrammars = self
-            .subgrammars
+    pub fn assoc_l(mut self) -> Result<GrammarBuilder<N>, GrammarBuilderError<N>> {
+        self.current_prec += 1;
+        self.current_assoc = Some(Assoc::Left);
+        Ok(self)
+    }
+
+    pub fn assoc_r(mut self) -> Result<GrammarBuilder<N>, GrammarBuilderError<N>> {
+        self.current_prec += 1;
+        self.current_assoc = Some(Assoc::Right);
+        Ok(self)
+    }
+
+    pub fn op(
+        mut self,
+        name: N,
+        token: Token,
+        fixity: Fixity,
+    ) -> Result<GrammarBuilder<N>, GrammarBuilderError<N>> {
+        self.check_op_name(name)?;
+        self.insert_op(name, token, vec![], fixity)
+    }
+
+    pub fn op_multi(
+        mut self,
+        name: N,
+        token: Token,
+        followers: Vec<(&str, Token)>,
+        fixity: Fixity,
+    ) -> Result<GrammarBuilder<N>, GrammarBuilderError<N>> {
+        self.check_op_name(name)?;
+        self.insert_op(name, token, followers, fixity)
+    }
+
+    pub fn op_juxtapose(mut self) -> Result<GrammarBuilder<N>, GrammarBuilderError<N>> {
+        let nt = match self.current_nonterminal {
+            None => return Err(GrammarBuilderError::OpOutsideSubgrammar(N::JUXTAPOSE)),
+            Some(nt) => nt,
+        };
+        let op = Op::new_juxtapose(nt, self.current_prec);
+        self.subgrammars[nt].juxtapose = op;
+        Ok(self)
+    }
+
+    pub fn insert_op(
+        mut self,
+        name: N,
+        token: Token,
+        followers: Vec<(&str, Token)>,
+        fixity: Fixity,
+    ) -> Result<GrammarBuilder<N>, GrammarBuilderError<N>> {
+        use Fixity::*;
+
+        let nt = match self.current_nonterminal {
+            None => return Err(GrammarBuilderError::OpOutsideSubgrammar(name)),
+            Some(nt) => nt,
+        };
+        let prec = self.current_prec;
+        let assoc = match (fixity, self.current_assoc) {
+            (Nilfix, None) => Assoc::Right, // which assoc does not matter
+            (_, None) => return Err(GrammarBuilderError::OpRequiresAssoc(name)),
+            (Nilfix, Some(_)) => return Err(GrammarBuilderError::OpForbidsAssoc(name)),
+            (_, Some(assoc)) => assoc,
+        };
+        let followers = followers
             .into_iter()
-            .map(|g| g.into_subgrammar(largest_token_index))
+            .map(|(subg_name, tok)| (self.insert_nonterminal(subg_name), tok))
             .collect::<Vec<_>>();
-        for subgrammar in &subgrammars {
-            // Can't have a token be both a follower and a start token, for the same nonterminal
-            let all_ops = subgrammar
-                .token_to_prefixy_op
-                .iter()
-                .chain(subgrammar.token_to_suffixy_op.iter())
-                .filter_map(|op| op.as_ref());
+        let op = Op::new(name, Some(token), followers, prec, assoc, fixity, nt);
+        let subgrammar = &mut self.subgrammars[nt];
+        let op_table = match fixity {
+            Prefix | Nilfix => &mut subgrammar.token_to_prefixy_op,
+            Suffix | Infix => &mut subgrammar.token_to_suffixy_op,
+        };
+        if let Some(other_op) = &op_table[token] {
+            return Err(GrammarBuilderError::DuplicateOp {
+                subgrammar: subgrammar.name.to_owned(),
+                op_1: op.name,
+                op_2: other_op.name,
+            });
+        };
+        op_table[token] = Some(op);
+        subgrammar.starting_tokens.insert(token, name);
+        Ok(self)
+    }
+
+    pub fn finish(self) -> Result<Grammar<N>, GrammarBuilderError<N>> {
+        // One last validation check: cannot have a follower (NT, tok),
+        // if tok is a starting token for an op in NT.
+        for subgrammar in &self.subgrammars {
+            let prefixy_ops = subgrammar.token_to_prefixy_op.iter();
+            let suffixy_ops = subgrammar.token_to_suffixy_op.iter();
+            let all_ops = prefixy_ops
+                .chain(suffixy_ops)
+                .filter_map(|opt| opt.as_ref());
             for op in all_ops {
-                for follower in &op.followers {
-                    let subgrammar = &subgrammars[follower.subgrammar_index as usize];
-                    if let Some(op2) = &subgrammar.token_to_suffixy_op[follower.token.as_usize()] {
-                        // TODO: Find a way to name the token?
-                        panic!("The first token of operator {} can't also be used as a follower token in operator {}, in the same nonterminal {}. Try making another nonterminal to separate the two uses of the token.", op2.name, op.name, subgrammar.name);
+                for (i, (nt, tok)) in op.followers.iter().enumerate() {
+                    if let Some(conflict) = self.subgrammars[*nt].starting_tokens.get(tok) {
+                        let mut arg_index = i;
+                        if op.fixity == Fixity::Infix || op.fixity == Fixity::Suffix {
+                            arg_index += 1;
+                        }
+                        return Err(GrammarBuilderError::AmbiguousFollower {
+                            op: op.name,
+                            arg_index,
+                            conflicting_op: *conflict,
+                        });
                     }
                 }
             }
         }
-        Grammar {
+        Ok(Grammar {
             language_name: self.language_name,
-            starting_nonterminal,
-            subgrammars,
-        }
+            starting_nonterminal: self
+                .starting_nonterminal
+                .ok_or_else(|| GrammarBuilderError::NoSubgrammars)?,
+            subgrammars: self.subgrammars,
+        })
     }
-}
 
-pub struct SubgrammarMaker<T: Token> {
-    name: String,
-    nonterminal: NT,
-    ops: Vec<Op<T>>,
-    juxtapose: Option<Op<T>>,
-}
-
-impl<T: Token> SubgrammarMaker<T> {
-    fn new(name: &str, nonterminal: NT) -> SubgrammarMaker<T> {
-        SubgrammarMaker {
-            name: name.to_owned(),
-            nonterminal,
-            ops: vec![],
-            juxtapose: None,
+    fn check_op_name(&mut self, op_name: N) -> Result<(), GrammarBuilderError<N>> {
+        if op_name == OpName::MISSING_ATOM || op_name == OpName::JUXTAPOSE {
+            Err(GrammarBuilderError::ReservedOpName)
+        } else {
+            Ok(())
         }
     }
 
-    fn into_subgrammar(self, largest_token_index: usize) -> Subgrammar<T> {
-        use Fixity::*;
-
-        // Autocreate the error-handling ops
-        let nt = self.nonterminal;
-        let juxtapose = self.juxtapose.unwrap_or_else(|| {
-            Op::new(
-                "$Juxtapose".to_owned(),
-                None,
-                vec![],
-                1,
-                Assoc::Right,
-                Fixity::Infix,
-                nt,
-            )
-        });
-        let missing_atom = Op::new(
-            "$MissingAtom".to_owned(),
-            None,
-            vec![],
-            0,
-            Assoc::Left,
-            Fixity::Nilfix,
-            nt,
-        );
-
-        // Initialize maps from token.as_usize() to the op that starts with that token.
-        // (Two such maps, depending on whether the op has a left prec or not.)
-        let mut token_to_prefixy_op = vec![None; largest_token_index + 1];
-        let mut token_to_suffixy_op = vec![None; largest_token_index + 1];
-        for op in self.ops {
-            let token = op.first_token.unwrap();
-            let index = token.as_usize();
-
-            // Can't have two ops that start with the same token, unless exactly one of them has a
-            // left_prec.
-            match op.fixity {
-                Prefix | Nilfix => {
-                    assert!(
-                        token_to_prefixy_op[index].is_none(),
-                        "Duplicate first op token: {:?} in {}",
-                        token,
-                        self.name,
-                    );
-                    token_to_prefixy_op[index] = Some(op);
-                }
-                Suffix | Infix => {
-                    assert!(
-                        token_to_suffixy_op[index].is_none(),
-                        "Duplicate first op token: {:?} in {}",
-                        token,
-                        self.name,
-                    );
-                    token_to_suffixy_op[index] = Some(op);
-                }
+    fn insert_nonterminal(&mut self, name: &str) -> NT {
+        match self.nonterminals.get(name) {
+            None => {
+                let nt = self.subgrammars.len();
+                let subgrammar = Subgrammar {
+                    name: name.to_owned(),
+                    token_to_prefixy_op: vec![],
+                    token_to_suffixy_op: vec![],
+                    missing_atom: Op::new_missing_atom(nt),
+                    juxtapose: Op::new_juxtapose(nt, 1),
+                    starting_tokens: HashMap::new(),
+                };
+                self.subgrammars.push(subgrammar);
+                self.nonterminals.insert(name.to_owned(), nt);
+                nt
             }
-        }
-
-        Subgrammar {
-            name: self.name,
-            token_to_prefixy_op,
-            token_to_suffixy_op,
-            juxtapose,
-            missing_atom,
+            Some(nt) => *nt,
         }
     }
 }
