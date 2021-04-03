@@ -5,6 +5,14 @@ use thiserror::Error;
 
 // TODO: move
 #[derive(Debug, Clone)]
+pub struct Grammar<T: Token, N: OpName> {
+    pub(super) language_name: String,
+    pub(super) starting_nonterminal: NT,
+    pub(super) subgrammars: Vec<Subgrammar<T, N>>,
+}
+
+// TODO: move
+#[derive(Debug, Clone)]
 pub struct Subgrammar<T: Token, N: OpName> {
     pub(super) name: String,
     // Map from the first token in a Prefix or Nilfix op, to that op.
@@ -37,7 +45,11 @@ pub enum GrammarBuilderError<T: Token, N: OpName> {
     #[error("In subgrammar {0}, the token {1:?} was used to start two operators: both {2:?} and {3:?}. To avoid ambiguitiy, all operators must start with unique tokens.")]
     DuplicateOp(String, T, N, N),
     #[error("The `JUXTAPOSE` and `MISSING_ATOM` operator names are reserved by the parser, and cannot be used for user-declared operators. However, you may declare the precedence of juxtaposition with the `juxtapose()` method.")]
-    ReservedOpName(),
+    ReservedOpName,
+    #[error(
+        "Every grammar must have at least one subgrammar, started with the `subgrammar()` method."
+    )]
+    NoSubgrammars,
 }
 
 impl<T: Token, N: OpName> GrammarBuilder<T, N> {
@@ -54,9 +66,9 @@ impl<T: Token, N: OpName> GrammarBuilder<T, N> {
     }
 
     pub fn subgrammar(
-        &mut self,
+        mut self,
         name: &str,
-    ) -> Result<&mut GrammarBuilder<T, N>, GrammarBuilderError<T, N>> {
+    ) -> Result<GrammarBuilder<T, N>, GrammarBuilderError<T, N>> {
         let nt = self.insert_nonterminal(name);
         if self.starting_nonterminal.is_none() {
             self.starting_nonterminal = Some(nt);
@@ -65,40 +77,40 @@ impl<T: Token, N: OpName> GrammarBuilder<T, N> {
         Ok(self)
     }
 
-    pub fn assoc_l(&mut self) -> Result<&mut GrammarBuilder<T, N>, GrammarBuilderError<T, N>> {
+    pub fn assoc_l(mut self) -> Result<GrammarBuilder<T, N>, GrammarBuilderError<T, N>> {
         self.current_prec += 1;
         self.current_assoc = Some(Assoc::Left);
         Ok(self)
     }
 
-    pub fn assoc_r(&mut self) -> Result<&mut GrammarBuilder<T, N>, GrammarBuilderError<T, N>> {
+    pub fn assoc_r(mut self) -> Result<GrammarBuilder<T, N>, GrammarBuilderError<T, N>> {
         self.current_prec += 1;
         self.current_assoc = Some(Assoc::Right);
         Ok(self)
     }
 
     pub fn op(
-        &mut self,
+        mut self,
         name: N,
         token: T,
         fixity: Fixity,
-    ) -> Result<&mut GrammarBuilder<T, N>, GrammarBuilderError<T, N>> {
+    ) -> Result<GrammarBuilder<T, N>, GrammarBuilderError<T, N>> {
         self.check_op_name(name)?;
         self.insert_op(name, token, vec![], fixity)
     }
 
     pub fn op_multi(
-        &mut self,
+        mut self,
         name: N,
         token: T,
         followers: Vec<(&str, T)>,
         fixity: Fixity,
-    ) -> Result<&mut GrammarBuilder<T, N>, GrammarBuilderError<T, N>> {
+    ) -> Result<GrammarBuilder<T, N>, GrammarBuilderError<T, N>> {
         self.check_op_name(name)?;
         self.insert_op(name, token, followers, fixity)
     }
 
-    pub fn op_juxtapose(&mut self) -> Result<&mut GrammarBuilder<T, N>, GrammarBuilderError<T, N>> {
+    pub fn op_juxtapose(mut self) -> Result<GrammarBuilder<T, N>, GrammarBuilderError<T, N>> {
         let nt = match self.current_nonterminal {
             None => return Err(GrammarBuilderError::OpOutsideSubgrammar(N::JUXTAPOSE)),
             Some(nt) => nt,
@@ -109,12 +121,12 @@ impl<T: Token, N: OpName> GrammarBuilder<T, N> {
     }
 
     pub fn insert_op(
-        &mut self,
+        mut self,
         name: N,
         token: T,
         followers: Vec<(&str, T)>,
         fixity: Fixity,
-    ) -> Result<&mut GrammarBuilder<T, N>, GrammarBuilderError<T, N>> {
+    ) -> Result<GrammarBuilder<T, N>, GrammarBuilderError<T, N>> {
         use Fixity::*;
 
         let nt = match self.current_nonterminal {
@@ -150,9 +162,19 @@ impl<T: Token, N: OpName> GrammarBuilder<T, N> {
         Ok(self)
     }
 
+    pub fn finish(self) -> Result<Grammar<T, N>, GrammarBuilderError<T, N>> {
+        Ok(Grammar {
+            language_name: self.language_name,
+            starting_nonterminal: self
+                .starting_nonterminal
+                .ok_or_else(|| GrammarBuilderError::NoSubgrammars)?,
+            subgrammars: self.subgrammars,
+        })
+    }
+
     fn check_op_name(&mut self, op_name: N) -> Result<(), GrammarBuilderError<T, N>> {
         if op_name == OpName::MISSING_ATOM || op_name == OpName::JUXTAPOSE {
-            Err(GrammarBuilderError::ReservedOpName())
+            Err(GrammarBuilderError::ReservedOpName)
         } else {
             Ok(())
         }
