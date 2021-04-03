@@ -1,9 +1,9 @@
-use crate::lexing::Token;
 use std::fmt::Debug;
 use std::hash::Hash;
 
 pub type Prec = u16;
 pub type NT = usize;
+pub type Token = usize;
 
 pub trait OpName: Debug + Clone + Copy + PartialEq + Eq + Hash {
     const MISSING_ATOM: Self;
@@ -35,20 +35,20 @@ pub enum Fixity {
 }
 
 #[derive(Debug, Clone)]
-pub struct Op<T: Token, N: OpName> {
+pub struct Op<N: OpName> {
     pub(super) name: N,
     pub(super) prec: Prec,
     pub(super) assoc: Assoc,
     pub(super) fixity: Fixity,
-    pub(super) first_token: Option<T>,
-    pub(super) followers: Vec<(NT, T)>,
+    pub(super) first_token: Option<Token>,
+    pub(super) followers: Vec<(NT, Token)>,
     pub(super) subgrammar: NT,
     pub(super) left_prec: Option<Prec>,  // computed
     pub(super) right_prec: Option<Prec>, // computed
     pub(super) arity: usize,             // computed
 }
 
-impl<T: Token, N: OpName> Op<T, N> {
+impl<N: OpName> Op<N> {
     pub fn name(&self) -> &N {
         &self.name
     }
@@ -65,17 +65,18 @@ impl<T: Token, N: OpName> Op<T, N> {
         self.fixity
     }
 
-    pub fn first_token(&self) -> Option<&T> {
-        self.first_token.as_ref()
+    pub fn first_token(&self) -> Option<Token> {
+        self.first_token
     }
 
-    pub fn tokens(&self) -> impl Iterator<Item = &T> + '_ {
+    pub fn tokens(&self) -> impl Iterator<Item = Token> + '_ {
         self.first_token
             .iter()
-            .chain(self.followers.iter().map(|(_, tok)| tok))
+            .copied()
+            .chain(self.followers.iter().map(|(_, tok)| *tok))
     }
 
-    pub(super) fn new_juxtapose(subgrammar: NT, prec: Prec) -> Op<T, N> {
+    pub(super) fn new_juxtapose(subgrammar: NT, prec: Prec) -> Op<N> {
         Op::new(
             N::JUXTAPOSE,
             None,
@@ -87,7 +88,7 @@ impl<T: Token, N: OpName> Op<T, N> {
         )
     }
 
-    pub(super) fn new_missing_atom(subgrammar: NT) -> Op<T, N> {
+    pub(super) fn new_missing_atom(subgrammar: NT) -> Op<N> {
         Op::new(
             N::MISSING_ATOM,
             None,
@@ -101,13 +102,13 @@ impl<T: Token, N: OpName> Op<T, N> {
 
     pub(super) fn new(
         name: N,
-        first_token: Option<T>,
-        followers: Vec<(NT, T)>,
+        first_token: Option<Token>,
+        followers: Vec<(NT, Token)>,
         prec: Prec,
         assoc: Assoc,
         fixity: Fixity,
         subgrammar: NT,
-    ) -> Op<T, N> {
+    ) -> Op<N> {
         use Assoc::{Left, Right};
         use Fixity::{Infix, Nilfix, Prefix, Suffix};
         let (left_prec, right_prec) = match (fixity, assoc) {

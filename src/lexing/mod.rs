@@ -17,7 +17,4 @@ pub struct Lexeme<T: Token> {
 
 pub trait Token: Debug + Clone + Copy + PartialEq + Eq + Hash {
     const LEX_ERROR: Self;
-
-    fn as_usize(self) -> usize;
-    fn max_usize(self) -> usize;
 }

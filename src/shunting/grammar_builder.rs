@@ -1,33 +1,32 @@
-use super::op::{Assoc, Fixity, Op, OpName, Prec, NT};
-use crate::lexing::Token;
+use super::op::{Assoc, Fixity, Op, OpName, Prec, Token, NT};
 use std::collections::HashMap;
 use thiserror::Error;
 
 // TODO: move
 #[derive(Debug, Clone)]
-pub struct Grammar<T: Token, N: OpName> {
+pub struct Grammar<N: OpName> {
     pub(super) language_name: String,
     pub(super) starting_nonterminal: NT,
-    pub(super) subgrammars: Vec<Subgrammar<T, N>>,
+    pub(super) subgrammars: Vec<Subgrammar<N>>,
 }
 
 // TODO: move
 #[derive(Debug, Clone)]
-pub struct Subgrammar<T: Token, N: OpName> {
+pub struct Subgrammar<N: OpName> {
     pub(super) name: String,
     // Map from the first token in a Prefix or Nilfix op, to that op.
-    pub(super) token_to_prefixy_op: Vec<Option<Op<T, N>>>,
+    pub(super) token_to_prefixy_op: Vec<Option<Op<N>>>,
     // Map from the first token in a Suffix or Infix op, to that op.
-    pub(super) token_to_suffixy_op: Vec<Option<Op<T, N>>>,
-    pub(super) missing_atom: Op<T, N>,
-    pub(super) juxtapose: Op<T, N>,
+    pub(super) token_to_suffixy_op: Vec<Option<Op<N>>>,
+    pub(super) missing_atom: Op<N>,
+    pub(super) juxtapose: Op<N>,
 }
 
 #[derive(Debug, Clone)]
-pub struct GrammarBuilder<T: Token, N: OpName> {
+pub struct GrammarBuilder<N: OpName> {
     language_name: String,
     nonterminals: HashMap<String, NT>,
-    subgrammars: Vec<Subgrammar<T, N>>,
+    subgrammars: Vec<Subgrammar<N>>,
     starting_nonterminal: Option<NT>,
     current_nonterminal: Option<NT>,
     current_assoc: Option<Assoc>,
@@ -35,15 +34,15 @@ pub struct GrammarBuilder<T: Token, N: OpName> {
 }
 
 #[derive(Debug, Clone, Error)]
-pub enum GrammarBuilderError<T: Token, N: OpName> {
+pub enum GrammarBuilderError<N: OpName> {
     #[error("The operator {0:?} appeared outside of any subgrammar declaration. But every call to `op()` must be preceded by a call to `subgrammar()`.")]
     OpOutsideSubgrammar(N),
     #[error("The operator {0:?} requires an associativity, but it was declared outside a group. Every call to `op()` with a fixity that is not Nilfix must be preceded by a call to `assoc_l()` or `assoc_r()`, to declare whether it is left-associative or right-associative.")]
     OpRequiresAssoc(N),
     #[error("The operator {0:?} is Nilfix, so it does not require an associativity. For clarity, atoms and Nilfix ops must all be declared before any calls to `assoc_l()` or `assoc_r()`.")]
     OpForbidsAssoc(N),
-    #[error("In subgrammar {0}, the token {1:?} was used to start two operators: both {2:?} and {3:?}. To avoid ambiguitiy, all operators must start with unique tokens.")]
-    DuplicateOp(String, T, N, N),
+    #[error("In subgrammar {0}, two operators {1:?} and {2:?} start with the same token. To avoid ambiguitiy, all operators must start with unique tokens.")]
+    DuplicateOp(String, N, N),
     #[error("The `JUXTAPOSE` and `MISSING_ATOM` operator names are reserved by the parser, and cannot be used for user-declared operators. However, you may declare the precedence of juxtaposition with the `juxtapose()` method.")]
     ReservedOpName,
     #[error(
@@ -52,8 +51,8 @@ pub enum GrammarBuilderError<T: Token, N: OpName> {
     NoSubgrammars,
 }
 
-impl<T: Token, N: OpName> GrammarBuilder<T, N> {
-    pub fn new(language_name: &str) -> GrammarBuilder<T, N> {
+impl<N: OpName> GrammarBuilder<N> {
+    pub fn new(language_name: &str) -> GrammarBuilder<N> {
         GrammarBuilder {
             language_name: language_name.to_owned(),
             nonterminals: HashMap::new(),
@@ -65,10 +64,7 @@ impl<T: Token, N: OpName> GrammarBuilder<T, N> {
         }
     }
 
-    pub fn subgrammar(
-        mut self,
-        name: &str,
-    ) -> Result<GrammarBuilder<T, N>, GrammarBuilderError<T, N>> {
+    pub fn subgrammar(mut self, name: &str) -> Result<GrammarBuilder<N>, GrammarBuilderError<N>> {
         let nt = self.insert_nonterminal(name);
         if self.starting_nonterminal.is_none() {
             self.starting_nonterminal = Some(nt);
@@ -77,13 +73,13 @@ impl<T: Token, N: OpName> GrammarBuilder<T, N> {
         Ok(self)
     }
 
-    pub fn assoc_l(mut self) -> Result<GrammarBuilder<T, N>, GrammarBuilderError<T, N>> {
+    pub fn assoc_l(mut self) -> Result<GrammarBuilder<N>, GrammarBuilderError<N>> {
         self.current_prec += 1;
         self.current_assoc = Some(Assoc::Left);
         Ok(self)
     }
 
-    pub fn assoc_r(mut self) -> Result<GrammarBuilder<T, N>, GrammarBuilderError<T, N>> {
+    pub fn assoc_r(mut self) -> Result<GrammarBuilder<N>, GrammarBuilderError<N>> {
         self.current_prec += 1;
         self.current_assoc = Some(Assoc::Right);
         Ok(self)
@@ -92,9 +88,9 @@ impl<T: Token, N: OpName> GrammarBuilder<T, N> {
     pub fn op(
         mut self,
         name: N,
-        token: T,
+        token: Token,
         fixity: Fixity,
-    ) -> Result<GrammarBuilder<T, N>, GrammarBuilderError<T, N>> {
+    ) -> Result<GrammarBuilder<N>, GrammarBuilderError<N>> {
         self.check_op_name(name)?;
         self.insert_op(name, token, vec![], fixity)
     }
@@ -102,15 +98,15 @@ impl<T: Token, N: OpName> GrammarBuilder<T, N> {
     pub fn op_multi(
         mut self,
         name: N,
-        token: T,
-        followers: Vec<(&str, T)>,
+        token: Token,
+        followers: Vec<(&str, Token)>,
         fixity: Fixity,
-    ) -> Result<GrammarBuilder<T, N>, GrammarBuilderError<T, N>> {
+    ) -> Result<GrammarBuilder<N>, GrammarBuilderError<N>> {
         self.check_op_name(name)?;
         self.insert_op(name, token, followers, fixity)
     }
 
-    pub fn op_juxtapose(mut self) -> Result<GrammarBuilder<T, N>, GrammarBuilderError<T, N>> {
+    pub fn op_juxtapose(mut self) -> Result<GrammarBuilder<N>, GrammarBuilderError<N>> {
         let nt = match self.current_nonterminal {
             None => return Err(GrammarBuilderError::OpOutsideSubgrammar(N::JUXTAPOSE)),
             Some(nt) => nt,
@@ -123,10 +119,10 @@ impl<T: Token, N: OpName> GrammarBuilder<T, N> {
     pub fn insert_op(
         mut self,
         name: N,
-        token: T,
-        followers: Vec<(&str, T)>,
+        token: Token,
+        followers: Vec<(&str, Token)>,
         fixity: Fixity,
-    ) -> Result<GrammarBuilder<T, N>, GrammarBuilderError<T, N>> {
+    ) -> Result<GrammarBuilder<N>, GrammarBuilderError<N>> {
         use Fixity::*;
 
         let nt = match self.current_nonterminal {
@@ -150,19 +146,18 @@ impl<T: Token, N: OpName> GrammarBuilder<T, N> {
             Prefix | Nilfix => &mut subgrammar.token_to_prefixy_op,
             Suffix | Infix => &mut subgrammar.token_to_suffixy_op,
         };
-        if let Some(other_op) = &op_table[token.as_usize()] {
+        if let Some(other_op) = &op_table[token] {
             return Err(GrammarBuilderError::DuplicateOp(
                 subgrammar.name.to_owned(),
-                token,
                 op.name,
                 other_op.name,
             ));
         };
-        op_table[token.as_usize()] = Some(op);
+        op_table[token] = Some(op);
         Ok(self)
     }
 
-    pub fn finish(self) -> Result<Grammar<T, N>, GrammarBuilderError<T, N>> {
+    pub fn finish(self) -> Result<Grammar<N>, GrammarBuilderError<N>> {
         Ok(Grammar {
             language_name: self.language_name,
             starting_nonterminal: self
@@ -172,7 +167,7 @@ impl<T: Token, N: OpName> GrammarBuilder<T, N> {
         })
     }
 
-    fn check_op_name(&mut self, op_name: N) -> Result<(), GrammarBuilderError<T, N>> {
+    fn check_op_name(&mut self, op_name: N) -> Result<(), GrammarBuilderError<N>> {
         if op_name == OpName::MISSING_ATOM || op_name == OpName::JUXTAPOSE {
             Err(GrammarBuilderError::ReservedOpName)
         } else {
