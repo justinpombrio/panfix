@@ -1,5 +1,9 @@
+#![feature(split_inclusive)]
+
 pub mod lexing;
+pub mod line_counter;
 pub mod shunting;
+
 /*
 // TODO:
 // - ParsrConstructionError
