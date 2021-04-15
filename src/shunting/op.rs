@@ -3,8 +3,8 @@ use std::hash::Hash;
 
 pub type Prec = u16;
 pub type NT = usize;
-/// Token 0 must represent a lexing error.
 pub type Token = usize;
+pub const LEX_ERROR: Token = 0;
 
 pub trait OpName: Debug + Clone + Copy + PartialEq + Eq + Hash {
     const MISSING_ATOM: Self;

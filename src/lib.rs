@@ -1,4 +1,5 @@
 #![feature(split_inclusive)]
+#![feature(or_patterns)]
 
 pub mod lexing;
 pub mod line_counter;
