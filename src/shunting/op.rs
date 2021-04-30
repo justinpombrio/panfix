@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
 pub type Prec = u16;
@@ -6,7 +6,7 @@ pub type NT = usize;
 pub type Token = usize;
 pub const LEX_ERROR: Token = 0;
 
-pub trait OpName: Debug + Clone + Copy + PartialEq + Eq + Hash {
+pub trait OpName: Debug + Display + Clone + Copy + PartialEq + Eq + Hash {
     const MISSING_ATOM: Self;
     const JUXTAPOSE: Self;
 }

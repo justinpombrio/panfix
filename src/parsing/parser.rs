@@ -1,3 +1,42 @@
+// TODO
+#![allow(unused)]
+
+use crate::lexing::Lexer;
+use crate::line_counter::LineCounter;
+use crate::rpn_visitor::{Node as RpnNode, Stack as RpnStack, Visitor as RpnVisitor};
+use crate::shunting::{Grammar, Node, OpName, Token};
+
+pub struct Parser<N: OpName> {
+    pub(super) shunter: Grammar<N>,
+    pub(super) lexer: Lexer<Token>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Position {
+    pub line: usize,
+    pub column: usize,
+}
+
+#[derive(Debug)]
+pub struct Parsed<'s, N: OpName> {
+    source: &'s str,
+    line_counter: LineCounter<'s>,
+    stack: RpnStack<Node<'s, N>>,
+}
+
+#[derive(Debug)]
+pub struct ParseTree<'s, 'p, N: OpName> {
+    parsed: &'p Parsed<'s, N>,
+    visitor: RpnVisitor<'s, Node<'s, N>>,
+}
+
+impl<'a, N: OpName> RpnNode for Node<'a, N> {
+    fn arity(&self) -> usize {
+        self.op().arity()
+    }
+}
+
+/*
 use super::grammar::{Parser, Token};
 use crate::lexing::{Pattern, Span};
 use crate::rpn_visitor::Stack as RpnStack;
@@ -309,3 +348,4 @@ impl<'a> Iterator for InfixIter<'a> {
         })
     }
 }
+*/

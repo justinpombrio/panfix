@@ -25,10 +25,10 @@ pub struct Subgrammar<N: OpName> {
 #[derive(Debug, Clone)]
 pub struct GrammarBuilder<N: OpName> {
     language_name: String,
-    token_count: usize,
     nonterminals: HashMap<String, NT>,
     subgrammars: Vec<Subgrammar<N>>,
     starting_nonterminal: Option<NT>,
+    max_token: Token,
     current_nonterminal: Option<NT>,
     current_assoc: Option<Assoc>,
     current_prec: Prec,
@@ -64,13 +64,13 @@ pub enum GrammarBuilderError<N: OpName> {
 }
 
 impl<N: OpName> GrammarBuilder<N> {
-    pub fn new(language_name: &str, token_count: usize) -> GrammarBuilder<N> {
+    pub fn new(language_name: &str) -> GrammarBuilder<N> {
         GrammarBuilder {
             language_name: language_name.to_owned(),
-            token_count,
             nonterminals: HashMap::new(),
             subgrammars: vec![],
             starting_nonterminal: None,
+            max_token: 0,
             current_nonterminal: None,
             current_assoc: None,
             current_prec: 0,
@@ -129,7 +129,7 @@ impl<N: OpName> GrammarBuilder<N> {
         Ok(self)
     }
 
-    pub fn insert_op(
+    fn insert_op(
         mut self,
         name: N,
         token: Token,
@@ -137,6 +137,15 @@ impl<N: OpName> GrammarBuilder<N> {
         fixity: Fixity,
     ) -> Result<GrammarBuilder<N>, GrammarBuilderError<N>> {
         use Fixity::*;
+
+        // Extend all the op tables to include this token
+        if token >= self.max_token {
+            for subgrammar in &mut self.subgrammars {
+                subgrammar.token_to_prefixy_op.resize(token + 1, None);
+                subgrammar.token_to_suffixy_op.resize(token + 1, None);
+            }
+            self.max_token = token + 1;
+        }
 
         let nt = match self.current_nonterminal {
             None => return Err(GrammarBuilderError::OpOutsideSubgrammar(name)),
@@ -219,8 +228,8 @@ impl<N: OpName> GrammarBuilder<N> {
                 let nt = self.subgrammars.len();
                 let subgrammar = Subgrammar {
                     name: name.to_owned(),
-                    token_to_prefixy_op: iter::repeat(None).take(self.token_count).collect(),
-                    token_to_suffixy_op: iter::repeat(None).take(self.token_count).collect(),
+                    token_to_prefixy_op: iter::repeat(None).take(self.max_token).collect(),
+                    token_to_suffixy_op: iter::repeat(None).take(self.max_token).collect(),
                     missing_atom: Op::new_missing_atom(nt),
                     juxtapose: Op::new_juxtapose(nt, 1),
                     starting_tokens: HashMap::new(),

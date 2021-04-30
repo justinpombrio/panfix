@@ -24,7 +24,6 @@ pub struct Stack<N: Node> {
     groups: Vec<usize>,
 }
 
-// TODO: Stick the soruce in here too!
 #[derive(Debug, Clone, Copy)]
 pub struct Visitor<'s, N: Node> {
     stack: &'s [Link<N>],

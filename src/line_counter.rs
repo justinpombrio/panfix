@@ -1,6 +1,7 @@
 /// Compute line and column info for a source file. Upon construction, this will scan the source
 /// file once for newlines. After construction, you can query for the line&column of a position
 /// within the file in O(1) time.
+#[derive(Debug, Clone)]
 pub struct LineCounter<'s> {
     source: &'s str,
     line_starts: Vec<usize>,

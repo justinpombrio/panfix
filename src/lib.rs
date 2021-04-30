@@ -3,7 +3,13 @@
 
 pub mod lexing;
 pub mod line_counter;
+pub mod parsing;
+pub mod rpn_visitor;
 pub mod shunting;
+
+// TODO:
+// - Don't do shunting logic at runtime. Figure it all out at compile time and build a lookup
+//   table.
 
 /*
 // TODO:
