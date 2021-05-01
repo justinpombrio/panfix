@@ -47,19 +47,19 @@ impl<T: Token> LexerBuilder<T> {
     /// Any combination of the patterns will be considered whitespace. For example, if you call
     /// `whitespace()` three times with regexes `{A, B, C}`, then anything matching the regex
     /// `(A|B|C)*` will be considered whitespace.
-    pub fn whitespace_regex(&mut self, regex: &str) -> &mut LexerBuilder<T> {
+    pub fn whitespace(&mut self, regex: &str) -> &mut LexerBuilder<T> {
         self.whitespace_regexes.push(format!("({})", regex));
         self
     }
 
     /// Add a token that matches a literal string.
-    pub fn add_literal(&mut self, token: T, string: &str) -> &mut LexerBuilder<T> {
+    pub fn string_token(&mut self, string: &str, token: T) -> &mut LexerBuilder<T> {
         self.literals.push((token, string.to_owned()));
         self
     }
 
     /// Add a token that matches a regex pattern. The regex syntax is that of the `regex` crate.
-    pub fn add_regex(&mut self, token: T, regex: &str) -> &mut LexerBuilder<T> {
+    pub fn regex_token(&mut self, regex: &str, token: T) -> &mut LexerBuilder<T> {
         self.regexes.push((token, format!("^({})", regex)));
         self
     }

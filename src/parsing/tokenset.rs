@@ -22,7 +22,7 @@ impl TokenSet {
         }
     }
 
-    pub fn insert_literal(&mut self, literal: &str) -> Token {
+    pub fn string_token(&mut self, literal: &str) -> Token {
         if let Some(token) = self.literals.get(literal) {
             return *token;
         }
@@ -31,7 +31,7 @@ impl TokenSet {
         self.next_token
     }
 
-    pub fn insert_regex(&mut self, regex: &str) -> Token {
+    pub fn regex_token(&mut self, regex: &str) -> Token {
         if let Some(token) = self.regexes.get(regex) {
             return *token;
         }
@@ -48,13 +48,13 @@ impl TokenSet {
         let mut builder = LexerBuilder::new();
         let mut builder = &mut builder;
         for whitespace in self.whitespace {
-            builder = builder.whitespace_regex(&whitespace);
+            builder = builder.whitespace(&whitespace);
         }
         for (literal, token) in self.literals.into_iter() {
-            builder = builder.add_literal(token, &literal);
+            builder = builder.string_token(&literal, token);
         }
         for (regex, token) in self.regexes.into_iter() {
-            builder = builder.add_regex(token, &regex);
+            builder = builder.regex_token(&regex, token);
         }
         builder.build()
     }

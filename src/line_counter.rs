@@ -23,8 +23,14 @@ impl<'s> LineCounter<'s> {
         }
     }
 
-    /// Get the line and column of a position within the source. `pos` is relative to the start of
-    /// the `source` string. A newline or return character is considered part of the line it ends.
+    /// Get the full source text.
+    pub fn source(&self) -> &'s str {
+        self.source
+    }
+
+    /// Get the line and column of a position (byte offset) within the source. `pos` is relative to
+    /// the start of the `source` string. A newline or return character is considered part of the
+    /// line it ends.
     ///
     /// The line and column are 0-indexed. There is unfortunately not a strong consensus on whether
     /// lines should be 0-indexed or 1-indexed; you may need to convert depending on your use case.
@@ -56,8 +62,8 @@ impl<'s> LineCounter<'s> {
         &self.source[start..end]
     }
 
-    /// Get the start and end position of the `line_num`th line. The start is inclusive, and the
-    /// end is exclusive. Excludes the line termination character(s).
+    /// Get the start and end position (byte offset) of the `line_num`th line. The start is
+    /// inclusive, and the end is exclusive. Excludes the line termination character(s).
     ///
     /// # Panics
     ///
@@ -83,8 +89,8 @@ impl<'s> LineCounter<'s> {
         &self.source[start..end]
     }
 
-    /// Get the start and end position of the `line_num`th line. The start is inclusive, and the
-    /// end is exclusive. Includes the line termination character(s).
+    /// Get the start and end position (byte offset) of the `line_num`th line. The start is
+    /// inclusive, and the end is exclusive. Includes the line termination character(s).
     ///
     /// # Panics
     ///

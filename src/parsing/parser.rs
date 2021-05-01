@@ -1,20 +1,13 @@
-// TODO
-#![allow(unused)]
-
+use crate::lexing;
 use crate::lexing::Lexer;
 use crate::line_counter::LineCounter;
 use crate::rpn_visitor::{Node as RpnNode, Stack as RpnStack, Visitor as RpnVisitor};
-use crate::shunting::{Grammar, Node, OpName, Token};
+use crate::shunting;
+use crate::shunting::{Fixity, Grammar, Lexeme, Node, OpName, ShuntError, Span, Token};
 
 pub struct Parser<N: OpName> {
     pub(super) shunter: Grammar<N>,
     pub(super) lexer: Lexer<Token>,
-}
-
-#[derive(Debug, Clone)]
-pub struct Position {
-    pub line: usize,
-    pub column: usize,
 }
 
 #[derive(Debug)]
@@ -24,15 +17,199 @@ pub struct Parsed<'s, N: OpName> {
     stack: RpnStack<Node<'s, N>>,
 }
 
+#[derive(Debug, Clone)]
+pub struct Position {
+    pub line: usize,
+    pub column: usize,
+}
+
+/**********
+ * Errors *
+ **********/
+
+pub struct ParseError<'s, N: OpName> {
+    inner: ParseErrorInner<N>,
+    span: (Position, Position),
+    contents_of_lines: &'s str,
+}
+
+// TODO: impl Error
+pub enum ParseErrorInner<N: OpName> {
+    LexError(Lexeme),
+    UnexpectedToken(Lexeme),
+    MissingFollower {
+        op: N,
+        expected: Token,
+        found: Option<Lexeme>,
+    },
+    MissingRequiredNode {
+        parent: N,
+        preceding_token: Option<Token>,
+        child_index: usize,
+    },
+}
+
+impl<'s, N: OpName> ParseError<'s, N> {
+    fn new(
+        line_counter: &LineCounter<'s>,
+        span: Span,
+        inner: ParseErrorInner<N>,
+    ) -> ParseError<'s, N> {
+        ParseError {
+            inner,
+            span: span_to_positions(line_counter, span),
+            contents_of_lines: contents_of_span(line_counter, span),
+        }
+    }
+
+    fn from_shunt_error(line_counter: &LineCounter<'s>, error: ShuntError<N>) -> ParseError<'s, N> {
+        use ParseErrorInner::*;
+
+        let (span, inner) = match error {
+            ShuntError::LexError(lexeme) => (lexeme.span, LexError(lexeme)),
+            ShuntError::UnexpectedToken(lexeme) => (lexeme.span, UnexpectedToken(lexeme)),
+            ShuntError::MissingFollower(op, expected, found) => {
+                let inner = MissingFollower {
+                    op,
+                    expected,
+                    found,
+                };
+                let span = match found {
+                    Some(lexeme) => lexeme.span,
+                    None => (line_counter.source().len(), line_counter.source().len()),
+                };
+                (span, inner)
+            }
+        };
+        ParseError::new(line_counter, span, inner)
+    }
+}
+
+fn span_to_positions(line_counter: &LineCounter, span: Span) -> (Position, Position) {
+    let (start, end) = span;
+    let (start_line, start_col) = line_counter.line_col(start);
+    let (end_line, end_col) = line_counter.line_col(end);
+    let start_pos = Position {
+        line: start_line,
+        column: start_col,
+    };
+    let end_pos = Position {
+        line: end_line,
+        column: end_col,
+    };
+    (start_pos, end_pos)
+}
+
+fn contents_of_span<'s>(line_counter: &LineCounter<'s>, span: Span) -> &'s str {
+    let (start_line, _) = line_counter.line_col(span.0);
+    let (end_line, _) = line_counter.line_col(span.1);
+    let (start_of_first_line, _) = line_counter.line_span(start_line);
+    let (_, end_of_last_line) = line_counter.line_span(end_line);
+    &line_counter.source()[start_of_first_line..end_of_last_line]
+}
+
+impl<'s, N: OpName> Parsed<'s, N> {}
+
+/***********
+ * Parsing *
+ ***********/
+
+impl<N: OpName + 'static> Parser<N> {
+    pub fn parse<'s>(&'s self, source: &'s str) -> Result<Parsed<'s, N>, ParseError<N>> {
+        let line_counter = LineCounter::new(source);
+        let lexemes = self.lexer.lex(source).map(|lexeme| lexeme.into());
+        let rpn = self.shunter.shunt(lexemes);
+        let mut stack = RpnStack::new();
+        for node in rpn {
+            match node {
+                Ok(node) => stack.push(node),
+                Err(err) => return Err(ParseError::from_shunt_error(&line_counter, err)),
+            };
+        }
+        Ok(Parsed {
+            source,
+            line_counter,
+            stack,
+        })
+    }
+}
+
+/*************
+ * Glue Code *
+ *************/
+
+impl<'a, N: OpName> RpnNode for Node<'a, N> {
+    fn arity(&self) -> usize {
+        self.op().arity()
+    }
+}
+
+impl From<lexing::Lexeme<Token>> for shunting::Lexeme {
+    fn from(lexeme: lexing::Lexeme<Token>) -> shunting::Lexeme {
+        shunting::Lexeme {
+            token: lexeme.token,
+            span: lexeme.span,
+        }
+    }
+}
+
+/***************
+ * Parse Trees *
+ ***************/
+
 #[derive(Debug)]
 pub struct ParseTree<'s, 'p, N: OpName> {
     parsed: &'p Parsed<'s, N>,
     visitor: RpnVisitor<'s, Node<'s, N>>,
 }
 
-impl<'a, N: OpName> RpnNode for Node<'a, N> {
-    fn arity(&self) -> usize {
-        self.op().arity()
+impl<'s, 'p, N: OpName> ParseTree<'s, 'p, N> {
+    pub fn name(&self) -> N {
+        self.visitor.node().op().name()
+    }
+
+    pub fn arity(&self) -> usize {
+        self.visitor.node().op().arity()
+    }
+
+    pub fn fixity(&self) -> Fixity {
+        self.visitor.node().op().fixity()
+    }
+
+    pub fn span(&self) -> (Position, Position) {
+        span_to_positions(&self.parsed.line_counter, self.visitor.node().span())
+    }
+
+    pub fn contents_of_lines(&self) -> &'s str {
+        contents_of_span(&self.parsed.line_counter, self.visitor.node().span())
+    }
+
+    // TODO: doc. Panics.
+    pub fn opt_child(&self, index: usize) -> Self {
+        let visitor = self.visitor.children().nth(index).unwrap_or_else(|| {
+            panic!("req_child: invalid index {} for op {}", index, self.name());
+        });
+        ParseTree {
+            parsed: self.parsed,
+            visitor,
+        }
+    }
+
+    // TODO: doc. Panics.
+    pub fn child(&self, index: usize) -> Result<Self, ParseError<'s, N>> {
+        let child = self.opt_child(index);
+        if child.name() == N::MISSING_ATOM {
+            let span = child.visitor.node().span();
+            let preceding_token = child.visitor.node().op().token_before_child(index);
+            let inner = ParseErrorInner::MissingRequiredNode {
+                parent: self.name(),
+                child_index: index,
+                preceding_token,
+            };
+            Err(ParseError::new(&self.parsed.line_counter, span, inner))
+        } else {
+            Ok(child)
+        }
     }
 }
 

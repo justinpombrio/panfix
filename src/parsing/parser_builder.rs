@@ -13,8 +13,6 @@ pub enum ParserBuilderError<N: OpName + 'static> {
     Lexer(#[from] LexerBuilderError),
 }
 
-pub type Span = (usize, usize);
-
 pub struct ParserBuilder<N: OpName> {
     shunter: GrammarBuilder<N>,
     tokenset: TokenSet,
@@ -43,12 +41,36 @@ impl<N: OpName> ParserBuilder<N> {
         Ok(self)
     }
 
-    pub fn constant(
+    pub fn whitespace(
+        mut self,
+        whitespace_regex: &str,
+    ) -> Result<ParserBuilder<N>, ParserBuilderError<N>> {
+        // TODO
+        assert!(self.shunter.current_nonterminal.is_none());
+        self.tokenset.insert_whitespace(&whitespace_regex);
+        Ok(self)
+    }
+
+    pub fn regex_literal(
         mut self,
         name: N,
-        regex_pattern: String,
+        regex: &str,
     ) -> Result<ParserBuilder<N>, ParserBuilderError<N>> {
-        let token = self.tokenset.insert_regex(&regex_pattern);
+        // TODO
+        assert!(self.shunter.current_nonterminal.is_none());
+        let token = self.tokenset.regex_token(regex);
+        self.shunter = self.shunter.op(name, token, Fixity::Nilfix)?;
+        Ok(self)
+    }
+
+    pub fn string_literal(
+        mut self,
+        name: N,
+        string: &str,
+    ) -> Result<ParserBuilder<N>, ParserBuilderError<N>> {
+        // TODO
+        assert!(self.shunter.current_nonterminal.is_none());
+        let token = self.tokenset.string_token(string);
         self.shunter = self.shunter.op(name, token, Fixity::Nilfix)?;
         Ok(self)
     }
@@ -56,10 +78,10 @@ impl<N: OpName> ParserBuilder<N> {
     pub fn op(mut self, op: Op<N>) -> Result<ParserBuilder<N>, ParserBuilderError<N>> {
         let mut followers: Vec<(&str, Token)> = vec![];
         for (nt, lit) in &op.followers {
-            let token = self.tokenset.insert_literal(lit);
+            let token = self.tokenset.string_token(lit);
             followers.push((nt, token));
         }
-        let token = self.tokenset.insert_literal(&op.first_token);
+        let token = self.tokenset.string_token(&op.first_token);
         self.shunter = self
             .shunter
             .op_multi(op.name, token, followers, op.fixity)?;

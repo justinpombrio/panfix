@@ -29,7 +29,7 @@ pub struct GrammarBuilder<N: OpName> {
     subgrammars: Vec<Subgrammar<N>>,
     starting_nonterminal: Option<NT>,
     max_token: Token,
-    current_nonterminal: Option<NT>,
+    pub(crate) current_nonterminal: Option<NT>,
     current_assoc: Option<Assoc>,
     current_prec: Prec,
 }

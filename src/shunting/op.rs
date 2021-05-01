@@ -50,8 +50,8 @@ pub struct Op<N: OpName> {
 }
 
 impl<N: OpName> Op<N> {
-    pub fn name(&self) -> &N {
-        &self.name
+    pub fn name(&self) -> N {
+        self.name
     }
 
     pub fn arity(&self) -> usize {
@@ -75,6 +75,36 @@ impl<N: OpName> Op<N> {
             .iter()
             .copied()
             .chain(self.followers.iter().map(|(_, tok)| *tok))
+    }
+
+    pub fn token_before_child(&self, child_index: usize) -> Option<Token> {
+        use Fixity::*;
+
+        let is_suffixy = match self.fixity {
+            Suffix | Infix => true,
+            Prefix | Nilfix => false,
+        };
+        match (child_index, is_suffixy) {
+            (0, true) => None,
+            (1, true) => self.first_token,
+            (n, true) => Some(self.followers[n - 2].1),
+            (0, false) => self.first_token,
+            (n, false) => Some(self.followers[n - 1].1),
+        }
+    }
+
+    pub fn token_after_child(&self, child_index: usize) -> Option<Token> {
+        use Fixity::*;
+
+        let is_suffixy = match self.fixity {
+            Suffix | Infix => true,
+            Prefix | Nilfix => false,
+        };
+        match (child_index, is_suffixy) {
+            (0, true) => self.first_token,
+            (n, true) => self.followers.get(n - 1).map(|f| f.1),
+            (n, false) => self.followers.get(n).map(|f| f.1),
+        }
     }
 
     pub(super) fn new_juxtapose(subgrammar: NT, prec: Prec) -> Op<N> {
