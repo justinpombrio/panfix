@@ -2,7 +2,7 @@
 #![feature(or_patterns)]
 
 pub mod lexing;
-pub mod line_counter;
+pub mod line_and_col_indexer;
 pub mod parsing;
 pub mod rpn_visitor;
 pub mod shunting;

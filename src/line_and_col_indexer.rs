@@ -1,14 +1,14 @@
 //! Compute line and column info for a source file. You do not need to use this module directly if
 //! you're using the `panfix` parser.
 //!
-//! Upon construction, the `LineCounter` will scan the source file once for newlines. After
+//! Upon construction, the `LineAndColIndexer` will scan the source file once for newlines. After
 //! construction, you can query for the line&column of a position within the file in O(1) time.
 //!
 //! ```
-//! use panfix::line_counter::LineCounter;
+//! use panfix::line_and_col_indexer::LineAndColIndexer;
 //!
-//! //                              0123 4 567
-//! let counter = LineCounter::new("abc\r\ndef");
+//! //                                    0123 4 567
+//! let counter = LineAndColIndexer::new("abc\r\ndef");
 //!
 //! // There are two lines
 //! assert_eq!(counter.num_lines(), 2);
@@ -26,22 +26,22 @@
 /// A store of newline locations within a source text, for the purpose of quickly computing line
 /// and column positions.
 #[derive(Debug, Clone)]
-pub struct LineCounter<'s> {
+pub struct LineAndColIndexer<'s> {
     source: &'s str,
     line_starts: Vec<usize>,
 }
 
-impl<'s> LineCounter<'s> {
+impl<'s> LineAndColIndexer<'s> {
     /// Construct a line counter for the source file. This will scan the file for newlines, to
     /// allow all further operations to be O(1).
-    pub fn new(source: &'s str) -> LineCounter<'s> {
+    pub fn new(source: &'s str) -> LineAndColIndexer<'s> {
         let mut pos = 0;
         let mut line_starts = vec![];
         for line in source.split_inclusive('\n') {
             line_starts.push(pos);
             pos += line.len();
         }
-        LineCounter {
+        LineAndColIndexer {
             source,
             line_starts,
         }
@@ -52,7 +52,7 @@ impl<'s> LineCounter<'s> {
         self.source
     }
 
-    /// Get the line and column of a position (byte offset) within the source. `pos` is relative to
+    /// Get the line and column of a position (byte index) within the source. `pos` is relative to
     /// the start of the `source` string. A newline or return character is considered part of the
     /// line it ends.
     ///
@@ -92,7 +92,7 @@ impl<'s> LineCounter<'s> {
         &self.source[start..end]
     }
 
-    /// Get the start and end position (byte offset) of the `line_num`th line. The start is
+    /// Get the start and end position (byte index) of the `line_num`th line. The start is
     /// inclusive, and the end is exclusive. Does not include the line termination character(s).
     ///
     /// # Panics

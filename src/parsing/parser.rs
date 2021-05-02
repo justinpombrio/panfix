@@ -1,6 +1,6 @@
 use crate::lexing;
 use crate::lexing::Lexer;
-use crate::line_counter::LineCounter;
+use crate::line_and_col_indexer::LineAndColIndexer;
 use crate::rpn_visitor::{Node as RpnNode, Stack as RpnStack, Visitor as RpnVisitor};
 use crate::shunting;
 use crate::shunting::{Fixity, Grammar, Lexeme, Node, OpName, ShuntError, Span, Token};
@@ -13,7 +13,7 @@ pub struct Parser<N: OpName> {
 #[derive(Debug)]
 pub struct Parsed<'s, N: OpName> {
     source: &'s str,
-    line_counter: LineCounter<'s>,
+    indexer: LineAndColIndexer<'s>,
     stack: RpnStack<Node<'s, N>>,
 }
 
@@ -51,18 +51,21 @@ pub enum ParseErrorInner<N: OpName> {
 
 impl<'s, N: OpName> ParseError<'s, N> {
     fn new(
-        line_counter: &LineCounter<'s>,
+        indexer: &LineAndColIndexer<'s>,
         span: Span,
         inner: ParseErrorInner<N>,
     ) -> ParseError<'s, N> {
         ParseError {
             inner,
-            span: span_to_positions(line_counter, span),
-            contents_of_lines: contents_of_span(line_counter, span),
+            span: span_to_positions(indexer, span),
+            contents_of_lines: contents_of_span(indexer, span),
         }
     }
 
-    fn from_shunt_error(line_counter: &LineCounter<'s>, error: ShuntError<N>) -> ParseError<'s, N> {
+    fn from_shunt_error(
+        indexer: &LineAndColIndexer<'s>,
+        error: ShuntError<N>,
+    ) -> ParseError<'s, N> {
         use ParseErrorInner::*;
 
         let (span, inner) = match error {
@@ -76,19 +79,19 @@ impl<'s, N: OpName> ParseError<'s, N> {
                 };
                 let span = match found {
                     Some(lexeme) => lexeme.span,
-                    None => (line_counter.source().len(), line_counter.source().len()),
+                    None => (indexer.source().len(), indexer.source().len()),
                 };
                 (span, inner)
             }
         };
-        ParseError::new(line_counter, span, inner)
+        ParseError::new(indexer, span, inner)
     }
 }
 
-fn span_to_positions(line_counter: &LineCounter, span: Span) -> (Position, Position) {
+fn span_to_positions(indexer: &LineAndColIndexer, span: Span) -> (Position, Position) {
     let (start, end) = span;
-    let (start_line, start_col) = line_counter.line_col(start);
-    let (end_line, end_col) = line_counter.line_col(end);
+    let (start_line, start_col) = indexer.line_col(start);
+    let (end_line, end_col) = indexer.line_col(end);
     let start_pos = Position {
         line: start_line,
         column: start_col,
@@ -100,12 +103,12 @@ fn span_to_positions(line_counter: &LineCounter, span: Span) -> (Position, Posit
     (start_pos, end_pos)
 }
 
-fn contents_of_span<'s>(line_counter: &LineCounter<'s>, span: Span) -> &'s str {
-    let (start_line, _) = line_counter.line_col(span.0);
-    let (end_line, _) = line_counter.line_col(span.1);
-    let (start_of_first_line, _) = line_counter.line_span(start_line);
-    let (_, end_of_last_line) = line_counter.line_span(end_line);
-    &line_counter.source()[start_of_first_line..end_of_last_line]
+fn contents_of_span<'s>(indexer: &LineAndColIndexer<'s>, span: Span) -> &'s str {
+    let (start_line, _) = indexer.line_col(span.0);
+    let (end_line, _) = indexer.line_col(span.1);
+    let (start_of_first_line, _) = indexer.line_span(start_line);
+    let (_, end_of_last_line) = indexer.line_span(end_line);
+    &indexer.source()[start_of_first_line..end_of_last_line]
 }
 
 impl<'s, N: OpName> Parsed<'s, N> {}
@@ -116,19 +119,19 @@ impl<'s, N: OpName> Parsed<'s, N> {}
 
 impl<N: OpName + 'static> Parser<N> {
     pub fn parse<'s>(&'s self, source: &'s str) -> Result<Parsed<'s, N>, ParseError<N>> {
-        let line_counter = LineCounter::new(source);
+        let indexer = LineAndColIndexer::new(source);
         let lexemes = self.lexer.lex(source).map(|lexeme| lexeme.into());
         let rpn = self.shunter.shunt(lexemes);
         let mut stack = RpnStack::new();
         for node in rpn {
             match node {
                 Ok(node) => stack.push(node),
-                Err(err) => return Err(ParseError::from_shunt_error(&line_counter, err)),
+                Err(err) => return Err(ParseError::from_shunt_error(&indexer, err)),
             };
         }
         Ok(Parsed {
             source,
-            line_counter,
+            indexer,
             stack,
         })
     }
@@ -177,11 +180,11 @@ impl<'s, 'p, N: OpName> ParseTree<'s, 'p, N> {
     }
 
     pub fn span(&self) -> (Position, Position) {
-        span_to_positions(&self.parsed.line_counter, self.visitor.node().span())
+        span_to_positions(&self.parsed.indexer, self.visitor.node().span())
     }
 
     pub fn contents_of_lines(&self) -> &'s str {
-        contents_of_span(&self.parsed.line_counter, self.visitor.node().span())
+        contents_of_span(&self.parsed.indexer, self.visitor.node().span())
     }
 
     // TODO: doc. Panics.
@@ -206,7 +209,7 @@ impl<'s, 'p, N: OpName> ParseTree<'s, 'p, N> {
                 child_index: index,
                 preceding_token,
             };
-            Err(ParseError::new(&self.parsed.line_counter, span, inner))
+            Err(ParseError::new(&self.parsed.indexer, span, inner))
         } else {
             Ok(child)
         }
