@@ -37,18 +37,10 @@ mod lexing_tests {
 
     impl Token for JsonToken {
         const LEX_ERROR: JsonToken = JsonToken::_LexError;
-
-        fn as_usize(self) -> usize {
-            self as usize
-        }
     }
 
     impl Token for TokenThatHatesYou {
         const LEX_ERROR: TokenThatHatesYou = TokenThatHatesYou::_LexError;
-
-        fn as_usize(self) -> usize {
-            (self as usize) + 13
-        }
     }
 
     fn json_lexer() -> Lexer<JsonToken> {
@@ -56,20 +48,20 @@ mod lexing_tests {
 
         let string_regex = "\"([^\"\\\\]|\\\\.)*\"";
         let number_regex = "-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?";
-        let whitespace_regex = "[ \\t\\n\\r\\v]*";
 
-        LexerBuilder::new(whitespace_regex)
-            .regex("STR", string_regex, JString)
-            .regex("NUM", number_regex, Number)
-            .constant("true", True)
-            .constant("false", False)
-            .constant("null", Null)
-            .constant(":", Colon)
-            .constant(",", Comma)
-            .constant("[", OpenBracket)
-            .constant("]", CloseBracket)
-            .constant("{", OpenBrace)
-            .constant("}", CloseBrace)
+        LexerBuilder::new()
+            .unicode_whitespace()
+            .regex(string_regex, JString)
+            .regex(number_regex, Number)
+            .string("true", True)
+            .string("false", False)
+            .string("null", Null)
+            .string(":", Colon)
+            .string(",", Comma)
+            .string("[", OpenBracket)
+            .string("]", CloseBracket)
+            .string("{", OpenBrace)
+            .string("}", CloseBrace)
             .build()
             .unwrap()
     }
@@ -80,27 +72,28 @@ mod lexing_tests {
         let word_regex = "[a-yA-Y]+";
         let angry_word_regex = "[A-Y]+";
         let short_word_regex = "[a-zA-Z]";
-        let whitespace_regex = "[ \\t\\n\\re]*";
+        let whitespace_regex = "[ \\t\\n\\re]";
 
-        LexerBuilder::new(whitespace_regex)
-            .regex("ANG", angry_word_regex, AngryWord)
-            .regex("WORD", word_regex, Word)
-            .regex("SWORD", short_word_regex, ShortWord)
-            .constant(":", Colon)
-            .constant(":::", TripleColon)
-            .constant("::", DoubleColon)
-            .constant("(", OpenParen)
-            .constant(")", CloseParen)
-            .constant(":(", SadFace)
-            .constant("true", True)
-            .constant("truer", Truer)
-            .constant("truerest", Truest)
+        LexerBuilder::new()
+            .whitespace(whitespace_regex)
+            .regex(angry_word_regex, AngryWord)
+            .regex(word_regex, Word)
+            .regex(short_word_regex, ShortWord)
+            .string(":", Colon)
+            .string(":::", TripleColon)
+            .string("::", DoubleColon)
+            .string("(", OpenParen)
+            .string(")", CloseParen)
+            .string(":(", SadFace)
+            .string("true", True)
+            .string("truer", Truer)
+            .string("truerest", Truest)
             .build()
             .unwrap()
     }
 
     #[test]
-    fn test_lexer() {
+    fn test_lexing_json() {
         let lexer = json_lexer();
         let lex = |source| {
             lexer
@@ -133,7 +126,7 @@ mod lexing_tests {
     }
 
     #[test]
-    fn test_lexing_horrible_things() {
+    fn test_lexing_hate() {
         let lexer = hate_lexer();
         let lex = |source| {
             lexer
@@ -142,7 +135,7 @@ mod lexing_tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(lex("HELLO"), vec!["HELLO"]);
-        assert_eq!(lex("Hello"), vec!["H", "llo"]);
+        assert_eq!(lex("Hello"), vec!["Hello"]);
         assert_eq!(lex("hello"), vec!["hello"]);
         assert_eq!(lex(":()"), vec![":(", ")"]);
         assert_eq!(lex(":::()"), vec![":::", "(", ")"]);
@@ -159,7 +152,7 @@ mod lexing_tests {
         );
         assert_eq!(lex(" eprom "), vec!["prom"]);
         assert_eq!(lex("true! true"), vec!["true", "!", "true"]);
-        assert_eq!(lex("tr%ue%%true"), vec!["tr", "%", "ue", "%", "%", "true"]);
+        assert_eq!(lex("tr%ue %%t rue"), vec!["tr", "%u", "%%t", "rue"]);
         assert_eq!(lex("tr\nue"), vec!["tr", "ue"]);
     }
 }

@@ -58,7 +58,7 @@ impl<N: OpName> ParserBuilder<N> {
     ) -> Result<ParserBuilder<N>, ParserBuilderError<N>> {
         // TODO
         assert!(self.shunter.current_nonterminal.is_none());
-        let token = self.tokenset.regex_token(regex);
+        let token = self.tokenset.regex(regex);
         self.shunter = self.shunter.op(name, token, Fixity::Nilfix)?;
         Ok(self)
     }
@@ -70,7 +70,7 @@ impl<N: OpName> ParserBuilder<N> {
     ) -> Result<ParserBuilder<N>, ParserBuilderError<N>> {
         // TODO
         assert!(self.shunter.current_nonterminal.is_none());
-        let token = self.tokenset.string_token(string);
+        let token = self.tokenset.string(string);
         self.shunter = self.shunter.op(name, token, Fixity::Nilfix)?;
         Ok(self)
     }
@@ -78,10 +78,10 @@ impl<N: OpName> ParserBuilder<N> {
     pub fn op(mut self, op: Op<N>) -> Result<ParserBuilder<N>, ParserBuilderError<N>> {
         let mut followers: Vec<(&str, Token)> = vec![];
         for (nt, lit) in &op.followers {
-            let token = self.tokenset.string_token(lit);
+            let token = self.tokenset.string(lit);
             followers.push((nt, token));
         }
-        let token = self.tokenset.string_token(&op.first_token);
+        let token = self.tokenset.string(&op.first_token);
         self.shunter = self
             .shunter
             .op_multi(op.name, token, followers, op.fixity)?;

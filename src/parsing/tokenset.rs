@@ -22,7 +22,7 @@ impl TokenSet {
         }
     }
 
-    pub fn string_token(&mut self, literal: &str) -> Token {
+    pub fn string(&mut self, literal: &str) -> Token {
         if let Some(token) = self.literals.get(literal) {
             return *token;
         }
@@ -31,7 +31,7 @@ impl TokenSet {
         self.next_token
     }
 
-    pub fn regex_token(&mut self, regex: &str) -> Token {
+    pub fn regex(&mut self, regex: &str) -> Token {
         if let Some(token) = self.regexes.get(regex) {
             return *token;
         }
@@ -51,10 +51,10 @@ impl TokenSet {
             builder = builder.whitespace(&whitespace);
         }
         for (literal, token) in self.literals.into_iter() {
-            builder = builder.string_token(&literal, token);
+            builder = builder.string(&literal, token);
         }
         for (regex, token) in self.regexes.into_iter() {
-            builder = builder.regex_token(&regex, token);
+            builder = builder.regex(&regex, token);
         }
         builder.build()
     }

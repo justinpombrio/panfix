@@ -2,6 +2,7 @@ use super::pattern::Pattern;
 use super::{Lexeme, Token};
 use regex::{Regex, RegexSet};
 
+/// A lexer that matches tokens of type `T`.
 #[derive(Debug, Clone)]
 pub struct Lexer<T: Token> {
     pub(super) whitespace: Regex,
@@ -18,6 +19,11 @@ struct Lex<'s, T: Token> {
 }
 
 impl<T: Token> Lexer<T> {
+    /// Split the source into a stream of lexemes.
+    ///
+    /// A lexing error is indicated by `lexeme.token == T::LEX_ERROR`. Whitespace is ignored. If
+    /// there are multiple matches (over any combination of string and regex patterns), the longest
+    /// match is used.
     pub fn lex<'s>(&'s self, source: &'s str) -> impl Iterator<Item = Lexeme<T>> + 's {
         Lex {
             lexer: self,
@@ -32,13 +38,21 @@ impl<'s, T: Token> Iterator for Lex<'s, T> {
 
     fn next(&mut self) -> Option<Lexeme<T>> {
         self.consume_whitespace();
-        match self.lexer.regex_set.matches(self.remaining()).iter().next() {
-            Some(i) => {
-                // The i'th pattern matched. Ask the Pattern to determine its len, then consume it.
-                let pattern = &self.lexer.patterns[i];
-                let len = pattern.unchecked_match_len(self.remaining());
-                Some(self.consume_token(pattern.token(), len))
+
+        // Find the longest match
+        let mut longest_match: Option<(T, usize)> = None;
+        for i in &self.lexer.regex_set.matches(self.remaining()) {
+            // The i'th pattern matched. Ask the Pattern to determine its len.
+            let pattern = &self.lexer.patterns[i];
+            let len = pattern.unchecked_match_len(self.remaining());
+            if longest_match.is_none() || len > longest_match.unwrap().1 {
+                longest_match = Some((pattern.token(), len));
             }
+        }
+
+        // Consume said match
+        match longest_match {
+            Some((token, len)) => Some(self.consume_token(token, len)),
             None => {
                 if self.index == self.source.len() {
                     // EOF. Success!

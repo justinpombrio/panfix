@@ -7,19 +7,20 @@ use thiserror::Error;
 
 /// White space, according to the Pattern_White_Space Unicode property.
 const DEFAULT_WHITESPACE_REGEX: &str =
-    "^[\\u0009\\u000A\\u000B\\u000C\\u000D\\u0020\\u0085\\u200E\\u200F\\u2028\\u2029]";
+    "[\\u0009\\u000A\\u000B\\u000C\\u000D\\u0020\\u0085\\u200E\\u200F\\u2028\\u2029]";
 
+/// Construct a lexer.
 pub struct LexerBuilder<T: Token> {
     whitespace_regexes: Vec<String>,
-    literals: Vec<(T, String)>,
+    strings: Vec<(T, String)>,
     regexes: Vec<(T, String)>,
 }
 
+/// Error while constructing a lexer.
 #[derive(Debug, Clone, Error)]
 pub enum LexerBuilderError {
     #[error(transparent)]
     InvalidRegex(#[from] RegexError),
-    // TODO: Error in case two of the regexes overlap.
 }
 
 impl<T: Token> LexerBuilder<T> {
@@ -30,7 +31,7 @@ impl<T: Token> LexerBuilder<T> {
     pub fn new() -> LexerBuilder<T> {
         LexerBuilder {
             whitespace_regexes: vec![],
-            literals: vec![],
+            strings: vec![],
             regexes: vec![],
         }
     }
@@ -52,15 +53,16 @@ impl<T: Token> LexerBuilder<T> {
         self
     }
 
-    /// Add a token that matches a literal string.
-    pub fn string_token(&mut self, string: &str, token: T) -> &mut LexerBuilder<T> {
-        self.literals.push((token, string.to_owned()));
+    /// Add a token that matches a literal string. Special regex characters are matched literally;
+    /// you do not have to escape anything.
+    pub fn string(&mut self, string: &str, token: T) -> &mut LexerBuilder<T> {
+        self.strings.push((token, string.to_owned()));
         self
     }
 
     /// Add a token that matches a regex pattern. The regex syntax is that of the `regex` crate.
-    pub fn regex_token(&mut self, regex: &str, token: T) -> &mut LexerBuilder<T> {
-        self.regexes.push((token, format!("^({})", regex)));
+    pub fn regex(&mut self, regex: &str, token: T) -> &mut LexerBuilder<T> {
+        self.regexes.push((token, regex.to_owned()));
         self
     }
 
@@ -70,14 +72,10 @@ impl<T: Token> LexerBuilder<T> {
         let whitespace = Regex::new(&format!("^({})*", self.whitespace_regexes.join("|")))?;
         let unanchored_whitespace = Regex::new(&format!("{}", self.whitespace_regexes.join("|")))?;
 
-        // Sort the literals by reverse length, in case one is a prefix of another.
-        // (It's the length of the escaped regex literal, but that still respects "is a prefix".)
-        self.literals.sort_by_key(|(_, re)| -(re.len() as i32));
-
-        // Put the literals first so they take precedence over regexes.
+        // Put the strings first so they take precedence over regexes.
         let mut patterns = vec![];
-        for (token, literal) in mem::take(&mut self.literals).into_iter() {
-            patterns.push(Pattern::new_literal(token, literal)?);
+        for (token, string) in mem::take(&mut self.strings).into_iter() {
+            patterns.push(Pattern::new_string(token, string)?);
         }
         for (token, regex) in mem::take(&mut self.regexes).into_iter() {
             patterns.push(Pattern::new_regex(token, regex)?);

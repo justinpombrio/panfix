@@ -4,25 +4,24 @@ use std::fmt;
 
 #[derive(Debug, Clone)]
 pub struct Pattern<T: Token> {
-    literal: Option<String>,
+    string: Option<String>,
     regex: Regex,
     token: T,
 }
 
 impl<T: Token> Pattern<T> {
-    pub fn new_literal(token: T, literal: String) -> Result<Pattern<T>, RegexError> {
-        let regex_pattern = escape(&literal);
+    pub fn new_string(token: T, string: String) -> Result<Pattern<T>, RegexError> {
         Ok(Pattern {
-            literal: Some(literal),
-            regex: Regex::new(&regex_pattern)?,
+            regex: Regex::new(&format!("^({})", escape(&string)))?,
+            string: Some(string),
             token,
         })
     }
 
     pub fn new_regex(token: T, regex_pattern: String) -> Result<Pattern<T>, RegexError> {
         Ok(Pattern {
-            literal: None,
-            regex: Regex::new(&regex_pattern)?,
+            regex: Regex::new(&format!("^({})", regex_pattern))?,
+            string: None,
             token,
         })
     }
@@ -36,8 +35,8 @@ impl<T: Token> Pattern<T> {
     }
 
     pub fn unchecked_match_len(&self, input: &str) -> usize {
-        match &self.literal {
-            Some(literal) => literal.len(),
+        match &self.string {
+            Some(string) => string.len(),
             None => self.regex.find(input).unwrap().end(),
         }
     }
@@ -45,8 +44,8 @@ impl<T: Token> Pattern<T> {
 
 impl<T: Token> fmt::Display for Pattern<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match &self.literal {
-            Some(literal) => write!(f, "\"{}\"", literal.escape_default()),
+        match &self.string {
+            Some(string) => write!(f, "\"{}\"", string.escape_default()),
             None => write!(f, "/{}/", self.regex.as_str().escape_default()),
         }
     }
