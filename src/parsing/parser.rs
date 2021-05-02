@@ -1,7 +1,7 @@
 use crate::lexing;
 use crate::lexing::Lexer;
 use crate::line_and_col_indexer::LineAndColIndexer;
-use crate::rpn_visitor::{Node as RpnNode, Stack as RpnStack, Visitor as RpnVisitor};
+use crate::rpn_forest::{RpnForest, RpnNode, RpnTree};
 use crate::shunting;
 use crate::shunting::{Fixity, Grammar, Lexeme, Node, OpName, ShuntError, Span, Token};
 
@@ -14,7 +14,7 @@ pub struct Parser<N: OpName> {
 pub struct Parsed<'s, N: OpName> {
     source: &'s str,
     indexer: LineAndColIndexer<'s>,
-    stack: RpnStack<Node<'s, N>>,
+    stack: RpnForest<Node<'s, N>>,
 }
 
 #[derive(Debug, Clone)]
@@ -122,7 +122,7 @@ impl<N: OpName + 'static> Parser<N> {
         let indexer = LineAndColIndexer::new(source);
         let lexemes = self.lexer.lex(source).map(|lexeme| lexeme.into());
         let rpn = self.shunter.shunt(lexemes);
-        let mut stack = RpnStack::new();
+        let mut stack = RpnForest::new();
         for node in rpn {
             match node {
                 Ok(node) => stack.push(node),
@@ -163,38 +163,38 @@ impl From<lexing::Lexeme<Token>> for shunting::Lexeme {
 #[derive(Debug)]
 pub struct ParseTree<'s, 'p, N: OpName> {
     parsed: &'p Parsed<'s, N>,
-    visitor: RpnVisitor<'s, Node<'s, N>>,
+    tree: RpnTree<'s, Node<'s, N>>,
 }
 
 impl<'s, 'p, N: OpName> ParseTree<'s, 'p, N> {
     pub fn name(&self) -> N {
-        self.visitor.node().op().name()
+        self.tree.node().op().name()
     }
 
     pub fn arity(&self) -> usize {
-        self.visitor.node().op().arity()
+        self.tree.node().op().arity()
     }
 
     pub fn fixity(&self) -> Fixity {
-        self.visitor.node().op().fixity()
+        self.tree.node().op().fixity()
     }
 
     pub fn span(&self) -> (Position, Position) {
-        span_to_positions(&self.parsed.indexer, self.visitor.node().span())
+        span_to_positions(&self.parsed.indexer, self.tree.node().span())
     }
 
     pub fn contents_of_lines(&self) -> &'s str {
-        contents_of_span(&self.parsed.indexer, self.visitor.node().span())
+        contents_of_span(&self.parsed.indexer, self.tree.node().span())
     }
 
     // TODO: doc. Panics.
     pub fn opt_child(&self, index: usize) -> Self {
-        let visitor = self.visitor.children().nth(index).unwrap_or_else(|| {
+        let tree = self.tree.children().nth(index).unwrap_or_else(|| {
             panic!("req_child: invalid index {} for op {}", index, self.name());
         });
         ParseTree {
             parsed: self.parsed,
-            visitor,
+            tree,
         }
     }
 
@@ -202,8 +202,8 @@ impl<'s, 'p, N: OpName> ParseTree<'s, 'p, N> {
     pub fn child(&self, index: usize) -> Result<Self, ParseError<'s, N>> {
         let child = self.opt_child(index);
         if child.name() == N::MISSING_ATOM {
-            let span = child.visitor.node().span();
-            let preceding_token = child.visitor.node().op().token_before_child(index);
+            let span = child.tree.node().span();
+            let preceding_token = child.tree.node().op().token_before_child(index);
             let inner = ParseErrorInner::MissingRequiredNode {
                 parent: self.name(),
                 child_index: index,

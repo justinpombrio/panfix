@@ -4,7 +4,7 @@
 pub mod lexing;
 pub mod line_and_col_indexer;
 pub mod parsing;
-pub mod rpn_visitor;
+pub mod rpn_forest;
 pub mod shunting;
 
 // TODO:
