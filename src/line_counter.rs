@@ -1,6 +1,30 @@
-/// Compute line and column info for a source file. Upon construction, this will scan the source
-/// file once for newlines. After construction, you can query for the line&column of a position
-/// within the file in O(1) time.
+//! Compute line and column info for a source file. You do not need to use this module directly if
+//! you're using the `panfix` parser.
+//!
+//! Upon construction, the `LineCounter` will scan the source file once for newlines. After
+//! construction, you can query for the line&column of a position within the file in O(1) time.
+//!
+//! ```
+//! use panfix::line_counter::LineCounter;
+//!
+//! //                              0123 4 567
+//! let counter = LineCounter::new("abc\r\ndef");
+//!
+//! // There are two lines
+//! assert_eq!(counter.num_lines(), 2);
+//!
+//! // "c" is at line 0, col 3
+//! assert_eq!(counter.line_col(3), (0, 3));
+//!
+//! // "e" is at line 1, col 1
+//! assert_eq!(counter.line_col(6), (1, 1));
+//!
+//! // View all of "e"s line
+//! assert_eq!(counter.line_contents(1), "def");
+//! ```
+
+/// A store of newline locations within a source text, for the purpose of quickly computing line
+/// and column positions.
 #[derive(Debug, Clone)]
 pub struct LineCounter<'s> {
     source: &'s str,
@@ -9,7 +33,7 @@ pub struct LineCounter<'s> {
 
 impl<'s> LineCounter<'s> {
     /// Construct a line counter for the source file. This will scan the file for newlines, to
-    /// allow all operations to be O(1).
+    /// allow all further operations to be O(1).
     pub fn new(source: &'s str) -> LineCounter<'s> {
         let mut pos = 0;
         let mut line_starts = vec![];
@@ -23,7 +47,7 @@ impl<'s> LineCounter<'s> {
         }
     }
 
-    /// Get the full source text.
+    /// Get the original source text.
     pub fn source(&self) -> &'s str {
         self.source
     }
@@ -62,8 +86,14 @@ impl<'s> LineCounter<'s> {
         &self.source[start..end]
     }
 
+    /// Like `line_contents`, but includes the line termination character(s).
+    pub fn line_contents_inclusive(&self, line_num: usize) -> &'s str {
+        let (start, end) = self.line_span_inclusive(line_num);
+        &self.source[start..end]
+    }
+
     /// Get the start and end position (byte offset) of the `line_num`th line. The start is
-    /// inclusive, and the end is exclusive. Excludes the line termination character(s).
+    /// inclusive, and the end is exclusive. Does not include the line termination character(s).
     ///
     /// # Panics
     ///
@@ -79,22 +109,7 @@ impl<'s> LineCounter<'s> {
         (start, end)
     }
 
-    /// Get the contents of the `line_num`th line. Includes the line termination character(s).
-    ///
-    /// # Panics
-    ///
-    /// Panics if there are fewer than `line_num` lines.
-    pub fn line_contents_inclusive(&self, line_num: usize) -> &'s str {
-        let (start, end) = self.line_span_inclusive(line_num);
-        &self.source[start..end]
-    }
-
-    /// Get the start and end position (byte offset) of the `line_num`th line. The start is
-    /// inclusive, and the end is exclusive. Includes the line termination character(s).
-    ///
-    /// # Panics
-    ///
-    /// Panics if there are fewer than `line_num` lines.
+    /// Like `line_span`, but includes the line termination character(s).
     pub fn line_span_inclusive(&self, line_num: usize) -> (usize, usize) {
         let start = self.line_starts[line_num];
         let end = match self.line_starts.get(line_num + 1) {

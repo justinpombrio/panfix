@@ -43,7 +43,7 @@ impl<T: Token> LexerBuilder<T> {
         self
     }
 
-    /// Add a regex pattern to the whitespace set.
+    /// Add a regex pattern to the whitespace set. It must not match the empty string.
     ///
     /// Any combination of the patterns will be considered whitespace. For example, if you call
     /// `whitespace()` three times with regexes `{A, B, C}`, then anything matching the regex

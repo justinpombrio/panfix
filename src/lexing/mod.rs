@@ -1,5 +1,5 @@
-//! A general purpose lexer. You do not need to use this directly if you're using the `panfix`
-//! parser.
+//! A general purpose lexer. You do not need to use this module directly if you're using the
+//! `panfix` parser.
 //!
 //! To construct one, you specify:
 //!
