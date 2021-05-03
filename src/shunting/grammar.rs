@@ -27,22 +27,11 @@ pub struct GrammarBuilder<N: OpName> {
     language_name: String,
     nonterminals: HashMap<String, NT>,
     subgrammars: Vec<Subgrammar<N>>,
-    starting_nonterminal: Option<NT>,
     max_token: Token,
-    pub(crate) current_nonterminal: Option<NT>,
-    current_assoc: Option<Assoc>,
-    current_prec: Prec,
 }
 
-// TODO: Check that a follower doesn't reference a subgrammar that doesn't exist.
 #[derive(Debug, Clone, Error)]
 pub enum GrammarBuilderError<N: OpName> {
-    #[error("The operator {0:?} appeared outside of any subgrammar declaration. But every call to `op()` must be preceded by a call to `subgrammar()`.")]
-    OpOutsideSubgrammar(N),
-    #[error("The operator {0:?} requires an associativity, but it was declared outside a group. Every call to `op()` with a fixity that is not Nilfix must be preceded by a call to `assoc_l()` or `assoc_r()`, to declare whether it is left-associative or right-associative.")]
-    OpRequiresAssoc(N),
-    #[error("The operator {0:?} is Nilfix, so it does not require an associativity. For clarity, atoms and Nilfix ops must all be declared before any calls to `assoc_l()` or `assoc_r()`.")]
-    OpForbidsAssoc(N),
     #[error("In subgrammar {subgrammar}, two operators {op_1:?} and {op_2:?} start with the same token. To avoid ambiguitiy, all operators must start with unique tokens.")]
     DuplicateOp {
         subgrammar: String,
@@ -57,10 +46,6 @@ pub enum GrammarBuilderError<N: OpName> {
         arg_index: usize,
         conflicting_op: N,
     },
-    #[error(
-        "Every grammar must have at least one subgrammar, started with the `subgrammar()` method."
-    )]
-    NoSubgrammars,
 }
 
 impl<N: OpName> GrammarBuilder<N> {
@@ -69,101 +54,38 @@ impl<N: OpName> GrammarBuilder<N> {
             language_name: language_name.to_owned(),
             nonterminals: HashMap::new(),
             subgrammars: vec![],
-            starting_nonterminal: None,
             max_token: 0,
-            current_nonterminal: None,
-            current_assoc: None,
-            current_prec: 0,
         }
-    }
-
-    pub fn subgrammar(mut self, name: &str) -> Result<GrammarBuilder<N>, GrammarBuilderError<N>> {
-        let nt = self.insert_nonterminal(name);
-        if self.starting_nonterminal.is_none() {
-            self.starting_nonterminal = Some(nt);
-        }
-        self.current_nonterminal = Some(nt);
-        Ok(self)
-    }
-
-    pub fn assoc_l(mut self) -> Result<GrammarBuilder<N>, GrammarBuilderError<N>> {
-        self.current_prec += 1;
-        self.current_assoc = Some(Assoc::Left);
-        Ok(self)
-    }
-
-    pub fn assoc_r(mut self) -> Result<GrammarBuilder<N>, GrammarBuilderError<N>> {
-        self.current_prec += 1;
-        self.current_assoc = Some(Assoc::Right);
-        Ok(self)
     }
 
     pub fn op(
         mut self,
+        subgrammar: &str,
         name: N,
-        token: Token,
+        prec: Prec,
+        assoc: Assoc,
         fixity: Fixity,
-    ) -> Result<GrammarBuilder<N>, GrammarBuilderError<N>> {
-        self.check_op_name(name)?;
-        self.insert_op(name, token, vec![], fixity)
-    }
-
-    pub fn op_multi(
-        mut self,
-        name: N,
         token: Token,
         followers: Vec<(&str, Token)>,
-        fixity: Fixity,
-    ) -> Result<GrammarBuilder<N>, GrammarBuilderError<N>> {
-        self.check_op_name(name)?;
-        self.insert_op(name, token, followers, fixity)
-    }
-
-    pub fn op_juxtapose(mut self) -> Result<GrammarBuilder<N>, GrammarBuilderError<N>> {
-        let nt = match self.current_nonterminal {
-            None => return Err(GrammarBuilderError::OpOutsideSubgrammar(N::JUXTAPOSE)),
-            Some(nt) => nt,
-        };
-        let op = Op::new_juxtapose(nt, self.current_prec);
-        self.subgrammars[nt].juxtapose = op;
-        Ok(self)
-    }
-
-    fn insert_op(
-        mut self,
-        name: N,
-        token: Token,
-        followers: Vec<(&str, Token)>,
-        fixity: Fixity,
     ) -> Result<GrammarBuilder<N>, GrammarBuilderError<N>> {
         use Fixity::*;
 
-        // Extend all the op tables to include this token
-        if token >= self.max_token {
-            for subgrammar in &mut self.subgrammars {
-                subgrammar.token_to_prefixy_op.resize(token + 1, None);
-                subgrammar.token_to_suffixy_op.resize(token + 1, None);
-            }
-            self.max_token = token + 1;
+        // Error if the op uses a reserved name.
+        if name == N::MISSING_ATOM || name == N::JUXTAPOSE {
+            return Err(GrammarBuilderError::ReservedOpName);
         }
 
-        let nt = match self.current_nonterminal {
-            None => return Err(GrammarBuilderError::OpOutsideSubgrammar(name)),
-            Some(nt) => nt,
-        };
-        let prec = self.current_prec;
-        let assoc = match (fixity, self.current_assoc) {
-            (Nilfix, None) => Assoc::Right, // which assoc does not matter
-            (_, None) => return Err(GrammarBuilderError::OpRequiresAssoc(name)),
-            (Nilfix, Some(_)) => return Err(GrammarBuilderError::OpForbidsAssoc(name)),
-            (_, Some(assoc)) => assoc,
-        };
+        // Construct the op, adding any subgrammars it references that don't exist yet.
+        self.insert_token(token);
+        let nt = self.insert_nonterminal(subgrammar);
         let followers = followers
             .into_iter()
-            .map(|(subg_name, tok)| (self.insert_nonterminal(subg_name), tok))
+            .map(|(subg_name, tok)| (self.insert_nonterminal(subg_name), self.insert_token(tok)))
             .collect::<Vec<_>>();
         let op = Op::new(name, Some(token), followers, prec, assoc, fixity, nt);
         let subgrammar = &mut self.subgrammars[nt];
+
+        // Insert the op, adding it to various lookup tables.
         let op_table = match fixity {
             Prefix | Nilfix => &mut subgrammar.token_to_prefixy_op,
             Suffix | Infix => &mut subgrammar.token_to_suffixy_op,
@@ -177,10 +99,27 @@ impl<N: OpName> GrammarBuilder<N> {
         };
         op_table[token] = Some(op);
         subgrammar.starting_tokens.insert(token, name);
+
         Ok(self)
     }
 
-    pub fn finish(self) -> Result<Grammar<N>, GrammarBuilderError<N>> {
+    pub fn op_juxtapose(
+        mut self,
+        subgrammar: &str,
+        prec: Prec,
+    ) -> Result<GrammarBuilder<N>, GrammarBuilderError<N>> {
+        let nt = self.insert_nonterminal(subgrammar);
+        let op = Op::new_juxtapose(nt, prec);
+        self.subgrammars[nt].juxtapose = op;
+        Ok(self)
+    }
+
+    pub fn finish(
+        mut self,
+        starting_subgrammar: &str,
+    ) -> Result<Grammar<N>, GrammarBuilderError<N>> {
+        // TODO
+        println!("max token: {}", self.max_token);
         // One last validation check: cannot have a follower (NT, tok),
         // if tok is a starting token for an op in NT.
         for subgrammar in &self.subgrammars {
@@ -205,21 +144,12 @@ impl<N: OpName> GrammarBuilder<N> {
                 }
             }
         }
+        let starting_nonterminal = self.insert_nonterminal(starting_subgrammar);
         Ok(Grammar {
             language_name: self.language_name,
-            starting_nonterminal: self
-                .starting_nonterminal
-                .ok_or_else(|| GrammarBuilderError::NoSubgrammars)?,
+            starting_nonterminal,
             subgrammars: self.subgrammars,
         })
-    }
-
-    fn check_op_name(&mut self, op_name: N) -> Result<(), GrammarBuilderError<N>> {
-        if op_name == OpName::MISSING_ATOM || op_name == OpName::JUXTAPOSE {
-            Err(GrammarBuilderError::ReservedOpName)
-        } else {
-            Ok(())
-        }
     }
 
     fn insert_nonterminal(&mut self, name: &str) -> NT {
@@ -240,5 +170,16 @@ impl<N: OpName> GrammarBuilder<N> {
             }
             Some(nt) => *nt,
         }
+    }
+
+    fn insert_token(&mut self, token: Token) -> Token {
+        if token >= self.max_token {
+            for subgrammar in &mut self.subgrammars {
+                subgrammar.token_to_prefixy_op.resize(token + 1, None);
+                subgrammar.token_to_suffixy_op.resize(token + 1, None);
+            }
+            self.max_token = token + 1;
+        }
+        token
     }
 }

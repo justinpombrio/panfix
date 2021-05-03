@@ -27,6 +27,37 @@ pub struct Position {
  * Errors *
  **********/
 
+/*
+// TODO: Check that a follower doesn't reference a subgrammar that doesn't exist.
+#[derive(Debug, Clone, Error)]
+pub enum GrammarBuilderError<N: OpName> {
+    #[error("The operator {0:?} appeared outside of any subgrammar declaration. But every call to `op()` must be preceded by a call to `subgrammar()`.")]
+    OpOutsideSubgrammar(N),
+    #[error("The operator {0:?} requires an associativity, but it was declared outside a group. Every call to `op()` with a fixity that is not Nilfix must be preceded by a call to `assoc_l()` or `assoc_r()`, to declare whether it is left-associative or right-associative.")]
+    OpRequiresAssoc(N),
+    #[error("The operator {0:?} is Nilfix, so it does not require an associativity. For clarity, atoms and Nilfix ops must all be declared before any calls to `assoc_l()` or `assoc_r()`.")]
+    OpForbidsAssoc(N),
+    #[error("In subgrammar {subgrammar}, two operators {op_1:?} and {op_2:?} start with the same token. To avoid ambiguitiy, all operators must start with unique tokens.")]
+    DuplicateOp {
+        subgrammar: String,
+        op_1: N,
+        op_2: N,
+    },
+    #[error("The `JUXTAPOSE` and `MISSING_ATOM` operator names are reserved by the parser, and cannot be used for user-declared operators. However, you may declare the precedence of juxtaposition with the `juxtapose()` method.")]
+    ReservedOpName,
+    #[error("Ambiguous grammar. If argument number {arg_index} of {op:?} contains a {conflicting_op:?}, it could either be parsed as a {conflicting_op:?}, or it could progress the parsing of {op:?}.")]
+    AmbiguousFollower {
+        op: N,
+        arg_index: usize,
+        conflicting_op: N,
+    },
+    #[error(
+        "Every grammar must have at least one subgrammar, started with the `subgrammar()` method."
+    )]
+    NoSubgrammars,
+}
+*/
+
 pub struct ParseError<'s, N: OpName> {
     inner: ParseErrorInner<N>,
     span: (Position, Position),

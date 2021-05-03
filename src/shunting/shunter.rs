@@ -2,8 +2,6 @@ use super::grammar::{Grammar, Subgrammar};
 use super::op::{Op, OpName, Prec, Token, LEX_ERROR, NT};
 use std::iter::Peekable;
 
-//const DEBUG: bool = false;
-
 pub type Span = (usize, usize);
 
 #[derive(Debug)]
@@ -154,7 +152,7 @@ where
             mode: Mode::Expr,
             op_stack: vec![],
             subgrammar,
-            juxt_prec: subgrammar.juxtapose.right_prec.unwrap(),
+            juxt_prec: subgrammar.juxtapose.left_prec.unwrap(),
             last_pos: 0,
         };
         shunter
@@ -177,7 +175,7 @@ where
         } else {
             let nt = op.followers[0].0;
             self.subgrammar = &self.grammar.subgrammars[nt];
-            self.juxt_prec = self.subgrammar.juxtapose.right_prec.unwrap();
+            self.juxt_prec = self.subgrammar.juxtapose.left_prec.unwrap();
             self.op_stack
                 .push(OpPart::OpFollower(lexeme.span, op, &op.followers));
         };
@@ -221,6 +219,7 @@ where
     }
 
     fn found_follower(&mut self) -> Step<'g, N> {
+        self.lexemes.next();
         let (span, op, followers) = match self.op_stack.pop().unwrap() {
             OpPart::OpFollower(span, op, followers) => (span, op, followers),
             _ => unreachable!(),

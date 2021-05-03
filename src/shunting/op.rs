@@ -12,8 +12,8 @@ pub trait OpName: Debug + Display + Clone + Copy + PartialEq + Eq + Hash {
 }
 
 impl<'s> OpName for &'s str {
-    const MISSING_ATOM: &'s str = "MissingAtom";
-    const JUXTAPOSE: &'s str = "Juxtapose";
+    const MISSING_ATOM: &'s str = "MISSING_ATOM";
+    const JUXTAPOSE: &'s str = "JUXTAPOSE";
 }
 
 impl OpName for usize {

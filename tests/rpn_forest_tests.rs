@@ -1,30 +1,30 @@
-mod visitor {
-    use panfix::rpn_visitor::{Node, Stack, Visitor};
+mod rpn_forest {
+    use panfix::rpn_forest::{RpnForest, RpnNode, RpnTree};
 
     #[derive(Debug)]
-    struct Item(char);
+    struct Node(char);
 
-    impl Node for Item {
+    impl RpnNode for Node {
         fn arity(&self) -> usize {
             match self.0 {
                 'a' | 'b' => 0,
                 '√' => 1,
                 '+' | '*' => 2,
                 '?' => 3,
-                _ => unimplemented!(),
+                _ => unreachable!(),
             }
         }
     }
 
-    fn write_sexpr(sexpr: &mut String, visitor: Visitor<Item>) {
-        let node = visitor.node();
+    fn write_sexpr(sexpr: &mut String, tree: RpnTree<Node>) {
+        let node = tree.node();
         if node.arity() == 0 {
             sexpr.push(node.0);
         } else {
             sexpr.push('(');
             sexpr.push(node.0);
-            assert_eq!(visitor.children().len(), node.arity());
-            for child in visitor.children() {
+            assert_eq!(tree.children().len(), node.arity());
+            for child in tree.children() {
                 sexpr.push(' ');
                 write_sexpr(sexpr, child);
             }
@@ -32,12 +32,12 @@ mod visitor {
         }
     }
 
-    fn make_stack(source: &str) -> Stack<Item> {
-        let mut rpn = Stack::new();
+    fn make_stack(source: &str) -> RpnForest<Node> {
+        let mut rpn = RpnForest::new();
         if !source.is_empty() {
             for token in source.split(' ') {
                 let ch = token.chars().next().unwrap();
-                rpn.push(Item(ch));
+                rpn.push(Node(ch));
             }
         }
         rpn
@@ -46,10 +46,10 @@ mod visitor {
     fn to_tree(source: &str) -> String {
         let rpn = make_stack(source);
         let mut sexpr = "".to_string();
-        let len = rpn.groups().len();
-        assert_eq!(len, rpn.num_groups());
-        for (i, visitor) in rpn.groups().enumerate() {
-            write_sexpr(&mut sexpr, visitor);
+        let len = rpn.trees().len();
+        assert_eq!(len, rpn.num_trees());
+        for (i, tree) in rpn.trees().enumerate() {
+            write_sexpr(&mut sexpr, tree);
             if i + 1 != len {
                 sexpr.push(' ');
             }
@@ -57,11 +57,11 @@ mod visitor {
         sexpr
     }
 
-    fn last_group_to_tree(source: &str) -> String {
+    fn last_to_tree(source: &str) -> String {
         let rpn = make_stack(source);
         let mut sexpr = "".to_string();
-        if let Some(visitor) = rpn.last_group() {
-            write_sexpr(&mut sexpr, visitor);
+        if let Some(tree) = rpn.last_tree() {
+            write_sexpr(&mut sexpr, tree);
         }
         sexpr
     }
@@ -72,7 +72,7 @@ mod visitor {
     }
 
     #[test]
-    fn test_many_groups() {
+    fn test_many_trees() {
         assert_eq!(to_tree("a a b a"), "a a b a");
         assert_eq!(to_tree("a b + b a *"), "(+ a b) (* b a)");
     }
@@ -94,23 +94,23 @@ mod visitor {
     }
 
     #[test]
-    fn test_last_group() {
-        assert_eq!(last_group_to_tree(""), "");
-        assert_eq!(last_group_to_tree("a a b"), "b");
-        assert_eq!(last_group_to_tree("a a * b b *"), "(* b b)");
+    fn test_last_tree() {
+        assert_eq!(last_to_tree(""), "");
+        assert_eq!(last_to_tree("a a b"), "b");
+        assert_eq!(last_to_tree("a a * b b *"), "(* b b)");
     }
 
     #[test]
     fn test_last_child_none() {
         let rpn = make_stack("a b");
-        let group = rpn.last_group().unwrap();
+        let group = rpn.last_tree().unwrap();
         assert!(group.last_child().is_none());
     }
 
     #[test]
     fn test_last_child() {
         let rpn = make_stack("a a * a b * +");
-        let group = rpn.groups().next().unwrap();
+        let group = rpn.trees().next().unwrap();
         let child = group.last_child().unwrap();
         let mut sexpr = String::new();
         write_sexpr(&mut sexpr, child);

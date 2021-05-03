@@ -1,82 +1,57 @@
 mod shunting {
-    use panfix::shunting::{Assoc, Fixity, Grammar, Lexeme, OpSpec, Prec, ShuntError, Token};
+    use panfix::shunting::{
+        Assoc, Fixity, Grammar, GrammarBuilder, GrammarBuilderError, Lexeme, Prec, ShuntError,
+    };
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-    pub struct CharToken(char);
+    fn grammar() -> Result<Grammar<&'static str>, GrammarBuilderError<&'static str>> {
+        use Assoc::{Left, Right};
+        use Fixity::*;
 
-    impl Token for CharToken {
-        const LEX_ERROR: CharToken = CharToken('L');
-
-        fn as_usize(self) -> usize {
-            self.0 as usize
+        // Notice that we're converting from `char` to `usize` (and back, elsewhere).  This is very
+        // fragile, and only works for ascii chars! However it is convenient for testing, so that
+        // we don't have to keep a separate mapping between token ids and tokens.
+        fn add_op(
+            builder: GrammarBuilder<&'static str>,
+            name: &'static str,
+            prec: Prec,
+            assoc: Assoc,
+            fixity: Fixity,
+            tokens: &str,
+        ) -> Result<GrammarBuilder<&'static str>, GrammarBuilderError<&'static str>> {
+            let mut tokens = tokens.chars();
+            let first_token = tokens.next().unwrap() as usize;
+            let followers = tokens.map(|tok| ("Expr", tok as usize)).collect::<Vec<_>>();
+            builder.op("Expr", name, prec, assoc, fixity, first_token, followers)
         }
+
+        let builder = GrammarBuilder::new("ShuntingTests");
+        let builder = add_op(builder, "1", 0, Left, Nilfix, "1")?;
+        let builder = add_op(builder, "2", 0, Left, Nilfix, "2")?;
+        let builder = add_op(builder, "3", 0, Left, Nilfix, "3")?;
+        let builder = add_op(builder, "b", 0, Left, Nilfix, "{}")?;
+        let builder = add_op(builder, "-", 1, Left, Prefix, "-")?;
+        let builder = add_op(builder, "!", 1, Left, Suffix, "!")?;
+        let builder = add_op(builder, "*", 2, Right, Infix, "*")?;
+        let builder = add_op(builder, "?", 3, Right, Infix, "?:")?;
+        let builder = builder.op_juxtapose("Expr", 3)?;
+        let builder = add_op(builder, "@", 3, Right, Suffix, "()")?;
+        let builder = add_op(builder, "+", 4, Left, Infix, "+")?;
+        let builder = add_op(builder, "^", 5, Left, Prefix, "^")?;
+        let builder = add_op(builder, "s", 5, Left, Prefix, "[/]")?;
+        let grammar = builder.finish("Expr")?;
+
+        Ok(grammar)
     }
 
-    fn lex(source: &str) -> impl Iterator<Item = Lexeme<CharToken>> + '_ {
+    fn lex(source: &str) -> impl Iterator<Item = Lexeme> + '_ {
         source.chars().enumerate().map(|(i, ch)| Lexeme {
-            token: CharToken(ch),
+            token: ch as usize,
             span: (i, i + 1),
         })
     }
 
-    fn grammar() -> Grammar<CharToken> {
-        use Assoc::{Left, Right};
-        use Fixity::*;
-
-        fn nilfix(name: &str, tokens: &str) -> OpSpec<CharToken> {
-            op(name, tokens, Nilfix, Left, 0)
-        }
-        fn op(
-            name: &str,
-            tokens: &str,
-            fixity: Fixity,
-            assoc: Assoc,
-            prec: Prec,
-        ) -> OpSpec<CharToken> {
-            let (first, followers) = to_followers(tokens);
-            OpSpec {
-                nonterminal: "Expr".to_owned(),
-                name: name.to_owned(),
-                fixity,
-                assoc,
-                first_token: Some(first),
-                followers,
-                prec,
-            }
-        }
-        fn juxtapose(prec: Prec) -> OpSpec<CharToken> {
-            OpSpec::juxtapose("Expr", prec)
-        }
-        fn to_followers(tokens_str: &str) -> (CharToken, Vec<(String, CharToken)>) {
-            let mut chars = tokens_str.chars();
-            let first = CharToken(chars.next().unwrap());
-            let followers = chars.map(|c| ("Expr".to_owned(), CharToken(c))).collect();
-            (first, followers)
-        }
-
-        Grammar::new(
-            "ShuntingTesting".to_owned(),
-            "Expr".to_owned(),
-            vec![
-                nilfix("1", "1"),
-                nilfix("2", "2"),
-                nilfix("3", "3"),
-                nilfix("b", "{}"),
-                op("-", "-", Prefix, Left, 1),
-                op("!", "!", Suffix, Left, 1),
-                op("*", "*", Infix, Right, 2),
-                op("?", "?:", Infix, Right, 3),
-                juxtapose(3),
-                op("@", "()", Suffix, Right, 3),
-                op("+", "+", Infix, Left, 4),
-                op("^", "^", Prefix, Left, 5),
-                op("s", "[/]", Prefix, Left, 5),
-            ],
-        )
-    }
-
     fn shunt(source: &str) -> String {
-        let grammar = grammar();
+        let grammar = grammar().unwrap();
         let lexemes = lex(source);
         let rpn = grammar.shunt(lexemes);
         let mut output = String::new();
@@ -85,17 +60,17 @@ mod shunting {
                 Err(error) => {
                     let ch = match error {
                         ShuntError::LexError(_) => 'L',
-                        ShuntError::ExtraSep(_) => 'X',
-                        ShuntError::MissingSep { .. } => 'S',
+                        ShuntError::UnexpectedToken(_) => 'X',
+                        ShuntError::MissingFollower { .. } => 'S',
                     };
                     output.push(ch);
                     break;
                 }
                 Ok(node) => {
-                    let ch = match node.op.name() {
-                        "$Juxtapose" => 'J',
-                        "$MissingAtom" => 'M',
-                        _ => node.op.first_token().unwrap().0,
+                    let ch = match node.op().name() {
+                        "JUXTAPOSE" => 'J',
+                        "MISSING_ATOM" => 'M',
+                        _ => node.op().first_token().unwrap() as u8 as char,
                     };
                     output.push(ch);
                 }
