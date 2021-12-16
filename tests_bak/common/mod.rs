@@ -31,39 +31,32 @@ pub fn run_parser(parser: &Parser, input: &str) -> String {
     }
 }
 
-fn parenthesize(out: &mut String, visitor: Visitor, parser: &Parser) {
-    let fixity = visitor.fixity();
-    let mut children = visitor.children();
-    if children.len() == 0 {
-        out.push_str(visitor.text());
-        return;
-    }
-    let mut delims = visitor.op_patterns(&parser).into_iter();
+fn parenthesize(out: &mut String, tree: ParseTree<N>) {
     out.push('(');
-    if fixity == Fixity::Infix || fixity == Fixity::Suffix {
-        let child = children.next().unwrap();
-        if child.name() != "$MissingAtom" {
-            parenthesize(out, child, parser);
+    let num_children = tree.children().len();
+    let mut at_start = true;
+    let print_space = |out: &mut String| {
+        if !at_start {
             out.push(' ');
         }
-    }
-    let delim = delims.next().unwrap_or(None);
-    out.push_str(pattern_to_const(delim, visitor));
-    while let Some(delim) = delims.next() {
-        let child = children.next().unwrap();
-        out.push(' ');
-        parenthesize(out, child, parser);
-        out.push(' ');
-        out.push_str(pattern_to_const(delim, visitor));
-    }
-    if fixity == Fixity::Infix || fixity == Fixity::Prefix {
-        let child = children.next().unwrap();
-        if child.name() != "$MissingAtom" {
-            out.push(' ');
-            parenthesize(out, child, parser);
+        at_start = false;
+    };
+    for (i, child) in tree.children().enumerate() {
+        if let Some(token) = tree.token_before_child(i) {
+            print_space(out);
+            out.push_str(token);
+        }
+        if child.name != "$MissingAtom" {
+            print_space(out);
+            parenthesize(out, child);
+        }
+        if i + 1 == num_children {
+            if let Some(token) = tree.token_after_child(i) {
+                print_space(out);
+                out.push_str(token);
+            }
         }
     }
-    assert!(children.next().is_none());
     out.push(')');
 }
 

@@ -1,6 +1,7 @@
 use super::grammar::{Grammar, Subgrammar};
 use super::op::{Op, OpName, Prec, Token, LEX_ERROR, NT};
 use std::iter::Peekable;
+use thiserror::Error;
 
 pub type Span = (usize, usize);
 
@@ -81,12 +82,19 @@ enum Step<'g, N: OpName> {
     Error(ShuntError<N>),
 }
 
-// TODO: impl Error
-#[derive(Debug, Clone)]
+// TODO: Make these errors better
+#[derive(Debug, Clone, Error)]
 pub enum ShuntError<N: OpName> {
+    #[error("Failed to lex {0:?}")]
     LexError(Lexeme),
+    #[error("Unexpected lexeme {0:?}")]
     UnexpectedToken(Lexeme),
-    MissingFollower(N, Token, Option<Lexeme>),
+    #[error("Operator {op} expected token {expected}, but found {found:?}")]
+    MissingFollower {
+        op: N,
+        expected: Token,
+        found: Option<Lexeme>,
+    },
 }
 
 #[derive(Debug)]
@@ -215,7 +223,11 @@ where
     fn missing_follower(&mut self, op: &'g Op<N>, token: Token) -> Step<'g, N> {
         let lexeme = self.lexemes.peek().copied();
         self.mode = Mode::Halt;
-        Step::Error(ShuntError::MissingFollower(op.name, token, lexeme))
+        Step::Error(ShuntError::MissingFollower {
+            op: op.name,
+            expected: token,
+            found: lexeme,
+        })
     }
 
     fn found_follower(&mut self) -> Step<'g, N> {

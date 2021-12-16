@@ -6,14 +6,14 @@ pub type NT = usize;
 pub type Token = usize;
 pub const LEX_ERROR: Token = 0;
 
-pub trait OpName: Debug + Display + Clone + Copy + PartialEq + Eq + Hash {
+pub trait OpName: Debug + Display + Clone + Copy + PartialEq + Eq + Hash + 'static {
     const MISSING_ATOM: Self;
     const JUXTAPOSE: Self;
 }
 
-impl<'s> OpName for &'s str {
-    const MISSING_ATOM: &'s str = "MISSING_ATOM";
-    const JUXTAPOSE: &'s str = "JUXTAPOSE";
+impl OpName for &'static str {
+    const MISSING_ATOM: &'static str = "MISSING_ATOM";
+    const JUXTAPOSE: &'static str = "JUXTAPOSE";
 }
 
 impl OpName for usize {
@@ -56,6 +56,10 @@ impl<N: OpName> Op<N> {
 
     pub fn arity(&self) -> usize {
         self.arity
+    }
+
+    pub fn assoc(&self) -> Assoc {
+        self.assoc
     }
 
     pub fn num_holes(&self) -> usize {

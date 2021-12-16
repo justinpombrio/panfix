@@ -1,4 +1,4 @@
-mod shunting {
+mod shunting_tests {
     use panfix::shunting::{
         Assoc, Fixity, Grammar, GrammarBuilder, GrammarBuilderError, Lexeme, Prec, ShuntError,
     };

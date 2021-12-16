@@ -7,7 +7,7 @@ pub type RegexPattern = String;
 #[derive(Debug)]
 pub struct TokenSet {
     next_token: Token,
-    literals: HashMap<String, Token>,
+    strings: HashMap<String, Token>,
     regexes: HashMap<RegexPattern, Token>,
     whitespace: Vec<RegexPattern>,
 }
@@ -16,18 +16,18 @@ impl TokenSet {
     pub fn new() -> TokenSet {
         TokenSet {
             next_token: 0 as Token,
-            literals: HashMap::new(),
+            strings: HashMap::new(),
             regexes: HashMap::new(),
             whitespace: vec![],
         }
     }
 
-    pub fn string(&mut self, literal: &str) -> Token {
-        if let Some(token) = self.literals.get(literal) {
+    pub fn string(&mut self, string: &str) -> Token {
+        if let Some(token) = self.strings.get(string) {
             return *token;
         }
         self.next_token += 1;
-        self.literals.insert(literal.to_owned(), self.next_token);
+        self.strings.insert(string.to_owned(), self.next_token);
         self.next_token
     }
 
@@ -44,18 +44,21 @@ impl TokenSet {
         self.whitespace.push(regex.to_owned());
     }
 
-    pub fn into_lexer(self) -> Result<Lexer<Token>, LexerBuilderError> {
+    pub fn into_lexer(self) -> Result<(Lexer<Token>, HashMap<Token, String>), LexerBuilderError> {
         let mut builder = LexerBuilder::new();
         let mut builder = &mut builder;
+        let mut token_names = HashMap::new();
         for whitespace in self.whitespace {
             builder = builder.whitespace(&whitespace);
         }
-        for (literal, token) in self.literals.into_iter() {
-            builder = builder.string(&literal, token);
+        for (string, token) in self.strings.into_iter() {
+            token_names.insert(token, string.clone());
+            builder = builder.string(&string, token);
         }
         for (regex, token) in self.regexes.into_iter() {
             builder = builder.regex(&regex, token);
         }
-        builder.build()
+        let lexer = builder.build()?;
+        Ok((lexer, token_names))
     }
 }

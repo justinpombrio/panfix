@@ -118,8 +118,6 @@ impl<N: OpName> GrammarBuilder<N> {
         mut self,
         starting_subgrammar: &str,
     ) -> Result<Grammar<N>, GrammarBuilderError<N>> {
-        // TODO
-        println!("max token: {}", self.max_token);
         // One last validation check: cannot have a follower (NT, tok),
         // if tok is a starting token for an op in NT.
         for subgrammar in &self.subgrammars {

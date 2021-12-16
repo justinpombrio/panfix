@@ -3,18 +3,24 @@ use crate::lexing::Lexer;
 use crate::line_and_col_indexer::LineAndColIndexer;
 use crate::rpn_forest::{RpnForest, RpnNode, RpnTree};
 use crate::shunting;
-use crate::shunting::{Fixity, Grammar, Lexeme, Node, OpName, ShuntError, Span, Token};
+use crate::shunting::{Assoc, Fixity, Grammar, Node, OpName, ShuntError, Span, Token};
+use std::collections::HashMap;
+use std::error;
+use std::fmt;
+use std::fmt::Display;
 
 pub struct Parser<N: OpName> {
     pub(super) shunter: Grammar<N>,
     pub(super) lexer: Lexer<Token>,
+    pub(super) token_names: HashMap<Token, String>,
 }
 
 #[derive(Debug)]
 pub struct Parsed<'s, N: OpName> {
     source: &'s str,
     indexer: LineAndColIndexer<'s>,
-    stack: RpnForest<Node<'s, N>>,
+    token_names: &'s HashMap<Token, String>,
+    forest: RpnForest<Node<'s, N>>,
 }
 
 #[derive(Debug, Clone)]
@@ -27,58 +33,91 @@ pub struct Position {
  * Errors *
  **********/
 
-/*
-// TODO: Check that a follower doesn't reference a subgrammar that doesn't exist.
-#[derive(Debug, Clone, Error)]
-pub enum GrammarBuilderError<N: OpName> {
-    #[error("The operator {0:?} appeared outside of any subgrammar declaration. But every call to `op()` must be preceded by a call to `subgrammar()`.")]
-    OpOutsideSubgrammar(N),
-    #[error("The operator {0:?} requires an associativity, but it was declared outside a group. Every call to `op()` with a fixity that is not Nilfix must be preceded by a call to `assoc_l()` or `assoc_r()`, to declare whether it is left-associative or right-associative.")]
-    OpRequiresAssoc(N),
-    #[error("The operator {0:?} is Nilfix, so it does not require an associativity. For clarity, atoms and Nilfix ops must all be declared before any calls to `assoc_l()` or `assoc_r()`.")]
-    OpForbidsAssoc(N),
-    #[error("In subgrammar {subgrammar}, two operators {op_1:?} and {op_2:?} start with the same token. To avoid ambiguitiy, all operators must start with unique tokens.")]
-    DuplicateOp {
-        subgrammar: String,
-        op_1: N,
-        op_2: N,
-    },
-    #[error("The `JUXTAPOSE` and `MISSING_ATOM` operator names are reserved by the parser, and cannot be used for user-declared operators. However, you may declare the precedence of juxtaposition with the `juxtapose()` method.")]
-    ReservedOpName,
-    #[error("Ambiguous grammar. If argument number {arg_index} of {op:?} contains a {conflicting_op:?}, it could either be parsed as a {conflicting_op:?}, or it could progress the parsing of {op:?}.")]
-    AmbiguousFollower {
-        op: N,
-        arg_index: usize,
-        conflicting_op: N,
-    },
-    #[error(
-        "Every grammar must have at least one subgrammar, started with the `subgrammar()` method."
-    )]
-    NoSubgrammars,
-}
-*/
+pub type TokenName = String;
 
+#[derive(Debug, Clone)]
 pub struct ParseError<'s, N: OpName> {
     inner: ParseErrorInner<N>,
     span: (Position, Position),
     contents_of_lines: &'s str,
 }
 
-// TODO: impl Error
+impl<'s, N: OpName> error::Error for ParseError<'s, N> {}
+impl<'s, N: OpName> Display for ParseError<'s, N> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "Parse error at line {}, col {}:\n{}",
+            self.span.0.line, self.span.0.column, self.inner
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum ParseErrorInner<N: OpName> {
-    LexError(Lexeme),
-    UnexpectedToken(Lexeme),
+    LexError(String),
+    UnexpectedToken(String),
     MissingFollower {
         op: N,
-        expected: Token,
-        found: Option<Lexeme>,
+        expected: TokenName,
+        found: Option<String>,
     },
     MissingRequiredNode {
         parent: N,
-        preceding_token: Option<Token>,
+        preceding_token: Option<TokenName>,
         child_index: usize,
     },
+    NoRoots,
+    MultipleRoots(Vec<N>),
 }
+
+impl<N: OpName> Display for ParseErrorInner<N> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use ParseErrorInner::*;
+
+        match self {
+            LexError(lexeme) => write!(f, "Failed to lex '{}'", lexeme),
+            UnexpectedToken(lexeme) => write!(f, "Unexpected token '{}'", lexeme),
+            MissingFollower {
+                op,
+                expected,
+                found,
+            } => write!(
+                f,
+                "While parsing {}, expected to find {}, but instead found {}.",
+                op,
+                expected,
+                found.as_ref().map(|s| s.as_str()).unwrap_or("end of file")
+            ),
+            MissingRequiredNode {
+                parent,
+                preceding_token,
+                ..
+            } => match preceding_token {
+                None => write!(
+                    f,
+                    "The first argument to {} is required, but was absent.",
+                    parent
+                ),
+                Some(token) => write!(
+                    f,
+                    "The argument to {} after {} is required, but was absent.",
+                    parent, token
+                ),
+            },
+            NoRoots => write!(f, "The source file was empty"),
+            MultipleRoots(ops) => write!(
+                f,
+                "Expected only a single top level expression, but found this sequence: {}",
+                ops.iter()
+                    .map(|op| format!("{}", op))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        }
+    }
+}
+impl<N: OpName> error::Error for ParseErrorInner<N> {}
 
 impl<'s, N: OpName> ParseError<'s, N> {
     fn new(
@@ -96,21 +135,33 @@ impl<'s, N: OpName> ParseError<'s, N> {
     fn from_shunt_error(
         indexer: &LineAndColIndexer<'s>,
         error: ShuntError<N>,
+        source: &str,
+        token_names: &HashMap<Token, String>,
     ) -> ParseError<'s, N> {
         use ParseErrorInner::*;
 
         let (span, inner) = match error {
-            ShuntError::LexError(lexeme) => (lexeme.span, LexError(lexeme)),
-            ShuntError::UnexpectedToken(lexeme) => (lexeme.span, UnexpectedToken(lexeme)),
-            ShuntError::MissingFollower(op, expected, found) => {
-                let inner = MissingFollower {
-                    op,
-                    expected,
-                    found,
-                };
+            ShuntError::LexError(lexeme) => {
+                let string = source[lexeme.span.0..lexeme.span.1].to_owned();
+                (lexeme.span, LexError(string))
+            }
+            ShuntError::UnexpectedToken(lexeme) => {
+                let string = source[lexeme.span.0..lexeme.span.1].to_owned();
+                (lexeme.span, UnexpectedToken(string))
+            }
+            ShuntError::MissingFollower {
+                op,
+                expected,
+                found,
+            } => {
                 let span = match found {
                     Some(lexeme) => lexeme.span,
                     None => (indexer.source().len(), indexer.source().len()),
+                };
+                let inner = MissingFollower {
+                    op,
+                    expected: token_names[&expected].to_owned(),
+                    found: found.map(|lex| source[lex.span.0..lex.span.1].to_owned()),
                 };
                 (span, inner)
             }
@@ -142,28 +193,35 @@ fn contents_of_span<'s>(indexer: &LineAndColIndexer<'s>, span: Span) -> &'s str 
     &indexer.source()[start_of_first_line..end_of_last_line]
 }
 
-impl<'s, N: OpName> Parsed<'s, N> {}
-
 /***********
  * Parsing *
  ***********/
 
 impl<N: OpName + 'static> Parser<N> {
     pub fn parse<'s>(&'s self, source: &'s str) -> Result<Parsed<'s, N>, ParseError<N>> {
+        let token_names = &self.token_names;
         let indexer = LineAndColIndexer::new(source);
         let lexemes = self.lexer.lex(source).map(|lexeme| lexeme.into());
         let rpn = self.shunter.shunt(lexemes);
-        let mut stack = RpnForest::new();
+        let mut forest = RpnForest::new();
         for node in rpn {
             match node {
-                Ok(node) => stack.push(node),
-                Err(err) => return Err(ParseError::from_shunt_error(&indexer, err)),
+                Ok(node) => forest.push(node),
+                Err(err) => {
+                    return Err(ParseError::from_shunt_error(
+                        &indexer,
+                        err,
+                        source,
+                        token_names,
+                    ))
+                }
             };
         }
         Ok(Parsed {
             source,
             indexer,
-            stack,
+            forest,
+            token_names,
         })
     }
 }
@@ -191,10 +249,37 @@ impl From<lexing::Lexeme<Token>> for shunting::Lexeme {
  * Parse Trees *
  ***************/
 
+impl<'s, N: OpName> Parsed<'s, N> {
+    pub fn source(&self) -> &'s str {
+        self.source
+    }
+
+    pub fn trees<'p>(&'p self) -> impl ExactSizeIterator<Item = ParseTree<'s, 'p, N>> {
+        self.forest.trees().map(move |tree| ParseTree {
+            parsed: self,
+            tree: tree,
+        })
+    }
+
+    pub fn expect_one_tree<'p>(&'p self) -> Result<ParseTree<'s, 'p, N>, ParseError<'s, N>> {
+        use ParseErrorInner::{MultipleRoots, NoRoots};
+
+        match self.trees().len() {
+            0 => Err(ParseError::new(&self.indexer, (0, 0), NoRoots)),
+            1 => Ok(self.trees().next().unwrap()),
+            _ => {
+                let roots = self.trees().map(|tree| tree.name()).collect::<Vec<_>>();
+                let span = self.trees().next().unwrap().tree.node().span();
+                Err(ParseError::new(&self.indexer, span, MultipleRoots(roots)))
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ParseTree<'s, 'p, N: OpName> {
     parsed: &'p Parsed<'s, N>,
-    tree: RpnTree<'s, Node<'s, N>>,
+    tree: RpnTree<'p, Node<'s, N>>,
 }
 
 impl<'s, 'p, N: OpName> ParseTree<'s, 'p, N> {
@@ -210,18 +295,52 @@ impl<'s, 'p, N: OpName> ParseTree<'s, 'p, N> {
         self.tree.node().op().fixity()
     }
 
+    pub fn associativity(&self) -> Assoc {
+        self.tree.node().op().assoc()
+    }
+
+    pub fn token_before_child(&self, child_index: usize) -> Option<&str> {
+        let token = self.tree.node().op().token_before_child(child_index);
+        token.map(|tok| self.parsed.token_names[&tok].as_ref())
+    }
+
+    pub fn token_after_child(&self, child_index: usize) -> Option<&str> {
+        let token = self.tree.node().op().token_after_child(child_index);
+        token.map(|tok| self.parsed.token_names[&tok].as_ref())
+    }
+
+    pub fn tokens(&self) -> impl Iterator<Item = &str> {
+        self.tree
+            .node()
+            .op()
+            .tokens()
+            .map(move |tok| self.parsed.token_names[&tok].as_ref())
+    }
+
     pub fn span(&self) -> (Position, Position) {
         span_to_positions(&self.parsed.indexer, self.tree.node().span())
+    }
+
+    pub fn text(self) -> &'s str {
+        let (start, end) = self.tree.node().span();
+        &self.parsed.indexer.source()[start..end]
     }
 
     pub fn contents_of_lines(&self) -> &'s str {
         contents_of_span(&self.parsed.indexer, self.tree.node().span())
     }
 
+    pub fn children(&self) -> impl ExactSizeIterator<Item = ParseTree<'s, 'p, N>> {
+        let parsed = self.parsed;
+        self.tree
+            .children()
+            .map(move |tree| ParseTree { parsed, tree })
+    }
+
     // TODO: doc. Panics.
     pub fn opt_child(&self, index: usize) -> Self {
         let tree = self.tree.children().nth(index).unwrap_or_else(|| {
-            panic!("req_child: invalid index {} for op {}", index, self.name());
+            panic!("opt_child: invalid index {} for op {}", index, self.name());
         });
         ParseTree {
             parsed: self.parsed,
@@ -235,188 +354,28 @@ impl<'s, 'p, N: OpName> ParseTree<'s, 'p, N> {
         if child.name() == N::MISSING_ATOM {
             let span = child.tree.node().span();
             let preceding_token = child.tree.node().op().token_before_child(index);
+            let preceding_token_name = preceding_token.map(|tok| self.token_name(tok).to_owned());
             let inner = ParseErrorInner::MissingRequiredNode {
                 parent: self.name(),
                 child_index: index,
-                preceding_token,
+                preceding_token: preceding_token_name,
             };
             Err(ParseError::new(&self.parsed.indexer, span, inner))
         } else {
             Ok(child)
         }
     }
+
+    fn token_name(&self, token: Token) -> &str {
+        self.parsed
+            .token_names
+            .get(&token)
+            .map(|s| s.as_ref())
+            .unwrap_or("[unknown]")
+    }
 }
 
 /*
-use super::grammar::{Parser, Token};
-use crate::lexing::{Pattern, Span};
-use crate::rpn_visitor::Stack as RpnStack;
-use crate::rpn_visitor::Visitor as RpnVisitor;
-use crate::rpn_visitor::VisitorIter as RpnVisitorIter;
-use crate::shunting::{Assoc, Fixity, Node, ShuntError};
-use std::error::Error;
-use std::fmt;
-
-// TODO: Get line&col nums
-#[derive(Debug, Clone)]
-pub struct Position {
-    pub line: usize,
-    pub column: usize,
-}
-
-#[derive(Debug)]
-pub struct Parsed<'a> {
-    source: &'a str,
-    stack: RpnStack<Node<'a, Token>>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Visitor<'a> {
-    source: &'a str,
-    visitor: RpnVisitor<'a, Node<'a, Token>>,
-}
-
-#[derive(Debug, Clone)]
-pub enum ParseError {
-    LexError {
-        lexeme: String,
-        pos: Position,
-    },
-    ExtraSeparator {
-        separator: String,
-        pos: Position,
-    },
-    MissingSeparator {
-        op_name: String,
-        separator: String,
-        pos: Position,
-    },
-}
-
-impl Error for ParseError {}
-
-impl fmt::Display for ParseError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use ParseError::*;
-
-        match self {
-            LexError{lexeme, pos} => write!(
-                f,
-                "Lexing failed. It did not recognize the characters '{}'. Line {} ({}:{})",
-                lexeme, pos.line, pos.line, pos.column
-            ),
-            ExtraSeparator{separator, pos} => write!(
-               f,
-               "Parsing failed. It did not expect to find '{}' on its own. Line {} ({}:{})",
-               separator, pos.line, pos.line, pos.column
-            ),
-            MissingSeparator{op_name, separator, pos} => write!(
-            f,
-            "Parsing failed. It expected to find '{}' as part of {}, but could not. Line {} ({}:{})",
-            op_name, separator, pos.line, pos.line, pos.column
-            ),
-        }
-    }
-}
-
-impl Parser {
-    pub fn parse<'s>(&'s self, source: &'s str) -> Result<Parsed<'s>, ParseError> {
-        let tokens = self.lexer.lex(source);
-        let rpn = self.shunter.shunt(tokens);
-        let mut stack = RpnStack::new();
-        for node in rpn {
-            match node {
-                Err(ShuntError::LexError(lexeme)) => {
-                    let pos = Position {
-                        line: 0,
-                        column: lexeme.span.0 + 1,
-                    };
-                    let lexeme = source[lexeme.span.0..lexeme.span.1].to_owned();
-                    return Err(ParseError::LexError { lexeme, pos });
-                }
-                Err(ShuntError::ExtraSep(lexeme)) => {
-                    let pos = Position {
-                        line: 0,
-                        column: lexeme.span.0 + 1,
-                    };
-                    let separator = source[lexeme.span.0..lexeme.span.1].to_owned();
-                    return Err(ParseError::ExtraSeparator { separator, pos });
-                }
-                Err(ShuntError::MissingSep {
-                    op_name,
-                    span,
-                    token,
-                }) => {
-                    let pos = Position {
-                        line: 0,
-                        column: span.0 + 1,
-                    };
-                    let separator = match self.lexer.get_token_pattern(token).unwrap() {
-                        Pattern::Constant(constant) => constant.to_string(),
-                        Pattern::Regex { name, .. } => format!("{}", name),
-                    };
-                    return Err(ParseError::MissingSeparator {
-                        op_name,
-                        separator,
-                        pos,
-                    });
-                }
-                Ok(node) => stack.push(node),
-            }
-        }
-        Ok(Parsed { source, stack })
-    }
-}
-
-impl<'a> Parsed<'a> {
-    pub fn source(&self) -> &'a str {
-        self.source
-    }
-
-    pub fn groups(&self) -> VisitorIter {
-        VisitorIter {
-            source: self.source,
-            iter: self.stack.groups(),
-        }
-    }
-}
-
-impl<'a> Visitor<'a> {
-    pub fn name(self) -> &'a str {
-        self.visitor.node().op.name()
-    }
-
-    pub fn fixity(self) -> Fixity {
-        self.visitor.node().op.fixity()
-    }
-
-    pub fn op_patterns(self, parser: &Parser) -> Vec<Option<&Pattern>> {
-        self.visitor
-            .node()
-            .op
-            .tokens()
-            .map(|tok| parser.lexer.get_token_pattern(tok))
-            .collect()
-    }
-
-    pub fn span(self) -> Span {
-        self.visitor.node().span
-    }
-
-    pub fn arity(self) -> usize {
-        self.visitor.node().arity()
-    }
-
-    pub fn text(self) -> &'a str {
-        self.visitor.node().text(self.source)
-    }
-
-    pub fn children(self) -> VisitorIter<'a> {
-        VisitorIter {
-            source: self.source,
-            iter: self.visitor.children(),
-        }
-    }
 
     pub fn expect_1_child(self) -> Visitor<'a> {
         let mut children = self.children();
@@ -503,30 +462,6 @@ impl<'a> Visitor<'a> {
         let mut vec = self.iter_left_rev(op).collect::<Vec<_>>();
         vec.reverse();
         vec
-    }
-}
-
-pub struct VisitorIter<'a> {
-    source: &'a str,
-    iter: RpnVisitorIter<'a, Node<'a, Token>>,
-}
-
-impl<'a> Iterator for VisitorIter<'a> {
-    type Item = Visitor<'a>;
-    fn next(&mut self) -> Option<Visitor<'a>> {
-        match self.iter.next() {
-            None => None,
-            Some(v) => Some(Visitor {
-                source: self.source,
-                visitor: v,
-            }),
-        }
-    }
-}
-
-impl<'a> ExactSizeIterator for VisitorIter<'a> {
-    fn len(&self) -> usize {
-        self.iter.len()
     }
 }
 
