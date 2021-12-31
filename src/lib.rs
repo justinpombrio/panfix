@@ -1,8 +1,10 @@
-pub mod lexing;
-pub mod line_and_col_indexer;
-pub mod parsing;
-pub mod rpn_forest;
-pub mod shunting;
+// pub mod lexing;
+// pub mod line_and_col_indexer;
+// pub mod parsing;
+// pub mod rpn_forest;
+// pub mod shunting;
+//
+pub mod lexer;
 
 // TODO:
 // - Don't do shunting logic at runtime. Figure it all out at compile time and build a lookup
