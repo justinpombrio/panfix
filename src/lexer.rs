@@ -1,18 +1,43 @@
+//! A lexer (a.k.a. tokenizer) that produces a stream of (token, lexeme) pairs.
+//!
+//! Usage:
+//!
+//! ```
+//! use panfix::lexer::{LexerBuilder, Lexer, LEX_ERROR};
+//!
+//! let whitespace_regex = r#"[ \t\r\n]+"#;
+//! let mut builder = LexerBuilder::new(whitespace_regex).unwrap();
+//! let tok_plus = builder.string("+").unwrap();
+//! let tok_var = builder.regex("[a-zA-Z_]+").unwrap();
+//! let lexer = builder.finish().unwrap();
+//!
+//! let mut lexemes = lexer.lex("x + y");
+//! assert_eq!(lexemes.next().unwrap(), (tok_var, "x"));
+//! assert_eq!(lexemes.next().unwrap(), (tok_plus, "+"));
+//! assert_eq!(lexemes.next().unwrap(), (tok_var, "y"));
+//! assert_eq!(lexemes.next(), None);
+//!
+//! let mut lexemes = lexer.lex("x @$!");
+//! assert_eq!(lexemes.next().unwrap(), (tok_var, "x"));
+//! assert_eq!(lexemes.next().unwrap(), (LEX_ERROR, "@$!"));
+//! ```
+//!
+//! Whitespace is skipped. If there is a lexing error, the stream will end with a lexeme whose
+//! `token` is `[LEX_ERROR]`.
+//!
+//! If there are multiple possible matches:
+//!
+//! - The longest match is used.
+//! - If there is a tie, whichever token is a 'string' pattern instead of a 'regex' pattern will be
+//! used.
+//! - If there is _still_ a tie, the regex that's first in the list provided to `Lexer::new()` will
+//! be used.
+
 use regex::{escape, Error as RegexError, Regex, RegexSet};
 
 /// A category of lexeme, such as "INTEGER" or "VARIABLE" or "OPEN_PAREN". The special Token called
 /// [`LEX_ERROR`] represents a lexing error.
 pub type Token = usize;
-
-/// The start and end byte of a lexeme within the source string.
-pub type Span = (usize, usize);
-
-/// Either a valid lexeme, or a lexing error if `token == LEX_ERROR`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Lexeme {
-    pub token: Token,
-    pub span: Span,
-}
 
 pub const LEX_ERROR: Token = Token::MAX;
 
@@ -99,40 +124,6 @@ impl LexerBuilder {
     }
 }
 
-/// A lexer (a.k.a. tokenizer) that produces a stream of `[Lexeme]`s.
-///
-/// Usage:
-///
-/// ```
-/// use panfix::lexer::{Lexer, LexerBuilder, Lexeme, LEX_ERROR};
-///
-/// let whitespace_regex = r#"[ \t\r\n]+"#;
-/// let mut builder = LexerBuilder::new(whitespace_regex).unwrap();
-/// let tok_plus = builder.string("+").unwrap();
-/// let tok_var = builder.regex("[a-zA-Z_]+").unwrap();
-/// let lexer = builder.finish().unwrap();
-///
-/// let mut lexemes = lexer.lex("x + y");
-/// assert_eq!(lexemes.next().unwrap().token, tok_var);
-/// assert_eq!(lexemes.next().unwrap().token, tok_plus);
-/// assert_eq!(lexemes.next().unwrap().token, tok_var);
-/// assert_eq!(lexemes.next(), None);
-///
-/// let mut lexemes = lexer.lex("x @$!");
-/// assert_eq!(lexemes.next().unwrap().token, 1);
-/// assert_eq!(lexemes.next().unwrap().token, LEX_ERROR);
-/// ```
-///
-/// Whitespace is skipped. If there is a lexing error, the stream will end with a lexeme whose
-/// `token` is `[LEX_ERROR]`.
-///
-/// If there are multiple possible matches:
-///
-/// - The longest match is used.
-/// - If there is a tie, whichever token is a 'string' pattern instead of a 'regex' pattern will be
-/// used.
-/// - If there is _still_ a tie, the regex that's first in the list provided to `Lexer::new()` will
-/// be used.
 #[derive(Debug, Clone)]
 pub struct Lexer {
     whitespace: Regex,
@@ -141,22 +132,11 @@ pub struct Lexer {
 }
 
 impl Lexer {
-    pub fn new(whitespace_regex: &str, patterns: Vec<Pattern>) -> Result<Lexer, RegexError> {
-        let whitespace = new_regex(whitespace_regex)?;
-        let regex_set = RegexSet::new(patterns.iter().map(|p| p.regex.as_str()))?;
-        Ok(Lexer {
-            whitespace,
-            patterns,
-            regex_set,
-        })
-    }
-
     /// Split `source` into a stream of lexemes. It is frequently useful to wrap this in
     /// [`iter::Peekable`](https://doc.rust-lang.org/stable/std/iter/struct.Peekable.html).
-    pub fn lex<'s>(&'s self, source: &'s str) -> impl Iterator<Item = Lexeme> + 's {
+    pub fn lex<'s>(&'s self, source: &'s str) -> impl Iterator<Item = (Token, &'s str)> {
         LexemeIter {
             source,
-            pos: 0,
             whitespace: &self.whitespace,
             patterns: &self.patterns,
             regex_set: &self.regex_set,
@@ -168,30 +148,26 @@ impl Lexer {
 struct LexemeIter<'s> {
     // The _remaining, unlexed_ source text
     source: &'s str,
-    // The position in the _original_ source text
-    pos: usize,
     whitespace: &'s Regex,
     patterns: &'s [Pattern],
     regex_set: &'s RegexSet,
 }
 
 impl<'s> LexemeIter<'s> {
-    fn consume(&mut self, len: usize) -> Span {
-        let span = (self.pos, self.pos + len);
+    fn consume(&mut self, len: usize) -> &'s str {
+        let lexeme = &self.source[..len];
         self.source = &self.source[len..];
-        self.pos += len;
-        span
+        lexeme
     }
 }
 
 impl<'s> Iterator for LexemeIter<'s> {
-    type Item = Lexeme;
+    type Item = (Token, &'s str);
 
-    fn next(&mut self) -> Option<Lexeme> {
+    fn next(&mut self) -> Option<(Token, &'s str)> {
         // Consume whitespace
         if let Some(span) = self.whitespace.find(self.source) {
-            let len = span.end();
-            self.consume(len);
+            self.source = &self.source[span.end()..];
         }
 
         // If we're at the end of the file, we're done.
@@ -224,8 +200,8 @@ impl<'s> Iterator for LexemeIter<'s> {
 
         // If there was a best match, consume and return it.
         if let Some((token, len, _)) = best_match {
-            let span = self.consume(len);
-            return Some(Lexeme { span, token });
+            let lexeme = self.consume(len);
+            return Some((token, lexeme));
         }
 
         // Otherwise, nothing matched. Lex error! By definition we can't lex, but let's say the
@@ -236,11 +212,8 @@ impl<'s> Iterator for LexemeIter<'s> {
         } else {
             self.source.len()
         };
-        let span = self.consume(len);
-        Some(Lexeme {
-            token: LEX_ERROR,
-            span,
-        })
+        let lexeme = self.consume(len);
+        Some((LEX_ERROR, lexeme))
     }
 }
 
@@ -248,23 +221,19 @@ impl<'s> Iterator for LexemeIter<'s> {
 fn test_lexer() {
     let mut builder = LexerBuilder::new(r#"[ \t\r\n]+"#).unwrap();
     let tok_var = builder.regex("[a-zA-Z_]+").unwrap();
-    let _duplicate = builder.string("raise").unwrap();
+    //let _duplicate = builder.string("raise").unwrap();
     let tok_lparen = builder.string("(").unwrap();
     let tok_raise = builder.string("raise").unwrap();
     let tok_rparen = builder.string(")").unwrap();
     let lexer = builder.finish().unwrap();
 
-    fn lexeme_to_pair(source: &str, lexeme: Lexeme) -> (Token, &str) {
-        (lexeme.token, &source[lexeme.span.0..lexeme.span.1])
-    }
-
     let source = "raised";
-    let mut lexemes = lexer.lex(source).map(|l| lexeme_to_pair(source, l));
+    let mut lexemes = lexer.lex(source);
     assert_eq!(lexemes.next(), Some((tok_var, "raised")));
     assert_eq!(lexemes.next(), None);
 
     let source = "raise(my_error)";
-    let mut lexemes = lexer.lex(source).map(|l| lexeme_to_pair(source, l));
+    let mut lexemes = lexer.lex(source);
     assert_eq!(lexemes.next(), Some((tok_raise, "raise")));
     assert_eq!(lexemes.next(), Some((tok_lparen, "(")));
     assert_eq!(lexemes.next(), Some((tok_var, "my_error")));
@@ -272,17 +241,9 @@ fn test_lexer() {
     assert_eq!(lexemes.next(), None);
 
     let source = "x $$ !";
-    let mut lexemes = lexer.lex(source).map(|l| lexeme_to_pair(source, l));
+    let mut lexemes = lexer.lex(source);
     assert_eq!(lexemes.next(), Some((tok_var, "x")));
     assert_eq!(lexemes.next(), Some((LEX_ERROR, "$$")));
     assert_eq!(lexemes.next(), Some((LEX_ERROR, "!")));
     assert_eq!(lexemes.next(), None);
-
-    // TODO: remove
-    let s = "source";
-    let t = &s[2..4];
-    let start: usize =
-        (t as *const str as *const char as usize) - (s as *const str as *const char as usize);
-    let end: usize = start + t.len();
-    assert_eq!((start, end), (2, 4));
 }
