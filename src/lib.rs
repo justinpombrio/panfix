@@ -36,6 +36,7 @@
 //! 3. [Visiting](rpn_visitor)
 
 pub mod lexing;
+/*
 pub mod parsing;
 pub mod rpn_visitor;
 pub mod shunting;
@@ -47,3 +48,4 @@ impl<'g, T: lexing::Token> rpn_visitor::Node for shunting::Node<'g, T> {
         shunting::Node::arity(*self)
     }
 }
+*/
