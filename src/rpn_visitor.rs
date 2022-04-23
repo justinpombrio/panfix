@@ -7,6 +7,7 @@ use std::fmt::Debug;
 use std::iter::FromIterator;
 use std::ops::Deref;
 
+/// The requirement for elements in the stack: each must have an arity.
 pub trait Node: Debug {
     fn arity(&self) -> usize;
 }
@@ -18,6 +19,7 @@ struct Link<N: Node> {
 }
 
 // The outermost groups are joined in a circularly linked list. Likewise each group's children, etc.
+/// A stack in RPN notation.
 #[derive(Debug)]
 pub struct Stack<N: Node> {
     stack: Vec<Link<N>>,
@@ -25,12 +27,14 @@ pub struct Stack<N: Node> {
 }
 
 // TODO: Stick the soruce in here too!
+/// Walk the stack as if it were a tree.
 #[derive(Debug, Clone, Copy)]
 pub struct Visitor<'s, N: Node> {
     stack: &'s [Link<N>],
     ptr: usize,
 }
 
+/// Walk a node's children.
 pub struct VisitorIter<'s, N: Node> {
     stack: &'s [Link<N>],
     ptr: usize,
@@ -175,10 +179,12 @@ impl<N: Node> Stack<N> {
         }
     }
 
+    /// The number of top-level nodes.
     pub fn num_groups(&self) -> usize {
         self.groups.len()
     }
 
+    /// Iterate over the top-level nodes, from left to right.
     pub fn groups(&self) -> VisitorIter<N> {
         if self.groups.is_empty() {
             VisitorIter::empty()
@@ -191,6 +197,7 @@ impl<N: Node> Stack<N> {
         }
     }
 
+    /// The last top-level group, if any.
     pub fn last_group(&self) -> Option<Visitor<N>> {
         if self.groups.is_empty() {
             None
@@ -202,6 +209,7 @@ impl<N: Node> Stack<N> {
         }
     }
 
+    /// Iterate over all nodes in the stack, from left to right.
     pub fn nodes(&self) -> impl ExactSizeIterator<Item = &N> {
         self.stack.iter().map(|link| &link.node)
     }

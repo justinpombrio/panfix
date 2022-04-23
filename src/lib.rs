@@ -36,9 +36,9 @@
 //! 3. [Visiting](rpn_visitor)
 
 pub mod lexing;
+pub mod rpn_visitor;
 /*
 pub mod parsing;
-pub mod rpn_visitor;
 pub mod shunting;
 
 pub mod refn_impl;
