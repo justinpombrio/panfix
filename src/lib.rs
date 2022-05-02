@@ -35,11 +35,14 @@
 //! 2. [Shunting](shunting)
 //! 3. [Visiting](rpn_visitor)
 
+pub mod grammar;
 pub mod lexing;
+pub mod op;
+pub mod parse_tree;
+pub mod parsing;
 pub mod rpn_visitor;
 /*
 pub mod parsing;
-pub mod shunting;
 
 pub mod refn_impl;
 

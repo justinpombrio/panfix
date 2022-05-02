@@ -8,12 +8,12 @@ use std::iter::FromIterator;
 use std::ops::Deref;
 
 /// The requirement for elements in the stack: each must have an arity.
-pub trait Node: Debug {
+pub trait RpnNode: Debug {
     fn arity(&self) -> usize;
 }
 
-#[derive(Debug, Clone, Copy)]
-struct Link<N: Node> {
+#[derive(Debug, Clone)]
+struct Link<N: RpnNode> {
     node: N,
     next: usize,
 }
@@ -21,27 +21,37 @@ struct Link<N: Node> {
 // The outermost groups are joined in a circularly linked list. Likewise each group's children, etc.
 /// A stack in RPN notation.
 #[derive(Debug)]
-pub struct Stack<N: Node> {
+pub struct RpnStack<N: RpnNode> {
     stack: Vec<Link<N>>,
     groups: Vec<usize>,
 }
 
 // TODO: Stick the soruce in here too!
 /// Walk the stack as if it were a tree.
-#[derive(Debug, Clone, Copy)]
-pub struct Visitor<'s, N: Node> {
+#[derive(Debug)]
+pub struct Visitor<'s, N: RpnNode> {
     stack: &'s [Link<N>],
     ptr: usize,
 }
 
 /// Walk a node's children.
-pub struct VisitorIter<'s, N: Node> {
+pub struct VisitorIter<'s, N: RpnNode> {
     stack: &'s [Link<N>],
     ptr: usize,
     remaining: usize,
 }
 
-impl<'s, N: Node> VisitorIter<'s, N> {
+impl<'s, N: RpnNode> Clone for Visitor<'s, N> {
+    fn clone(&self) -> Visitor<'s, N> {
+        Visitor {
+            stack: self.stack,
+            ptr: self.ptr,
+        }
+    }
+}
+impl<'s, N: RpnNode> Copy for Visitor<'s, N> {}
+
+impl<'s, N: RpnNode> VisitorIter<'s, N> {
     fn empty() -> Self {
         VisitorIter {
             stack: &[],
@@ -51,7 +61,7 @@ impl<'s, N: Node> VisitorIter<'s, N> {
     }
 }
 
-impl<'s, N: Node> Visitor<'s, N> {
+impl<'s, N: RpnNode> Visitor<'s, N> {
     pub fn node(&self) -> &N {
         &self.stack[self.ptr].node
     }
@@ -80,7 +90,7 @@ impl<'s, N: Node> Visitor<'s, N> {
     }
 }
 
-impl<'s, N: Node> Deref for Visitor<'s, N> {
+impl<'s, N: RpnNode> Deref for Visitor<'s, N> {
     type Target = N;
 
     fn deref(&self) -> &N {
@@ -88,7 +98,7 @@ impl<'s, N: Node> Deref for Visitor<'s, N> {
     }
 }
 
-impl<'s, N: Node> Iterator for VisitorIter<'s, N> {
+impl<'s, N: RpnNode> Iterator for VisitorIter<'s, N> {
     type Item = Visitor<'s, N>;
 
     fn next(&mut self) -> Option<Visitor<'s, N>> {
@@ -109,21 +119,21 @@ impl<'s, N: Node> Iterator for VisitorIter<'s, N> {
     }
 }
 
-impl<'s, N: Node> ExactSizeIterator for VisitorIter<'s, N> {
+impl<'s, N: RpnNode> ExactSizeIterator for VisitorIter<'s, N> {
     fn len(&self) -> usize {
         self.remaining
     }
 }
 
-impl<N: Node> Default for Stack<N> {
-    fn default() -> Stack<N> {
-        Stack::new()
+impl<N: RpnNode> Default for RpnStack<N> {
+    fn default() -> RpnStack<N> {
+        RpnStack::new()
     }
 }
 
-impl<N: Node> FromIterator<N> for Stack<N> {
-    fn from_iter<I: IntoIterator<Item = N>>(iter: I) -> Stack<N> {
-        let mut stack = Stack::new();
+impl<N: RpnNode> FromIterator<N> for RpnStack<N> {
+    fn from_iter<I: IntoIterator<Item = N>>(iter: I) -> RpnStack<N> {
+        let mut stack = RpnStack::new();
         for node in iter {
             stack.push(node);
         }
@@ -131,10 +141,10 @@ impl<N: Node> FromIterator<N> for Stack<N> {
     }
 }
 
-impl<N: Node> Stack<N> {
+impl<N: RpnNode> RpnStack<N> {
     /// Construct an empty stack.
-    pub fn new() -> Stack<N> {
-        Stack {
+    pub fn new() -> RpnStack<N> {
+        RpnStack {
             stack: vec![],
             groups: vec![],
         }
