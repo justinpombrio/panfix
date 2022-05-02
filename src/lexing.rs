@@ -143,7 +143,7 @@ impl Lexer {
             source,
             lexer: self,
             position: Position {
-                pos: 0,
+                offset: 0,
                 line: 0,
                 col: 0,
                 utf8_col: 0,
@@ -157,17 +157,14 @@ impl Lexer {
 pub struct Lexeme<'s> {
     pub token: Token,
     pub lexeme: &'s str,
-    /// The position just before the first character in the lexeme.
-    pub start: Position,
-    /// The position just after the last character in the lexeme.
-    pub end: Position,
+    pub span: Span,
 }
 
 /// A position in the source text. Positions are _between_ characters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Position {
     /// Byte offset from the beginning of the source string.
-    pub pos: usize,
+    pub offset: usize,
     /// Line number.
     pub line: usize,
     /// Column number, counted in bytes.
@@ -176,15 +173,37 @@ pub struct Position {
     pub utf8_col: usize,
 }
 
+/// A start and end position in the source text. Positions are _between_ characters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Span {
+    pub start: Position,
+    pub end: Position,
+}
+
 impl fmt::Display for Position {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}:{}", self.line, self.utf8_col)
     }
 }
 
+impl fmt::Display for Span {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}-{}", self.start, self.end)
+    }
+}
+
 impl Position {
+    pub fn start() -> Position {
+        Position {
+            offset: 0,
+            line: 0,
+            col: 0,
+            utf8_col: 0,
+        }
+    }
+
     fn advance(&mut self, ch: char) {
-        self.pos += ch.len_utf8();
+        self.offset += ch.len_utf8();
         if ch == '\n' {
             self.col = 0;
             self.utf8_col = 0;
@@ -205,7 +224,7 @@ struct LexemeIter<'l, 's> {
 }
 
 impl<'l, 's> LexemeIter<'l, 's> {
-    fn consume(&mut self, len: usize) -> (&'s str, Position, Position) {
+    fn consume(&mut self, len: usize) -> (&'s str, Span) {
         let start = self.position;
         for ch in self.source[..len].chars() {
             self.position.advance(ch);
@@ -214,7 +233,7 @@ impl<'l, 's> LexemeIter<'l, 's> {
 
         let lexeme = &self.source[..len];
         self.source = &self.source[len..];
-        (lexeme, start, end)
+        (lexeme, Span { start, end })
     }
 }
 
@@ -257,12 +276,11 @@ impl<'l, 's> Iterator for LexemeIter<'l, 's> {
 
         // If there was a best match, consume and return it.
         if let Some((token, len, _)) = best_match {
-            let (lexeme, start, end) = self.consume(len);
+            let (lexeme, span) = self.consume(len);
             return Some(Lexeme {
                 token,
                 lexeme,
-                start,
-                end,
+                span,
             });
         }
 
@@ -274,12 +292,17 @@ impl<'l, 's> Iterator for LexemeIter<'l, 's> {
         } else {
             self.source.len()
         };
-        let (lexeme, start, end) = self.consume(len);
+        let (lexeme, span) = self.consume(len);
         Some(Lexeme {
             token: LEX_ERROR,
             lexeme,
-            start,
-            end,
+            span,
         })
+    }
+}
+
+impl<'s> fmt::Display for Lexeme<'s> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.lexeme)
     }
 }
