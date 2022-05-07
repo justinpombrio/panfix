@@ -1,5 +1,5 @@
 use crate::lexer::Position;
-use crate::op::{Assoc, Fixity, Op, Prec};
+use crate::op::{Fixity, Op, Prec};
 use crate::rpn_visitor::{RpnNode, RpnStack, RpnVisitor, RpnVisitorIter};
 
 /// The result of parsing a source string. Call `.visitor()` to walk it.
@@ -70,11 +70,6 @@ impl<'s, 'g, 't> Visitor<'s, 'g, 't> {
     /// The fixity of this node's operator.
     pub fn fixity(&self) -> Fixity {
         self.node.op.fixity
-    }
-
-    /// The associativity of this node's operator.
-    pub fn assoc(&self) -> Assoc {
-        self.node.op.assoc
     }
 
     /// The precedence of this node's operator.

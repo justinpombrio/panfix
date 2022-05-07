@@ -45,7 +45,7 @@ mod parser;
 mod rpn_visitor;
 
 pub use grammar::{Grammar, GrammarBuilder, GrammarError};
-pub use op::{Assoc, Fixity, Prec, Sort};
+pub use op::{Fixity, Prec, Sort};
 pub use parse_tree::{ParseTree, Visitor};
 pub use parser::ParseError;
 

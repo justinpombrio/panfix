@@ -1,6 +1,6 @@
 use crate::lexer::RegexError;
 use crate::lexer::{Lexer, LexerBuilder, Token};
-use crate::op::{Assoc, Fixity, Op, Prec, Sort, SortId};
+use crate::op::{Fixity, Op, Prec, Sort, SortId};
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -95,13 +95,13 @@ impl GrammarBuilder {
     }
 
     /// Extend the grammar. When parsing the given `sort`, if `first_token` is found exactly, parse
-    /// it as an operator with the given fixity, associativity, precedence, and followers. For
+    /// it as an operator with the given fixity, precedence, and followers. For
     /// details on what all of those mean, see the [module level docs](`crate`).
     ///
     /// For example, a JSON grammar might have:
     /// ```
-    /// .add_op("members", "Comma", Fixity::Infix, Assoc::Left, 20, ",", vec![])
-    /// .add_op("members", "Colon", Fixity::Infix, Assoc::Left, 10, ":", vec![])
+    /// .add_op("members", "Comma", Fixity::InfixL, 20, ",", vec![])
+    /// .add_op("members", "Colon", Fixity::InfixL, 10, ":", vec![])
     /// ```
     #[allow(clippy::too_many_arguments)]
     pub fn add_op(
@@ -109,7 +109,6 @@ impl GrammarBuilder {
         sort: &str,
         name: &str,
         fixity: Fixity,
-        assoc: Assoc,
         prec: Prec,
         first_token: &str,
         followers: Vec<(&str, &str)>,
@@ -121,7 +120,7 @@ impl GrammarBuilder {
             let token = self.add_string_token(pattern)?;
             compiled_followers.push((sort_id, token));
         }
-        let op = Op::new(name, fixity, assoc, prec, token, compiled_followers);
+        let op = Op::new(name, fixity, prec, token, compiled_followers);
         let sort_id = self.insert_sort(sort);
         self.subgrammars[sort_id].add_op(op)
     }
@@ -182,7 +181,7 @@ impl Subgrammar {
     }
 
     fn add_op(&mut self, op: Op) -> Result<(), GrammarError> {
-        use Fixity::{Infix, Nilfix, Prefix, Suffix};
+        use Fixity::{InfixL, InfixR, Nilfix, Prefix, Suffix};
 
         if &op.name == "$Juxtapose" {
             self.juxtapose = op;
@@ -194,7 +193,7 @@ impl Subgrammar {
             let token = op.first_token.unwrap();
             let mapping = match op.fixity {
                 Prefix | Nilfix => &mut self.token_to_prefixy_op,
-                Suffix | Infix => &mut self.token_to_suffixy_op,
+                Suffix | InfixL | InfixR => &mut self.token_to_suffixy_op,
             };
             while token >= mapping.len() {
                 mapping.push(None);
@@ -241,7 +240,6 @@ impl Grammar {
         write!(out, "{:<8}", sort).unwrap();
         write!(out, "{:<8}", op.name).unwrap();
         write!(out, "{:<8}", op.fixity).unwrap();
-        write!(out, "{:<8}", op.assoc).unwrap();
         write!(out, "{:<8}", op.prec).unwrap();
         if let Some(token) = op.first_token {
             write!(out, "{:<8}", self.token_names[&token]).unwrap();
