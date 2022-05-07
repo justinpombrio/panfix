@@ -1,28 +1,22 @@
 use crate::grammar::{Grammar, Subgrammar};
 use crate::lexer::{Lexeme, Position};
-use crate::op::{Op, Prec};
+use crate::op::{Op, Prec, Sort};
 use crate::parse_tree::{Node, ParseTree};
 use crate::rpn_visitor::RpnStack;
 use std::iter::Peekable;
 use thiserror::Error;
 
 impl Grammar {
+    /// Parse the `source` text as the given `sort`. Runs in linear time.
     pub fn parse<'s, 'g>(
         &'g self,
         source: &'s str,
+        sort: &str,
     ) -> Result<ParseTree<'s, 'g>, ParseError<'s, 'g>> {
         let lexeme_stream = self.lexer.lex(source);
         let parser = Parser::new(source, self, lexeme_stream);
-        parser.parse()
+        parser.parse(sort)
     }
-}
-
-pub fn parse_lexeme_stream<'s, 'g, I: Iterator<Item = Lexeme<'s>>>(
-    source: &'s str,
-    grammar: &'g Grammar,
-    lexemes: I,
-) -> Result<ParseTree<'s, 'g>, ParseError<'s, 'g>> {
-    Parser::new(source, grammar, lexemes).parse()
 }
 
 #[derive(Debug, Clone, Error)]
@@ -47,6 +41,8 @@ pub enum ParseError<'s, 'g> {
         expected: &'g str,
         pos: Position,
     },
+    #[error("Tried to parse a '{0}', but the grammar does not contain that sort.")]
+    NoSuchSort(Sort),
 }
 
 struct Parser<'s, 'g, I: Iterator<Item = Lexeme<'s>>> {
@@ -68,8 +64,12 @@ impl<'s, 'g, I: Iterator<Item = Lexeme<'s>>> Parser<'s, 'g, I> {
         }
     }
 
-    fn parse(mut self) -> Result<ParseTree<'s, 'g>, ParseError<'s, 'g>> {
-        let subgrammar = &self.grammar.subgrammars[self.grammar.starting_subgrammar];
+    fn parse(mut self, sort: &str) -> Result<ParseTree<'s, 'g>, ParseError<'s, 'g>> {
+        let subgrammar = if let Some(sort_id) = self.grammar.sort_ids.get(sort) {
+            &self.grammar.subgrammars[*sort_id]
+        } else {
+            return Err(ParseError::NoSuchSort(sort.to_owned()));
+        };
         self.parse_expr(subgrammar, Prec::MAX)?;
         if let Some(lexeme) = self.lexemes.next() {
             return Err(self.error_unexpected_lexeme(lexeme));

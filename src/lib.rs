@@ -45,14 +45,18 @@ mod parser;
 mod rpn_visitor;
 
 pub use grammar::{Grammar, GrammarBuilder, GrammarError};
-pub use op::{Assoc, Fixity, Prec};
+pub use op::{Assoc, Fixity, Prec, Sort};
 pub use parse_tree::{ParseTree, Visitor};
-pub use parser::{parse_lexeme_stream, ParseError};
+pub use parser::ParseError;
 
+/// The lexer used internally by the parser. It's provided here in case you wish to use it
+/// independently.
 pub mod lexing {
-    pub use crate::lexer::{Lexer, LexerBuilder};
+    pub use crate::lexer::{Lexer, LexerBuilder, Position, Span};
 }
 
+/// An separate utility for constructing a "tree" with only a single allocation. It's used
+/// internally by the parser, and provided here in case you wish to use it independently.
 pub mod rpn {
     pub use crate::rpn_visitor::{RpnStack, RpnVisitor};
 }

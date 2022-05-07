@@ -195,6 +195,7 @@ impl fmt::Display for Span {
 }
 
 impl Position {
+    /// The position at the start of any document.
     pub fn start() -> Position {
         Position {
             offset: 0,
