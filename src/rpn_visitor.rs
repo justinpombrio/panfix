@@ -29,31 +29,32 @@ pub struct RpnStack<N: RpnNode> {
 // TODO: Stick the soruce in here too!
 /// Walk the stack as if it were a tree.
 #[derive(Debug)]
-pub struct Visitor<'s, N: RpnNode> {
+pub struct RpnVisitor<'s, N: RpnNode> {
     stack: &'s [Link<N>],
     ptr: usize,
 }
 
 /// Walk a node's children.
-pub struct VisitorIter<'s, N: RpnNode> {
+#[derive(Debug)]
+pub struct RpnVisitorIter<'s, N: RpnNode> {
     stack: &'s [Link<N>],
     ptr: usize,
     remaining: usize,
 }
 
-impl<'s, N: RpnNode> Clone for Visitor<'s, N> {
-    fn clone(&self) -> Visitor<'s, N> {
-        Visitor {
+impl<'s, N: RpnNode> Clone for RpnVisitor<'s, N> {
+    fn clone(&self) -> RpnVisitor<'s, N> {
+        RpnVisitor {
             stack: self.stack,
             ptr: self.ptr,
         }
     }
 }
-impl<'s, N: RpnNode> Copy for Visitor<'s, N> {}
+impl<'s, N: RpnNode> Copy for RpnVisitor<'s, N> {}
 
-impl<'s, N: RpnNode> VisitorIter<'s, N> {
+impl<'s, N: RpnNode> RpnVisitorIter<'s, N> {
     fn empty() -> Self {
-        VisitorIter {
+        RpnVisitorIter {
             stack: &[],
             ptr: 0,
             remaining: 0,
@@ -61,16 +62,16 @@ impl<'s, N: RpnNode> VisitorIter<'s, N> {
     }
 }
 
-impl<'s, N: RpnNode> Visitor<'s, N> {
+impl<'s, N: RpnNode> RpnVisitor<'s, N> {
     pub fn node(&self) -> &N {
         &self.stack[self.ptr].node
     }
 
-    pub fn children(&self) -> VisitorIter<'s, N> {
+    pub fn children(&self) -> RpnVisitorIter<'s, N> {
         if self.stack[self.ptr].node.arity() == 0 {
-            VisitorIter::empty()
+            RpnVisitorIter::empty()
         } else {
-            VisitorIter {
+            RpnVisitorIter {
                 stack: self.stack,
                 ptr: self.stack[self.ptr - 1].next,
                 remaining: self.arity(),
@@ -78,11 +79,11 @@ impl<'s, N: RpnNode> Visitor<'s, N> {
         }
     }
 
-    pub fn last_child(&self) -> Option<Visitor<'s, N>> {
+    pub fn last_child(&self) -> Option<RpnVisitor<'s, N>> {
         if self.stack[self.ptr].node.arity() == 0 {
             None
         } else {
-            Some(Visitor {
+            Some(RpnVisitor {
                 stack: self.stack,
                 ptr: self.ptr - 1,
             })
@@ -90,7 +91,7 @@ impl<'s, N: RpnNode> Visitor<'s, N> {
     }
 }
 
-impl<'s, N: RpnNode> Deref for Visitor<'s, N> {
+impl<'s, N: RpnNode> Deref for RpnVisitor<'s, N> {
     type Target = N;
 
     fn deref(&self) -> &N {
@@ -98,14 +99,14 @@ impl<'s, N: RpnNode> Deref for Visitor<'s, N> {
     }
 }
 
-impl<'s, N: RpnNode> Iterator for VisitorIter<'s, N> {
-    type Item = Visitor<'s, N>;
+impl<'s, N: RpnNode> Iterator for RpnVisitorIter<'s, N> {
+    type Item = RpnVisitor<'s, N>;
 
-    fn next(&mut self) -> Option<Visitor<'s, N>> {
+    fn next(&mut self) -> Option<RpnVisitor<'s, N>> {
         if self.remaining == 0 {
             return None;
         }
-        let visitor = Visitor {
+        let visitor = RpnVisitor {
             stack: self.stack,
             ptr: self.ptr,
         };
@@ -119,7 +120,7 @@ impl<'s, N: RpnNode> Iterator for VisitorIter<'s, N> {
     }
 }
 
-impl<'s, N: RpnNode> ExactSizeIterator for VisitorIter<'s, N> {
+impl<'s, N: RpnNode> ExactSizeIterator for RpnVisitorIter<'s, N> {
     fn len(&self) -> usize {
         self.remaining
     }
@@ -195,11 +196,11 @@ impl<N: RpnNode> RpnStack<N> {
     }
 
     /// Iterate over the top-level nodes, from left to right.
-    pub fn groups(&self) -> VisitorIter<N> {
+    pub fn groups(&self) -> RpnVisitorIter<N> {
         if self.groups.is_empty() {
-            VisitorIter::empty()
+            RpnVisitorIter::empty()
         } else {
-            VisitorIter {
+            RpnVisitorIter {
                 stack: &self.stack,
                 ptr: self.groups[0],
                 remaining: self.groups.len(),
@@ -208,11 +209,11 @@ impl<N: RpnNode> RpnStack<N> {
     }
 
     /// The last top-level group, if any.
-    pub fn last_group(&self) -> Option<Visitor<N>> {
+    pub fn last_group(&self) -> Option<RpnVisitor<N>> {
         if self.groups.is_empty() {
             None
         } else {
-            Some(Visitor {
+            Some(RpnVisitor {
                 stack: &self.stack,
                 ptr: self.stack.len() - 1,
             })

@@ -33,8 +33,10 @@
 //! - If there is _still_ a tie, the regex that's first in the list provided to `Lexer::new()` will
 //! be used.
 
-use regex::{escape, Error as RegexError, Regex, RegexSet};
+use regex::{escape, Regex, RegexSet};
 use std::fmt;
+
+pub use regex::Error as RegexError;
 
 /// A category of lexeme, such as "INTEGER" or "VARIABLE" or "OPEN_PAREN". The special Token called
 /// [`LEX_ERROR`] represents a lexing error.

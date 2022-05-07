@@ -1,18 +1,20 @@
 // TODO:
-// - ParsrConstructionError
-// - Proper Source data structure, with line numbers
 // - Thorough testing
-// - Grammar validation! If you have an op `t1 NT t2`, then no op in `NT` can begin with `t2`.
+// - Method to display the grammar as a pretty table, given a way to display a token
+// - Think about what happens if a starting token is also a follower token in the same subgrammar.
 
 //! # Panfix
 //!
 //! Panfix is a new approach to parsing, using a modified version of [operator precedence
-//! grammars](https://en.wikipedia.org/wiki/Operator-precedence_grammar). It:
+//! grammars](https://en.wikipedia.org/wiki/Operator-precedence_grammar):
 //!
-//! - (TODO) Question: how complicated of a grammar can it handle?
-//! - Runs in linear time.
-//! - Can gracefully handle some kinds of parse errors, producing (TODO) excellent error messages
-//! in those cases.
+//! - It is not a CFG parser nor a PEG parser, it's something new.
+//! - It runs in linear time. (Not like PEG Packrat O(NG), this is O(N).)
+//! - It has both "soft" and "hard" parse errors, and will continue parsing after any number of
+//!   "soft" errors, but stops on the first "hard" error.
+//! - It's quite simple to implement.
+//!
+//! [FILL]
 //!
 //! This crate is incomplete, and in a messy state. For now, you should use the reference
 //! implementation:
@@ -35,20 +37,22 @@
 //! 2. [Shunting](shunting)
 //! 3. [Visiting](rpn_visitor)
 
-pub mod grammar;
-pub mod lexing;
-pub mod op;
-pub mod parse_tree;
-pub mod parsing;
-pub mod rpn_visitor;
-/*
-pub mod parsing;
+mod grammar;
+mod lexer;
+mod op;
+mod parse_tree;
+mod parser;
+mod rpn_visitor;
 
-pub mod refn_impl;
+pub use grammar::{Grammar, GrammarBuilder, GrammarError};
+pub use op::{Assoc, Fixity, Prec};
+pub use parse_tree::{ParseTree, Visitor};
+pub use parser::{parse_lexeme_stream, ParseError};
 
-impl<'g, T: lexing::Token> rpn_visitor::Node for shunting::Node<'g, T> {
-    fn arity(&self) -> usize {
-        shunting::Node::arity(*self)
-    }
+pub mod lexing {
+    pub use crate::lexer::{Lexer, LexerBuilder};
 }
-*/
+
+pub mod rpn {
+    pub use crate::rpn_visitor::{RpnStack, RpnVisitor};
+}

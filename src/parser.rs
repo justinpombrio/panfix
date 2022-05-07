@@ -1,12 +1,23 @@
 use crate::grammar::{Grammar, Subgrammar};
-use crate::lexing::{Lexeme, Position, Token};
-use crate::op::{CompiledOp, Prec};
+use crate::lexer::{Lexeme, Position};
+use crate::op::{Op, Prec};
 use crate::parse_tree::{Node, ParseTree};
 use crate::rpn_visitor::RpnStack;
 use std::iter::Peekable;
 use thiserror::Error;
 
-pub fn parse<'s, 'g, I: Iterator<Item = Lexeme<'s>>>(
+impl Grammar {
+    pub fn parse<'s, 'g>(
+        &'g self,
+        source: &'s str,
+    ) -> Result<ParseTree<'s, 'g>, ParseError<'s, 'g>> {
+        let lexeme_stream = self.lexer.lex(source);
+        let parser = Parser::new(source, self, lexeme_stream);
+        parser.parse()
+    }
+}
+
+pub fn parse_lexeme_stream<'s, 'g, I: Iterator<Item = Lexeme<'s>>>(
     source: &'s str,
     grammar: &'g Grammar,
     lexemes: I,
@@ -132,27 +143,27 @@ impl<'s, 'g, I: Iterator<Item = Lexeme<'s>>> Parser<'s, 'g, I> {
         }
     }
 
-    fn parse_followers(&mut self, op: &'g CompiledOp) -> Result<(), ParseError<'s, 'g>> {
-        for (nonterminal, expected_token, expected_token_name) in &op.followers {
-            // TODO: error message in Grammar
+    fn parse_followers(&mut self, op: &'g Op) -> Result<(), ParseError<'s, 'g>> {
+        for (nonterminal, expected_token) in &op.followers {
             let subgrammar = &self.grammar.subgrammars[*nonterminal];
             self.parse_expr(subgrammar, Prec::MAX)?;
             let lexeme = self.lexemes.next();
             if lexeme.map(|l| l.token) != Some(*expected_token) {
+                let expected_token_name = self.grammar.token_names.get(expected_token).unwrap();
                 return Err(self.error_missing_follower(&op.name, expected_token_name, lexeme));
             }
         }
         Ok(())
     }
 
-    fn output_op(&mut self, lexeme: Lexeme<'s>, op: &'g CompiledOp) {
+    fn output_op(&mut self, lexeme: Lexeme<'s>, op: &'g Op) {
         let start = lexeme.span.start;
         self.output.push(Node {
             op,
             start,
             end: self.last_pos,
             source: &self.source[start.offset..self.last_pos.offset],
-        })
+        });
     }
 
     fn output_missing_atom(&mut self, subgrammar: &'g Subgrammar) {
