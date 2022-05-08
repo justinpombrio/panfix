@@ -57,8 +57,8 @@ impl Op {
         first_token: Token,
         followers: Vec<(SortId, Token)>,
     ) -> Op {
+        assert_ne!(name, "$Blank");
         assert_ne!(name, "$Juxtapose");
-        assert_ne!(name, "$MissingAtom");
         Op::new_unchecked(name, fixity, prec, Some(first_token), followers)
     }
 
@@ -66,8 +66,8 @@ impl Op {
         Op::new_unchecked(name, Fixity::Nilfix, 0, Some(token), vec![])
     }
 
-    pub(crate) fn new_missing_atom() -> Op {
-        Op::new_unchecked("$MissingAtom", Fixity::Nilfix, 0, None, vec![])
+    pub(crate) fn new_blank() -> Op {
+        Op::new_unchecked("$Blank", Fixity::Nilfix, 0, None, vec![])
     }
 
     pub(crate) fn new_juxtapose(prec: Prec) -> Op {

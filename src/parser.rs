@@ -10,8 +10,8 @@ impl Grammar {
     /// Parse the `source` text as the given `sort`. Runs in linear time.
     pub fn parse<'s, 'g>(
         &'g self,
-        source: &'s str,
         sort: &str,
+        source: &'s str,
     ) -> Result<ParseTree<'s, 'g>, ParseError<'s, 'g>> {
         let lexeme_stream = self.lexer.lex(source);
         let parser = Parser::new(source, self, lexeme_stream);
@@ -92,11 +92,11 @@ impl<'s, 'g, I: Iterator<Item = Lexeme<'s>>> Parser<'s, 'g, I> {
                 self.output_op(lexeme, op);
             } else {
                 // E.g. "2 + *"
-                self.output_missing_atom(subgrammar);
+                self.output_blank(subgrammar);
             }
         } else {
             // E.g. the entire file is "2 +"
-            self.output_missing_atom(subgrammar);
+            self.output_blank(subgrammar);
         };
         self.parse_suffix(subgrammar, prec)
     }
@@ -166,11 +166,11 @@ impl<'s, 'g, I: Iterator<Item = Lexeme<'s>>> Parser<'s, 'g, I> {
         });
     }
 
-    fn output_missing_atom(&mut self, subgrammar: &'g Subgrammar) {
+    fn output_blank(&mut self, subgrammar: &'g Subgrammar) {
         let start = self.last_pos;
         let end = self.last_pos;
         self.output.push(Node {
-            op: &subgrammar.missing_atom,
+            op: &subgrammar.blank,
             start,
             end,
             source: &self.source[start.offset..end.offset],

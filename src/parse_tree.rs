@@ -78,7 +78,7 @@ impl<'s, 'g, 't> Visitor<'s, 'g, 't> {
     }
 
     /// The number of children this node has.
-    pub fn arity(&self) -> usize {
+    pub fn num_children(&self) -> usize {
         self.node.op.arity
     }
 

@@ -1,5 +1,4 @@
-use crate::lexer::RegexError;
-use crate::lexer::{Lexer, LexerBuilder, Token};
+use crate::lexer::{Lexer, LexerBuilder, RegexError, Token, UNICODE_WHITESPACE_REGEX};
 use crate::op::{Fixity, Op, Prec, Sort, SortId};
 use std::collections::HashMap;
 use thiserror::Error;
@@ -30,7 +29,7 @@ pub(crate) struct Subgrammar {
     pub(crate) token_to_prefixy_op: Vec<Option<Op>>,
     // Map from the first token in a Suffix or Infix op, to that op.
     pub(crate) token_to_suffixy_op: Vec<Option<Op>>,
-    pub(crate) missing_atom: Op,
+    pub(crate) blank: Op,
     pub(crate) juxtapose: Op,
 }
 
@@ -47,7 +46,19 @@ pub enum GrammarError {
     RegexError(RegexError),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pattern<'a> {
+    pub fixity: Fixity,
+    pub first_token: &'a str,
+    pub followers: Vec<(&'a str, &'a str)>,
+}
+
 impl GrammarBuilder {
+    /// Start constructing a grammar, that uses Unicode's Pattern_White_Space for whitespace.
+    pub fn new_with_unicode_whitespace() -> Result<GrammarBuilder, GrammarError> {
+        GrammarBuilder::new(UNICODE_WHITESPACE_REGEX)
+    }
+
     /// Start constructing a grammar. `whitespace_regex` is the regex to use to match whitespace,
     /// in the syntax of the `regex` crate.
     pub fn new(whitespace_regex: &str) -> Result<GrammarBuilder, GrammarError> {
@@ -61,11 +72,11 @@ impl GrammarBuilder {
         })
     }
 
-    /// Extend the grammar: when parsing the given `sort`, if `string_pattern` is found exactly,
-    /// parse it as an operator that takes no arguments.
+    /// Extend the grammar with an atom: when parsing the given `sort`, if `string_pattern` is
+    /// found exactly, parse it as an operator that takes no arguments.
     ///
-    /// For example, a JSON grammar might have `.add_atom("value", "Null" "null")`.
-    pub fn add_atom(
+    /// For example, a JSON grammar might have `.atom_string("value", "Null" "null")`.
+    pub fn atom_string(
         &mut self,
         sort: &str,
         name: &str,
@@ -77,12 +88,12 @@ impl GrammarBuilder {
         self.subgrammars[sort_id].add_op(op)
     }
 
-    /// Extend the grammar: when parsing the given `sort`, if `regex_pattern` is matched, parse it
-    /// as an operator that takes no arguments.
+    /// Extend the grammar with an atom: when parsing the given `sort`, if `regex_pattern` is
+    /// matched, parse it as an operator that takes no arguments.
     ///
-    /// For example, a JSON grammar might have `.add_atom("value", "Number" "[0-9]*")` (though with
+    /// For example, a JSON grammar might have `.atom_regex("value", "Number" "[0-9]*")` (though with
     /// a better regex).
-    pub fn add_atom_regex(
+    pub fn atom_regex(
         &mut self,
         sort: &str,
         name: &str,
@@ -94,33 +105,59 @@ impl GrammarBuilder {
         self.subgrammars[sort_id].add_op(op)
     }
 
-    /// Extend the grammar. When parsing the given `sort`, if `first_token` is found exactly, parse
-    /// it as an operator with the given fixity, precedence, and followers. For
-    /// details on what all of those mean, see the [module level docs](`crate`).
+    /// Set the precedence of the "$Juxtapose" operator for the given sort.
+    ///
+    /// ("$Juxtapose" is an invisible infix operator that is inserted when required to make the
+    /// parse valid. For more details, see the package-level documentation.)
+    // TODO: move this to top-level docs
+    /// "$Juxtapose" is an invisible infix operator that is inserted when needed to make a valid
+    /// parse tree. For example, the source:
+    ///
+    /// ```text
+    /// "one" "two" "three"
+    /// ```
+    ///
+    /// would be parsed as:
+    ///
+    /// ```text
+    /// "one" $Juxtapose "two" $Juxtapose "three"
+    /// ```
+    ///
+    ///
+    pub fn juxtapose(&mut self, sort: &str, prec: Prec) -> Result<(), GrammarError> {
+        let op = Op::new_juxtapose(prec);
+        let sort_id = self.insert_sort(sort);
+        self.subgrammars[sort_id].add_op(op)
+    }
+
+    /// Extend the grammar with an operator. When parsing the given `sort`, if
+    /// `pattern.first_token` is found exactly, parse it as an operator with the given fixity,
+    /// precedence, and followers.  For details on what all of those mean, see the [module level
+    /// docs](`crate`).
     ///
     /// For example, a JSON grammar might have:
-    /// ```
-    /// .add_op("members", "Comma", Fixity::InfixL, 20, ",", vec![])
-    /// .add_op("members", "Colon", Fixity::InfixL, 10, ":", vec![])
+    /// ```no_run
+    /// # use panfix::{GrammarBuilder, Fixity, pattern};
+    /// # let mut builder = GrammarBuilder::new("").unwrap();
+    /// builder.op("members", "Comma", 20, pattern!(_ "," _));
+    /// builder.op("members", "Colon", 10, pattern!(_ ":" _));
     /// ```
     #[allow(clippy::too_many_arguments)]
-    pub fn add_op(
+    pub fn op(
         &mut self,
         sort: &str,
         name: &str,
-        fixity: Fixity,
         prec: Prec,
-        first_token: &str,
-        followers: Vec<(&str, &str)>,
+        pattern: Pattern,
     ) -> Result<(), GrammarError> {
-        let token = self.add_string_token(first_token)?;
+        let token = self.add_string_token(pattern.first_token)?;
         let mut compiled_followers = Vec::<(SortId, Token)>::new();
-        for (sort, pattern) in followers {
+        for (sort, tok_patt) in pattern.followers {
             let sort_id = self.insert_sort(sort);
-            let token = self.add_string_token(pattern)?;
+            let token = self.add_string_token(tok_patt)?;
             compiled_followers.push((sort_id, token));
         }
-        let op = Op::new(name, fixity, prec, token, compiled_followers);
+        let op = Op::new(name, pattern.fixity, prec, token, compiled_followers);
         let sort_id = self.insert_sort(sort);
         self.subgrammars[sort_id].add_op(op)
     }
@@ -175,7 +212,7 @@ impl Subgrammar {
             sort: sort.to_owned(),
             token_to_prefixy_op: vec![],
             token_to_suffixy_op: vec![],
-            missing_atom: Op::new_missing_atom(),
+            blank: Op::new_blank(),
             juxtapose: Op::new_juxtapose(0),
         }
     }
@@ -186,8 +223,8 @@ impl Subgrammar {
         if &op.name == "$Juxtapose" {
             self.juxtapose = op;
             Ok(())
-        } else if &op.name == "$MissingAtom" {
-            self.missing_atom = op;
+        } else if &op.name == "$Blank" {
+            self.blank = op;
             Ok(())
         } else {
             let token = op.first_token.unwrap();
@@ -218,7 +255,7 @@ impl Grammar {
     pub fn to_table(&self) -> String {
         let mut out = String::new();
         for subgrammar in &self.subgrammars {
-            self.show_op(&mut out, &subgrammar.sort, &subgrammar.missing_atom);
+            self.show_op(&mut out, &subgrammar.sort, &subgrammar.blank);
             self.show_op(&mut out, &subgrammar.sort, &subgrammar.juxtapose);
             for op in &subgrammar.token_to_prefixy_op {
                 if let Some(op) = op {
