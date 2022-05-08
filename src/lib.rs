@@ -33,7 +33,7 @@
 //!
 //! [TODO]
 //! ```
-//! use panfix::{GrammarBuilder, Visitor, pattern};
+//! use panfix::{Grammar, Visitor, pattern};
 //!
 //! fn to_sexpr(visitor: Visitor) -> String {
 //!     if visitor.num_children() == 0 {
@@ -49,7 +49,7 @@
 //!     }
 //! }
 //!
-//! let mut builder = GrammarBuilder::new_with_unicode_whitespace().unwrap();
+//! let mut builder = Grammar::new_with_unicode_whitespace().unwrap();
 //!
 //! builder.atom_regex("Expr", "Number", "[0-9]+").unwrap();
 //! builder.op("Expr", "Minus", 40, pattern!(_ "-" _)).unwrap();
@@ -80,10 +80,10 @@ mod parse_tree;
 mod parser;
 mod rpn_visitor;
 
-pub use grammar::{Grammar, GrammarBuilder, GrammarError, Pattern};
+pub use grammar::{Grammar, GrammarError, Pattern};
 pub use op::{Fixity, Prec, Sort};
 pub use parse_tree::{ParseTree, Visitor};
-pub use parser::ParseError;
+pub use parser::{ParseError, Parser};
 
 /// The lexer used internally by the parser. It's provided here in case you wish to use it
 /// independently.

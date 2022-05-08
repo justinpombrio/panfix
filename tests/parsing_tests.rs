@@ -1,7 +1,7 @@
-use panfix::{pattern, Grammar, GrammarBuilder, Visitor};
+use panfix::{pattern, Grammar, Parser, Visitor};
 
 #[track_caller]
-fn assert_parse(grammar: &Grammar, sort: &str, src: &str, expected: &str) {
+fn assert_parse(grammar: &Parser, sort: &str, src: &str, expected: &str) {
     let tree = grammar.parse(sort, src).unwrap();
     let sexpr = to_sexpr(tree.visitor());
     assert_eq!(sexpr, expected);
@@ -24,7 +24,7 @@ fn to_sexpr(visitor: Visitor) -> String {
 
 #[test]
 fn test_parsing_minus() {
-    let mut builder = GrammarBuilder::new_with_unicode_whitespace().unwrap();
+    let mut builder = Grammar::new_with_unicode_whitespace().unwrap();
 
     builder.atom_regex("Expr", "Number", "[0-9]+").unwrap();
     builder.op("Expr", "minus", 40, pattern!(_ "-" _)).unwrap();

@@ -1,36 +1,18 @@
-use crate::lexer::{Lexer, LexerBuilder, RegexError, Token, UNICODE_WHITESPACE_REGEX};
+use crate::lexer::{LexerBuilder, RegexError, Token, UNICODE_WHITESPACE_REGEX};
 use crate::op::{Fixity, Op, Prec, Sort, SortId};
+use crate::parser::{Parser, SortTable};
 use std::collections::HashMap;
 use thiserror::Error;
 
-/// Used to construct a grammar, that you can then use to parse.
+/// A grammar for a language. Add operators until the grammar is complete, then call `.finish()` to
+/// construct a `Parser` you can use to parse.
 // TODO: example
 #[derive(Debug, Clone)]
-pub struct GrammarBuilder {
-    subgrammars: Vec<Subgrammar>,
+pub struct Grammar {
+    sort_tables: Vec<SortTable>,
     sort_ids: HashMap<String, SortId>,
     token_names: HashMap<Token, String>,
     lexer_builder: LexerBuilder,
-}
-
-/// A Panfix grammar, that's ready to parse.
-#[derive(Debug, Clone)]
-pub struct Grammar {
-    pub(crate) subgrammars: Vec<Subgrammar>,
-    pub(crate) sort_ids: HashMap<String, SortId>,
-    pub(crate) lexer: Lexer,
-    pub(crate) token_names: HashMap<Token, String>,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct Subgrammar {
-    sort: Sort,
-    // Map from the first token in a Prefix or Nilfix op, to that op.
-    pub(crate) token_to_prefixy_op: Vec<Option<Op>>,
-    // Map from the first token in a Suffix or Infix op, to that op.
-    pub(crate) token_to_suffixy_op: Vec<Option<Op>>,
-    pub(crate) blank: Op,
-    pub(crate) juxtapose: Op,
 }
 
 /// An error while constructing a grammar.
@@ -53,19 +35,19 @@ pub struct Pattern<'a> {
     pub followers: Vec<(&'a str, &'a str)>,
 }
 
-impl GrammarBuilder {
-    /// Start constructing a grammar, that uses Unicode's Pattern_White_Space for whitespace.
-    pub fn new_with_unicode_whitespace() -> Result<GrammarBuilder, GrammarError> {
-        GrammarBuilder::new(UNICODE_WHITESPACE_REGEX)
+impl Grammar {
+    /// An empty grammar, that uses Unicode's Pattern_White_Space for whitespace.
+    pub fn new_with_unicode_whitespace() -> Result<Grammar, GrammarError> {
+        Grammar::new(UNICODE_WHITESPACE_REGEX)
     }
 
-    /// Start constructing a grammar. `whitespace_regex` is the regex to use to match whitespace,
-    /// in the syntax of the `regex` crate.
-    pub fn new(whitespace_regex: &str) -> Result<GrammarBuilder, GrammarError> {
+    /// An empty grammar. `whitespace_regex` is the regex to use to match whitespace, in the syntax
+    /// of the `regex` crate.
+    pub fn new(whitespace_regex: &str) -> Result<Grammar, GrammarError> {
         let lexer_builder =
             LexerBuilder::new(whitespace_regex).map_err(GrammarError::RegexError)?;
-        Ok(GrammarBuilder {
-            subgrammars: vec![],
+        Ok(Grammar {
+            sort_tables: vec![],
             sort_ids: HashMap::new(),
             token_names: HashMap::new(),
             lexer_builder,
@@ -85,7 +67,7 @@ impl GrammarBuilder {
         let token = self.add_string_token(string_pattern)?;
         let op = Op::new_atom(name, token);
         let sort_id = self.insert_sort(sort);
-        self.subgrammars[sort_id].add_op(op)
+        self.sort_tables[sort_id].add_op(op)
     }
 
     /// Extend the grammar with an atom: when parsing the given `sort`, if `regex_pattern` is
@@ -102,7 +84,7 @@ impl GrammarBuilder {
         let token = self.add_regex_token(regex_pattern, name)?;
         let op = Op::new_atom(name, token);
         let sort_id = self.insert_sort(sort);
-        self.subgrammars[sort_id].add_op(op)
+        self.sort_tables[sort_id].add_op(op)
     }
 
     /// Set the precedence of the "$Juxtapose" operator for the given sort.
@@ -127,7 +109,7 @@ impl GrammarBuilder {
     pub fn juxtapose(&mut self, sort: &str, prec: Prec) -> Result<(), GrammarError> {
         let op = Op::new_juxtapose(prec);
         let sort_id = self.insert_sort(sort);
-        self.subgrammars[sort_id].add_op(op)
+        self.sort_tables[sort_id].add_op(op)
     }
 
     /// Extend the grammar with an operator. When parsing the given `sort`, if
@@ -137,8 +119,8 @@ impl GrammarBuilder {
     ///
     /// For example, a JSON grammar might have:
     /// ```no_run
-    /// # use panfix::{GrammarBuilder, Fixity, pattern};
-    /// # let mut builder = GrammarBuilder::new("").unwrap();
+    /// # use panfix::{Grammar, Fixity, pattern};
+    /// # let mut builder = Grammar::new("").unwrap();
     /// builder.op("members", "Comma", 20, pattern!(_ "," _));
     /// builder.op("members", "Colon", 10, pattern!(_ ":" _));
     /// ```
@@ -159,17 +141,17 @@ impl GrammarBuilder {
         }
         let op = Op::new(name, pattern.fixity, prec, token, compiled_followers);
         let sort_id = self.insert_sort(sort);
-        self.subgrammars[sort_id].add_op(op)
+        self.sort_tables[sort_id].add_op(op)
     }
 
-    /// Finish constructing the grammar.
-    pub fn finish(self) -> Result<Grammar, GrammarError> {
+    /// Declare the grammar complete, and construct a parser from it.
+    pub fn finish(self) -> Result<Parser, GrammarError> {
         let lexer = self
             .lexer_builder
             .finish()
             .map_err(GrammarError::RegexError)?;
-        Ok(Grammar {
-            subgrammars: self.subgrammars,
+        Ok(Parser {
+            sort_tables: self.sort_tables,
             sort_ids: self.sort_ids,
             lexer,
             token_names: self.token_names,
@@ -198,17 +180,17 @@ impl GrammarBuilder {
         if let Some(sort_id) = self.sort_ids.get(sort) {
             *sort_id
         } else {
-            let sort_id = self.subgrammars.len();
+            let sort_id = self.sort_tables.len();
             self.sort_ids.insert(sort.to_owned(), sort_id);
-            self.subgrammars.push(Subgrammar::new(sort));
+            self.sort_tables.push(SortTable::new(sort));
             sort_id
         }
     }
 }
 
-impl Subgrammar {
-    fn new(sort: &str) -> Subgrammar {
-        Subgrammar {
+impl SortTable {
+    fn new(sort: &str) -> SortTable {
+        SortTable {
             sort: sort.to_owned(),
             token_to_prefixy_op: vec![],
             token_to_suffixy_op: vec![],
@@ -249,22 +231,22 @@ impl Subgrammar {
     }
 }
 
-impl Grammar {
+impl Parser {
     /// Display the grammar in a table.
     // TODO: This is the inverse of from_table.
     pub fn to_table(&self) -> String {
         let mut out = String::new();
-        for subgrammar in &self.subgrammars {
-            self.show_op(&mut out, &subgrammar.sort, &subgrammar.blank);
-            self.show_op(&mut out, &subgrammar.sort, &subgrammar.juxtapose);
-            for op in &subgrammar.token_to_prefixy_op {
+        for sort_table in &self.sort_tables {
+            self.show_op(&mut out, &sort_table.sort, &sort_table.blank);
+            self.show_op(&mut out, &sort_table.sort, &sort_table.juxtapose);
+            for op in &sort_table.token_to_prefixy_op {
                 if let Some(op) = op {
-                    self.show_op(&mut out, &subgrammar.sort, op);
+                    self.show_op(&mut out, &sort_table.sort, op);
                 }
             }
-            for op in &subgrammar.token_to_suffixy_op {
+            for op in &sort_table.token_to_suffixy_op {
                 if let Some(op) = op {
-                    self.show_op(&mut out, &subgrammar.sort, op);
+                    self.show_op(&mut out, &sort_table.sort, op);
                 }
             }
         }
@@ -284,7 +266,7 @@ impl Grammar {
             write!(out, "-       ").unwrap();
         }
         for (sort_id, token) in &op.followers {
-            write!(out, "{:<8}", self.subgrammars[*sort_id].sort).unwrap();
+            write!(out, "{:<8}", self.sort_tables[*sort_id].sort).unwrap();
             write!(out, "{:<8}", self.token_names[&token]).unwrap();
         }
     }
