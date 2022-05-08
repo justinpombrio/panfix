@@ -24,14 +24,17 @@ fn to_sexpr(visitor: Visitor) -> String {
 
 #[test]
 fn test_parsing_minus() {
-    let mut builder = Grammar::new_with_unicode_whitespace().unwrap();
+    let mut grammar = Grammar::new_with_unicode_whitespace().unwrap();
 
-    builder.atom_regex("Expr", "Number", "[0-9]+").unwrap();
-    builder.op("Expr", "minus", 40, pattern!(_ "-" _)).unwrap();
-    builder.op("Expr", "neg", 50, pattern!("-" _)).unwrap();
+    grammar.sort("Expr");
+    grammar.regex_atom("Number", "[0-9]+").unwrap();
+    grammar.group();
+    grammar.op("neg", pattern!("-" _)).unwrap();
+    grammar.group();
+    grammar.op("minus", pattern!(_ "-" _)).unwrap();
 
-    let grammar = builder.finish().unwrap();
-    assert_parse(&grammar, "Expr", "- 2", "(neg 2)");
-    assert_parse(&grammar, "Expr", "--2", "(neg (neg 2))");
-    //assert_parse(&grammar, "Expr", "1 - 2 - 3", "(minus (minus 1 2) 3)");
+    let parser = grammar.finish().unwrap();
+    assert_parse(&parser, "Expr", "- 2", "(neg 2)");
+    assert_parse(&parser, "Expr", "--2", "(neg (neg 2))");
+    //assert_parse(&parser, "Expr", "1 - 2 - 3", "(minus (minus 1 2) 3)");
 }

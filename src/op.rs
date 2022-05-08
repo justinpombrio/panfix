@@ -70,8 +70,12 @@ impl Op {
         Op::new_unchecked("$Blank", Fixity::Nilfix, 0, None, vec![])
     }
 
-    pub(crate) fn new_juxtapose(prec: Prec) -> Op {
+    pub(crate) fn new_juxtapose_left_assoc(prec: Prec) -> Op {
         Op::new_unchecked("$Juxtapose", Fixity::InfixL, prec, None, vec![])
+    }
+
+    pub(crate) fn new_juxtapose_right_assoc(prec: Prec) -> Op {
+        Op::new_unchecked("$Juxtapose", Fixity::InfixR, prec, None, vec![])
     }
 
     fn new_unchecked(

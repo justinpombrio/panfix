@@ -49,19 +49,7 @@
 //!     }
 //! }
 //!
-//! let mut builder = Grammar::new_with_unicode_whitespace().unwrap();
-//!
-//! builder.atom_regex("Expr", "Number", "[0-9]+").unwrap();
-//! builder.op("Expr", "Minus", 40, pattern!(_ "-" _)).unwrap();
-//! builder.op("Expr", "Negative", 50, pattern!("-" _)).unwrap();
-//!
-//! let grammar = builder.finish().unwrap();
-//! /*
-//! assert_eq!(
-//!     to_sexpr(grammar.parse("Expr", "1 - 2 - 3").unwrap().visitor()),
-//!     "(Minus (Minus 1 2) 3)");
-//! assert_eq!(grammar.parse("Expr", "- 2").unwrap().visitor().op(), "Negative");
-//! */
+//! let mut grammar = Grammar::new_with_unicode_whitespace().unwrap();
 //! ```
 //!
 //! ## Spec

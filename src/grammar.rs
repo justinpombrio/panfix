@@ -13,6 +13,8 @@ pub struct Grammar {
     sort_ids: HashMap<String, SortId>,
     token_names: HashMap<Token, String>,
     lexer_builder: LexerBuilder,
+    current_sort: Option<SortId>,
+    current_prec: Prec,
 }
 
 /// An error while constructing a grammar.
@@ -24,8 +26,12 @@ pub enum GrammarError {
         op_2: String,
         sort: Sort,
     },
-    #[error("{0}")]
+    #[error("Regex error in grammar. {0}")]
     RegexError(RegexError),
+    #[error("Grammar error: you must set the `sort` before adding atoms or operators.")]
+    SortNotSet,
+    #[error("Grammar error: you must call `group()` before adding operators.")]
+    PrecNotSet,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,23 +57,31 @@ impl Grammar {
             sort_ids: HashMap::new(),
             token_names: HashMap::new(),
             lexer_builder,
+            current_sort: None,
+            current_prec: 0,
         })
+    }
+
+    /// Set the sort, used when adding ops.
+    pub fn sort(&mut self, sort: &str) {
+        let sort_id = self.insert_sort(sort);
+        self.current_sort = Some(sort_id);
+    }
+
+    /// Add a new group of operators in the current sort. They will have higher precedence (i.e.
+    /// bind _looser_) than any of the groups added so far.
+    pub fn group(&mut self) {
+        self.current_prec += 1;
     }
 
     /// Extend the grammar with an atom: when parsing the given `sort`, if `string_pattern` is
     /// found exactly, parse it as an operator that takes no arguments.
     ///
     /// For example, a JSON grammar might have `.atom_string("value", "Null" "null")`.
-    pub fn atom_string(
-        &mut self,
-        sort: &str,
-        name: &str,
-        string_pattern: &str,
-    ) -> Result<(), GrammarError> {
+    pub fn string_atom(&mut self, name: &str, string_pattern: &str) -> Result<(), GrammarError> {
         let token = self.add_string_token(string_pattern)?;
-        let op = Op::new_atom(name, token);
-        let sort_id = self.insert_sort(sort);
-        self.sort_tables[sort_id].add_op(op)
+        let sort_table = self.get_sort_table()?;
+        sort_table.add_op(Op::new_atom(name, token))
     }
 
     /// Extend the grammar with an atom: when parsing the given `sort`, if `regex_pattern` is
@@ -75,19 +89,15 @@ impl Grammar {
     ///
     /// For example, a JSON grammar might have `.atom_regex("value", "Number" "[0-9]*")` (though with
     /// a better regex).
-    pub fn atom_regex(
-        &mut self,
-        sort: &str,
-        name: &str,
-        regex_pattern: &str,
-    ) -> Result<(), GrammarError> {
+    pub fn regex_atom(&mut self, name: &str, regex_pattern: &str) -> Result<(), GrammarError> {
         let token = self.add_regex_token(regex_pattern, name)?;
-        let op = Op::new_atom(name, token);
-        let sort_id = self.insert_sort(sort);
-        self.sort_tables[sort_id].add_op(op)
+        let sort_table = self.get_sort_table()?;
+        sort_table.add_op(Op::new_atom(name, token))
     }
 
-    /// Set the precedence of the "$Juxtapose" operator for the given sort.
+    /// Set the precedence and associativity of the "$Juxtapose" operator for the given sort. This
+    /// makes juxtapose be left-associtiave, which is typically what you want, but if not see
+    /// `juxtapose_right_assoc`.
     ///
     /// ("$Juxtapose" is an invisible infix operator that is inserted when required to make the
     /// parse valid. For more details, see the package-level documentation.)
@@ -106,10 +116,17 @@ impl Grammar {
     /// ```
     ///
     ///
-    pub fn juxtapose(&mut self, sort: &str, prec: Prec) -> Result<(), GrammarError> {
-        let op = Op::new_juxtapose(prec);
-        let sort_id = self.insert_sort(sort);
-        self.sort_tables[sort_id].add_op(op)
+    pub fn juxtapose(&mut self) -> Result<(), GrammarError> {
+        let prec = self.get_prec()?;
+        let sort_table = self.get_sort_table()?;
+        sort_table.add_op(Op::new_juxtapose_left_assoc(prec))
+    }
+
+    /// Like `juxtapose()`, but right-associative. Typically you want it to be left-associative.
+    pub fn juxtapose_right_assoc(&mut self) -> Result<(), GrammarError> {
+        let prec = self.get_prec()?;
+        let sort_table = self.get_sort_table()?;
+        sort_table.add_op(Op::new_juxtapose_right_assoc(prec))
     }
 
     /// Extend the grammar with an operator. When parsing the given `sort`, if
@@ -120,18 +137,15 @@ impl Grammar {
     /// For example, a JSON grammar might have:
     /// ```no_run
     /// # use panfix::{Grammar, Fixity, pattern};
-    /// # let mut builder = Grammar::new("").unwrap();
-    /// builder.op("members", "Comma", 20, pattern!(_ "," _));
-    /// builder.op("members", "Colon", 10, pattern!(_ ":" _));
+    /// # let mut grammar = Grammar::new("").unwrap();
+    /// grammar.sort("Members");
+    /// grammar.group();
+    /// grammar.op("comma", pattern!(_ "," _));
+    /// grammar.group();
+    /// grammar.op("colon", pattern!(_ ":" _));
     /// ```
     #[allow(clippy::too_many_arguments)]
-    pub fn op(
-        &mut self,
-        sort: &str,
-        name: &str,
-        prec: Prec,
-        pattern: Pattern,
-    ) -> Result<(), GrammarError> {
+    pub fn op(&mut self, name: &str, pattern: Pattern) -> Result<(), GrammarError> {
         let token = self.add_string_token(pattern.first_token)?;
         let mut compiled_followers = Vec::<(SortId, Token)>::new();
         for (sort, tok_patt) in pattern.followers {
@@ -139,9 +153,10 @@ impl Grammar {
             let token = self.add_string_token(tok_patt)?;
             compiled_followers.push((sort_id, token));
         }
+        let prec = self.get_prec()?;
         let op = Op::new(name, pattern.fixity, prec, token, compiled_followers);
-        let sort_id = self.insert_sort(sort);
-        self.sort_tables[sort_id].add_op(op)
+        let sort_table = self.get_sort_table()?;
+        sort_table.add_op(op)
     }
 
     /// Declare the grammar complete, and construct a parser from it.
@@ -176,6 +191,23 @@ impl Grammar {
         Ok(token)
     }
 
+    fn get_prec(&self) -> Result<Prec, GrammarError> {
+        if self.current_prec > 0 {
+            Ok(self.current_prec)
+        } else {
+            Err(GrammarError::PrecNotSet)
+        }
+    }
+
+    fn get_sort_table(&mut self) -> Result<&mut SortTable, GrammarError> {
+        if let Some(sort_id) = self.current_sort {
+            Ok(&mut self.sort_tables[sort_id])
+        } else {
+            Err(GrammarError::SortNotSet)
+        }
+    }
+
+    // TODO: inline
     fn insert_sort(&mut self, sort: &str) -> SortId {
         if let Some(sort_id) = self.sort_ids.get(sort) {
             *sort_id
@@ -195,7 +227,7 @@ impl SortTable {
             token_to_prefixy_op: vec![],
             token_to_suffixy_op: vec![],
             blank: Op::new_blank(),
-            juxtapose: Op::new_juxtapose(0),
+            juxtapose: Op::new_juxtapose_left_assoc(0),
         }
     }
 
@@ -231,7 +263,7 @@ impl SortTable {
     }
 }
 
-impl Parser {
+impl Grammar {
     /// Display the grammar in a table.
     // TODO: This is the inverse of from_table.
     pub fn to_table(&self) -> String {
