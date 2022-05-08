@@ -1,5 +1,5 @@
 use crate::lexer::{LexerBuilder, RegexError, Token, UNICODE_WHITESPACE_REGEX};
-use crate::op::{Fixity, Op, Prec, Sort, SortId};
+use crate::op::{Assoc, Fixity, Op, Prec, Sort, SortId};
 use crate::parser::{Parser, SortTable};
 use std::collections::HashMap;
 use thiserror::Error;
@@ -15,6 +15,7 @@ pub struct Grammar {
     lexer_builder: LexerBuilder,
     current_sort: Option<SortId>,
     current_prec: Prec,
+    current_assoc: Assoc,
 }
 
 /// An error while constructing a grammar.
@@ -59,6 +60,7 @@ impl Grammar {
             lexer_builder,
             current_sort: None,
             current_prec: 0,
+            current_assoc: Assoc::Left,
         })
     }
 
@@ -69,9 +71,19 @@ impl Grammar {
     }
 
     /// Add a new group of operators in the current sort. They will have higher precedence (i.e.
-    /// bind _looser_) than any of the groups added so far.
-    pub fn group(&mut self) {
+    /// bind _looser_) than any of the groups added so far. Any infix operators in this group will
+    /// be _left associative_.
+    pub fn lgroup(&mut self) {
         self.current_prec += 1;
+        self.current_assoc = Assoc::Left;
+    }
+
+    /// Add a new group of operators in the current sort. They will have higher precedence (i.e.
+    /// bind _looser_) than any of the groups added so far. Any infix operators in this group will
+    /// be _left associative_.
+    pub fn rgroup(&mut self) {
+        self.current_prec += 1;
+        self.current_assoc = Assoc::Right;
     }
 
     /// Extend the grammar with an atom: when parsing the given `sort`, if `string_pattern` is
@@ -95,38 +107,10 @@ impl Grammar {
         sort_table.add_op(Op::new_atom(name, token))
     }
 
-    /// Set the precedence and associativity of the "$Juxtapose" operator for the given sort. This
-    /// makes juxtapose be left-associtiave, which is typically what you want, but if not see
-    /// `juxtapose_right_assoc`.
-    ///
-    /// ("$Juxtapose" is an invisible infix operator that is inserted when required to make the
-    /// parse valid. For more details, see the package-level documentation.)
-    // TODO: move this to top-level docs
-    /// "$Juxtapose" is an invisible infix operator that is inserted when needed to make a valid
-    /// parse tree. For example, the source:
-    ///
-    /// ```text
-    /// "one" "two" "three"
-    /// ```
-    ///
-    /// would be parsed as:
-    ///
-    /// ```text
-    /// "one" $Juxtapose "two" $Juxtapose "three"
-    /// ```
-    ///
-    ///
     pub fn juxtapose(&mut self) -> Result<(), GrammarError> {
-        let prec = self.get_prec()?;
+        let (prec, assoc) = self.get_prec_and_assoc()?;
         let sort_table = self.get_sort_table()?;
-        sort_table.add_op(Op::new_juxtapose_left_assoc(prec))
-    }
-
-    /// Like `juxtapose()`, but right-associative. Typically you want it to be left-associative.
-    pub fn juxtapose_right_assoc(&mut self) -> Result<(), GrammarError> {
-        let prec = self.get_prec()?;
-        let sort_table = self.get_sort_table()?;
-        sort_table.add_op(Op::new_juxtapose_right_assoc(prec))
+        sort_table.add_op(Op::new_juxtapose(assoc, prec))
     }
 
     /// Extend the grammar with an operator. When parsing the given `sort`, if
@@ -139,9 +123,9 @@ impl Grammar {
     /// # use panfix::{Grammar, Fixity, pattern};
     /// # let mut grammar = Grammar::new("").unwrap();
     /// grammar.sort("Members");
-    /// grammar.group();
+    /// grammar.lgroup();
     /// grammar.op("comma", pattern!(_ "," _));
-    /// grammar.group();
+    /// grammar.lgroup();
     /// grammar.op("colon", pattern!(_ ":" _));
     /// ```
     #[allow(clippy::too_many_arguments)]
@@ -153,8 +137,8 @@ impl Grammar {
             let token = self.add_string_token(tok_patt)?;
             compiled_followers.push((sort_id, token));
         }
-        let prec = self.get_prec()?;
-        let op = Op::new(name, pattern.fixity, prec, token, compiled_followers);
+        let (prec, assoc) = self.get_prec_and_assoc()?;
+        let op = Op::new(name, pattern.fixity, assoc, prec, token, compiled_followers);
         let sort_table = self.get_sort_table()?;
         sort_table.add_op(op)
     }
@@ -191,9 +175,9 @@ impl Grammar {
         Ok(token)
     }
 
-    fn get_prec(&self) -> Result<Prec, GrammarError> {
+    fn get_prec_and_assoc(&self) -> Result<(Prec, Assoc), GrammarError> {
         if self.current_prec > 0 {
-            Ok(self.current_prec)
+            Ok((self.current_prec, self.current_assoc))
         } else {
             Err(GrammarError::PrecNotSet)
         }
@@ -227,12 +211,12 @@ impl SortTable {
             token_to_prefixy_op: vec![],
             token_to_suffixy_op: vec![],
             blank: Op::new_blank(),
-            juxtapose: Op::new_juxtapose_left_assoc(0),
+            juxtapose: Op::new_juxtapose(Assoc::Left, 1),
         }
     }
 
     fn add_op(&mut self, op: Op) -> Result<(), GrammarError> {
-        use Fixity::{InfixL, InfixR, Nilfix, Prefix, Suffix};
+        use Fixity::{Infix, Nilfix, Prefix, Suffix};
 
         if &op.name == "$Juxtapose" {
             self.juxtapose = op;
@@ -244,7 +228,7 @@ impl SortTable {
             let token = op.first_token.unwrap();
             let mapping = match op.fixity {
                 Prefix | Nilfix => &mut self.token_to_prefixy_op,
-                Suffix | InfixL | InfixR => &mut self.token_to_suffixy_op,
+                Suffix | Infix => &mut self.token_to_suffixy_op,
             };
             while token >= mapping.len() {
                 mapping.push(None);

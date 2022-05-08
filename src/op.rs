@@ -33,8 +33,13 @@ pub enum Fixity {
     Nilfix,
     Prefix,
     Suffix,
-    InfixL,
-    InfixR,
+    Infix,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Assoc {
+    Left,
+    Right,
 }
 
 #[derive(Debug, Clone)]
@@ -53,51 +58,52 @@ impl Op {
     pub(crate) fn new(
         name: &str,
         fixity: Fixity,
+        assoc: Assoc,
         prec: Prec,
         first_token: Token,
         followers: Vec<(SortId, Token)>,
     ) -> Op {
         assert_ne!(name, "$Blank");
         assert_ne!(name, "$Juxtapose");
-        Op::new_unchecked(name, fixity, prec, Some(first_token), followers)
+        Op::new_unchecked(name, fixity, assoc, prec, Some(first_token), followers)
     }
 
     pub(crate) fn new_atom(name: &str, token: Token) -> Op {
-        Op::new_unchecked(name, Fixity::Nilfix, 0, Some(token), vec![])
+        Op::new_unchecked(name, Fixity::Nilfix, Assoc::Left, 0, Some(token), vec![])
     }
 
     pub(crate) fn new_blank() -> Op {
-        Op::new_unchecked("$Blank", Fixity::Nilfix, 0, None, vec![])
+        Op::new_unchecked("$Blank", Fixity::Nilfix, Assoc::Left, 0, None, vec![])
     }
 
-    pub(crate) fn new_juxtapose_left_assoc(prec: Prec) -> Op {
-        Op::new_unchecked("$Juxtapose", Fixity::InfixL, prec, None, vec![])
-    }
-
-    pub(crate) fn new_juxtapose_right_assoc(prec: Prec) -> Op {
-        Op::new_unchecked("$Juxtapose", Fixity::InfixR, prec, None, vec![])
+    pub(crate) fn new_juxtapose(assoc: Assoc, prec: Prec) -> Op {
+        Op::new_unchecked("$Juxtapose", Fixity::Infix, assoc, prec, None, vec![])
     }
 
     fn new_unchecked(
         name: &str,
         fixity: Fixity,
+        assoc: Assoc,
         prec: Prec,
         first_token: Option<Token>,
         followers: Vec<(SortId, Token)>,
     ) -> Op {
-        use Fixity::{InfixL, InfixR, Nilfix, Prefix, Suffix};
+        use Assoc::{Left, Right};
+        use Fixity::{Infix, Nilfix, Prefix, Suffix};
 
-        let (left_prec, right_prec) = match fixity {
-            Nilfix => (None, None),
-            Prefix => (None, Some(prec)),
-            Suffix => (Some(prec), None),
-            InfixL => (Some(prec), Some(prec)),
-            InfixR => (Some(prec - 1), Some(prec)),
+        let (left_prec, right_prec) = match (fixity, assoc) {
+            (Nilfix, _) => (None, None),
+            (Prefix, Left) => (None, Some(prec - 1)),
+            (Prefix, Right) => (None, Some(prec)),
+            (Suffix, Left) => (Some(prec), None),
+            (Suffix, Right) => (Some(prec - 1), None),
+            (Infix, Left) => (Some(prec), Some(prec - 1)),
+            (Infix, Right) => (Some(prec - 1), Some(prec)),
         };
         let arity = match fixity {
             Nilfix => followers.len(),
             Prefix | Suffix => followers.len() + 1,
-            InfixL | InfixR => followers.len() + 2,
+            Infix => followers.len() + 2,
         };
         Op {
             name: name.to_owned(),
@@ -124,8 +130,7 @@ impl fmt::Display for Fixity {
             Fixity::Nilfix => write!(f, "nilfix"),
             Fixity::Prefix => write!(f, "prefix"),
             Fixity::Suffix => write!(f, "suffix"),
-            Fixity::InfixL => write!(f, "infixl"),
-            Fixity::InfixR => write!(f, "infixr"),
+            Fixity::Infix => write!(f, "infix"),
         }
     }
 }

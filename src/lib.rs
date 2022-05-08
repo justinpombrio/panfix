@@ -102,23 +102,7 @@ macro_rules! pattern {
 
     (@ Y $token:literal [ $($followers:tt)* ] _) => {
         $crate::Pattern {
-            fixity: $crate::Fixity::InfixL,
-            first_token: $token,
-            followers: vec![$($followers)*],
-        }
-    };
-
-    (@ Y $token:literal [ $($followers:tt)* ] _ infixl) => {
-        $crate::Pattern {
-            fixity: $crate::Fixity::InfixL,
-            first_token: $token,
-            followers: vec![$($followers)*],
-        }
-    };
-
-    (@ Y $token:literal [ $($followers:tt)* ] _ infixr) => {
-        $crate::Pattern {
-            fixity: $crate::Fixity::InfixR,
+            fixity: $crate::Fixity::Infix,
             first_token: $token,
             followers: vec![$($followers)*],
         }

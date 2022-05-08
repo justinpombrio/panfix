@@ -1,4 +1,4 @@
-use panfix::{pattern, Grammar, Parser, Visitor};
+use panfix::{pattern, Grammar, GrammarError, Parser, Visitor};
 
 #[track_caller]
 fn assert_parse(grammar: &Parser, sort: &str, src: &str, expected: &str) {
@@ -24,16 +24,20 @@ fn to_sexpr(visitor: Visitor) -> String {
 
 #[test]
 fn test_parsing_minus() {
-    let mut grammar = Grammar::new_with_unicode_whitespace().unwrap();
+    fn make_parser() -> Result<Parser, GrammarError> {
+        let mut grammar = Grammar::new_with_unicode_whitespace()?;
 
-    grammar.sort("Expr");
-    grammar.regex_atom("Number", "[0-9]+").unwrap();
-    grammar.group();
-    grammar.op("neg", pattern!("-" _)).unwrap();
-    grammar.group();
-    grammar.op("minus", pattern!(_ "-" _)).unwrap();
+        grammar.sort("Expr");
+        grammar.regex_atom("Number", "[0-9]+")?;
+        grammar.lgroup();
+        grammar.op("neg", pattern!("-" _))?;
+        grammar.lgroup();
+        grammar.op("minus", pattern!(_ "-" _))?;
+        grammar.finish()
+    }
 
-    let parser = grammar.finish().unwrap();
+    let parser = make_parser().unwrap();
+
     assert_parse(&parser, "Expr", "- 2", "(neg 2)");
     assert_parse(&parser, "Expr", "--2", "(neg (neg 2))");
     //assert_parse(&parser, "Expr", "1 - 2 - 3", "(minus (minus 1 2) 3)");

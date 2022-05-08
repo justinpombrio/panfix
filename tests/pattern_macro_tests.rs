@@ -2,7 +2,7 @@ use panfix::{pattern, Fixity, Pattern};
 
 #[test]
 fn test_pattern_macro() {
-    use Fixity::{InfixL, InfixR, Nilfix, Prefix, Suffix};
+    use Fixity::{Infix, Nilfix, Prefix, Suffix};
 
     assert_eq!(
         pattern!("null"),
@@ -61,7 +61,7 @@ fn test_pattern_macro() {
     assert_eq!(
         pattern!(_ "+" _),
         Pattern {
-            fixity: InfixL,
+            fixity: Infix,
             first_token: "+",
             followers: vec![],
         }
@@ -70,43 +70,7 @@ fn test_pattern_macro() {
     assert_eq!(
         pattern!(_ "?" Expr ":" _),
         Pattern {
-            fixity: InfixL,
-            first_token: "?",
-            followers: vec![("Expr", ":")],
-        }
-    );
-
-    assert_eq!(
-        pattern!(_ "+" _ infixl),
-        Pattern {
-            fixity: InfixL,
-            first_token: "+",
-            followers: vec![],
-        }
-    );
-
-    assert_eq!(
-        pattern!(_ "?" Expr ":" _ infixl),
-        Pattern {
-            fixity: InfixL,
-            first_token: "?",
-            followers: vec![("Expr", ":")],
-        }
-    );
-
-    assert_eq!(
-        pattern!(_ "+" _ infixr),
-        Pattern {
-            fixity: InfixR,
-            first_token: "+",
-            followers: vec![],
-        }
-    );
-
-    assert_eq!(
-        pattern!(_ "?" Expr ":" _ infixr),
-        Pattern {
-            fixity: InfixR,
+            fixity: Infix,
             first_token: "?",
             followers: vec![("Expr", ":")],
         }
