@@ -130,6 +130,33 @@ impl Grammar {
     /// ```
     #[allow(clippy::too_many_arguments)]
     pub fn op(&mut self, name: &str, pattern: Pattern) -> Result<(), GrammarError> {
+        let sort_id = self.get_sort_id()?;
+        let (prec, assoc) = self.get_prec_and_assoc()?;
+        self.insert_op(sort_id, name, assoc, prec, pattern)
+    }
+
+    /// Ignore the builder pattern and nice abstractions that `Grammar` otherwise uses, and insert
+    /// an op into the table exactly as specified.
+    pub fn insert_raw_op(
+        &mut self,
+        sort: &str,
+        name: &str,
+        assoc: Assoc,
+        prec: Prec,
+        pattern: Pattern,
+    ) -> Result<(), GrammarError> {
+        let sort_id = self.insert_sort(sort);
+        self.insert_op(sort_id, name, assoc, prec, pattern)
+    }
+
+    fn insert_op(
+        &mut self,
+        sort_id: SortId,
+        name: &str,
+        assoc: Assoc,
+        prec: Prec,
+        pattern: Pattern,
+    ) -> Result<(), GrammarError> {
         let token = self.add_string_token(pattern.first_token)?;
         let mut compiled_followers = Vec::<(SortId, Token)>::new();
         for (sort, tok_patt) in pattern.followers {
@@ -137,10 +164,8 @@ impl Grammar {
             let token = self.add_string_token(tok_patt)?;
             compiled_followers.push((sort_id, token));
         }
-        let (prec, assoc) = self.get_prec_and_assoc()?;
         let op = Op::new(name, pattern.fixity, assoc, prec, token, compiled_followers);
-        let sort_table = self.get_sort_table()?;
-        sort_table.add_op(op)
+        self.sort_tables[sort_id].add_op(op)
     }
 
     /// Declare the grammar complete, and construct a parser from it.
@@ -184,14 +209,18 @@ impl Grammar {
     }
 
     fn get_sort_table(&mut self) -> Result<&mut SortTable, GrammarError> {
+        let sort_id = self.get_sort_id()?;
+        Ok(&mut self.sort_tables[sort_id])
+    }
+
+    fn get_sort_id(&mut self) -> Result<SortId, GrammarError> {
         if let Some(sort_id) = self.current_sort {
-            Ok(&mut self.sort_tables[sort_id])
+            Ok(sort_id)
         } else {
             Err(GrammarError::SortNotSet)
         }
     }
 
-    // TODO: inline
     fn insert_sort(&mut self, sort: &str) -> SortId {
         if let Some(sort_id) = self.sort_ids.get(sort) {
             *sort_id
