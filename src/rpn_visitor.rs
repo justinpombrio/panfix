@@ -26,7 +26,6 @@ pub struct RpnStack<N: RpnNode> {
     groups: Vec<usize>,
 }
 
-// TODO: Stick the soruce in here too!
 /// Walk the stack as if it were a tree.
 #[derive(Debug)]
 pub struct RpnVisitor<'s, N: RpnNode> {

@@ -46,6 +46,7 @@ pub enum Assoc {
 pub(crate) struct Op {
     pub(crate) name: String,
     pub(crate) fixity: Fixity,
+    pub(crate) assoc: Assoc,
     pub(crate) prec: Prec,
     pub(crate) first_token: Option<Token>,
     pub(crate) followers: Vec<(SortId, Token)>,
@@ -108,6 +109,7 @@ impl Op {
         Op {
             name: name.to_owned(),
             fixity,
+            assoc,
             prec,
             first_token,
             followers,
@@ -131,6 +133,15 @@ impl fmt::Display for Fixity {
             Fixity::Prefix => write!(f, "prefix"),
             Fixity::Suffix => write!(f, "suffix"),
             Fixity::Infix => write!(f, "infix"),
+        }
+    }
+}
+
+impl fmt::Display for Assoc {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Assoc::Left => write!(f, "left"),
+            Assoc::Right => write!(f, "right"),
         }
     }
 }

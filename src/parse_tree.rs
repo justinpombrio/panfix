@@ -1,11 +1,14 @@
-use crate::lexer::Position;
+use crate::lexer::{Position, Span};
 use crate::op::{Fixity, Op, Prec};
+use crate::parser::ParseError;
 use crate::rpn_visitor::{RpnNode, RpnStack, RpnVisitor, RpnVisitorIter};
+use std::fmt;
 
 /// The result of parsing a source string. Call `.visitor()` to walk it.
 ///
 /// To minimize allocations, this contains references into both the source text and the grammar, so
 /// it cannot outlive either.
+#[derive(Debug)]
 pub struct ParseTree<'s, 'g>(RpnStack<Node<'s, 'g>>);
 
 impl<'s, 'g> ParseTree<'s, 'g> {
@@ -29,8 +32,7 @@ impl<'s, 'g> ParseTree<'s, 'g> {
 pub(crate) struct Node<'s, 'g> {
     pub(crate) op: &'g Op,
     pub(crate) source: &'s str,
-    pub(crate) start: Position,
-    pub(crate) end: Position,
+    pub(crate) span: Span,
 }
 
 impl<'s, 'g> RpnNode for Node<'s, 'g> {
@@ -54,12 +56,12 @@ impl<'s, 'g, 't> Visitor<'s, 'g, 't> {
 
     /// The position just to the left of this operator and its arguments (if any).
     pub fn start(&self) -> Position {
-        self.node.start
+        self.node.span.start
     }
 
     /// The position just to the right of this operator and its arguments (if any).
     pub fn end(&self) -> Position {
-        self.node.end
+        self.node.span.end
     }
 
     /// The source text between the `start()` and `end()` position.
@@ -86,6 +88,54 @@ impl<'s, 'g, 't> Visitor<'s, 'g, 't> {
     pub fn children(&self) -> impl Iterator<Item = Visitor<'s, 'g, 't>> {
         VisitorIter {
             node: self.node.children(),
+        }
+    }
+
+    /// Extract this visitor's children into an array.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `N` does not match the number of children. Note that the number of children is
+    /// not dynamic: you can tell how many there will be from the grammar. Even if a child is
+    /// "missing", it will actually be represented as $blank.
+    pub fn expect_children<const N: usize>(&self) -> [Visitor<'s, 'g, 't>; N] {
+        let mut children = self.children();
+        let mut array = [*self; N]; // dummy value
+        for i in 0..N {
+            array[i] = children
+                .next()
+                .expect("Visitor::expect_children -- there are not as many children as declared");
+        }
+        assert!(
+            children.next().is_none(),
+            "Visitor::expect_children -- there are more children than were declared"
+        );
+        array
+    }
+
+    /// Create a custom parse error at this location.
+    pub fn error(&self, message: &str) -> ParseError<'s, 'g> {
+        ParseError::custom_error(message, Some(self.node.span))
+    }
+}
+
+impl<'s, 'g, 't> fmt::Display for Visitor<'s, 'g, 't> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.op() == "$Blank" {
+            write!(f, "_")
+        } else if self.num_children() == 0 {
+            write!(f, "{}", self.source())
+        } else {
+            write!(f, "(")?;
+            if self.op() == "$Juxtapose" {
+                write!(f, "_")?;
+            } else {
+                write!(f, "{}", self.op())?;
+            }
+            for child in self.children() {
+                write!(f, " {}", child)?;
+            }
+            write!(f, ")")
         }
     }
 }

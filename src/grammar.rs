@@ -12,6 +12,7 @@ pub struct Grammar {
     sort_tables: Vec<SortTable>,
     sort_ids: HashMap<String, SortId>,
     token_names: HashMap<Token, String>,
+    largest_token: Token,
     lexer_builder: LexerBuilder,
     current_sort: Option<SortId>,
     current_prec: Prec,
@@ -33,6 +34,8 @@ pub enum GrammarError {
     SortNotSet,
     #[error("Grammar error: you must call `group()` before adding operators.")]
     PrecNotSet,
+    #[error("Grammar error: sort '{0}' not found.")]
+    NoSuchSort(Sort),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,6 +60,7 @@ impl Grammar {
             sort_tables: vec![],
             sort_ids: HashMap::new(),
             token_names: HashMap::new(),
+            largest_token: 0,
             lexer_builder,
             current_sort: None,
             current_prec: 0,
@@ -74,7 +78,7 @@ impl Grammar {
     /// bind _looser_) than any of the groups added so far. Any infix operators in this group will
     /// be _left associative_.
     pub fn lgroup(&mut self) {
-        self.current_prec += 1;
+        self.current_prec += 10;
         self.current_assoc = Assoc::Left;
     }
 
@@ -90,7 +94,7 @@ impl Grammar {
     /// found exactly, parse it as an operator that takes no arguments.
     ///
     /// For example, a JSON grammar might have `.atom_string("value", "Null" "null")`.
-    pub fn string_atom(&mut self, name: &str, string_pattern: &str) -> Result<(), GrammarError> {
+    pub fn string(&mut self, name: &str, string_pattern: &str) -> Result<(), GrammarError> {
         let token = self.add_string_token(string_pattern)?;
         let sort_table = self.get_sort_table()?;
         sort_table.add_op(Op::new_atom(name, token))
@@ -101,7 +105,7 @@ impl Grammar {
     ///
     /// For example, a JSON grammar might have `.atom_regex("value", "Number" "[0-9]*")` (though with
     /// a better regex).
-    pub fn regex_atom(&mut self, name: &str, regex_pattern: &str) -> Result<(), GrammarError> {
+    pub fn regex(&mut self, name: &str, regex_pattern: &str) -> Result<(), GrammarError> {
         let token = self.add_regex_token(regex_pattern, name)?;
         let sort_table = self.get_sort_table()?;
         sort_table.add_op(Op::new_atom(name, token))
@@ -131,8 +135,12 @@ impl Grammar {
     #[allow(clippy::too_many_arguments)]
     pub fn op(&mut self, name: &str, pattern: Pattern) -> Result<(), GrammarError> {
         let sort_id = self.get_sort_id()?;
-        let (prec, assoc) = self.get_prec_and_assoc()?;
-        self.insert_op(sort_id, name, assoc, prec, pattern)
+        if pattern.fixity == Fixity::Nilfix {
+            self.insert_op(sort_id, name, Assoc::Left, 0, pattern)
+        } else {
+            let (prec, assoc) = self.get_prec_and_assoc()?;
+            self.insert_op(sort_id, name, assoc, prec, pattern)
+        }
     }
 
     /// Ignore the builder pattern and nice abstractions that `Grammar` otherwise uses, and insert
@@ -169,11 +177,22 @@ impl Grammar {
     }
 
     /// Declare the grammar complete, and construct a parser from it.
-    pub fn finish(self) -> Result<Parser, GrammarError> {
+    pub fn finish(mut self) -> Result<Parser, GrammarError> {
+        // Build the lexer
         let lexer = self
             .lexer_builder
             .finish()
             .map_err(GrammarError::RegexError)?;
+        // Extend sort_tables to have entries for every possible token
+        let required_len = self.largest_token + 1;
+        for sort_table in &mut self.sort_tables {
+            while sort_table.token_to_prefixy_op.len() < required_len {
+                sort_table.token_to_prefixy_op.push(None);
+            }
+            while sort_table.token_to_suffixy_op.len() < required_len {
+                sort_table.token_to_suffixy_op.push(None);
+            }
+        }
         Ok(Parser {
             sort_tables: self.sort_tables,
             sort_ids: self.sort_ids,
@@ -187,7 +206,8 @@ impl Grammar {
             Ok(token) => token,
             Err(err) => return Err(GrammarError::RegexError(err)),
         };
-        self.token_names.insert(token, format!("'{}'", string));
+        self.token_names.insert(token, format!("{}", string));
+        self.largest_token = token;
         Ok(token)
     }
 
@@ -197,6 +217,7 @@ impl Grammar {
             Err(err) => return Err(GrammarError::RegexError(err)),
         };
         self.token_names.insert(token, name.to_owned());
+        self.largest_token = token;
         Ok(token)
     }
 
@@ -279,7 +300,7 @@ impl SortTable {
 impl Grammar {
     /// Display the grammar in a table.
     // TODO: This is the inverse of from_table.
-    pub fn to_table(&self) -> String {
+    pub fn show_table(&self) -> String {
         let mut out = String::new();
         for sort_table in &self.sort_tables {
             self.show_op(&mut out, &sort_table.sort, &sort_table.blank);
@@ -302,8 +323,9 @@ impl Grammar {
         use std::fmt::Write;
 
         write!(out, "{:<8}", sort).unwrap();
-        write!(out, "{:<8}", op.name).unwrap();
-        write!(out, "{:<8}", op.fixity).unwrap();
+        write!(out, "{:<16}", op.name).unwrap();
+        write!(out, "{:<8}", format!("{}", op.fixity)).unwrap();
+        write!(out, "{:<8}", format!("{}", op.assoc)).unwrap();
         write!(out, "{:<8}", op.prec).unwrap();
         if let Some(token) = op.first_token {
             write!(out, "{:<8}", self.token_names[&token]).unwrap();
@@ -314,5 +336,6 @@ impl Grammar {
             write!(out, "{:<8}", self.sort_tables[*sort_id].sort).unwrap();
             write!(out, "{:<8}", self.token_names[&token]).unwrap();
         }
+        write!(out, "\n").unwrap();
     }
 }
