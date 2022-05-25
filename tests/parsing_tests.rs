@@ -2,7 +2,7 @@ use panfix::{pattern, Grammar, GrammarError, Parser};
 
 #[track_caller]
 fn assert_parse(parser: &Parser, sort: &str, src: &str, expected: &str) {
-    let tree = parser.parse(sort, src).unwrap();
+    let tree = parser.parse("testcase", src, sort).unwrap();
     assert_eq!(format!("{}", tree.visitor()), expected);
 }
 

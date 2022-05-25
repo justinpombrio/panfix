@@ -1,6 +1,6 @@
-use crate::lexer::{Position, Span};
+use crate::lexer::Span;
 use crate::op::{Fixity, Op, Prec};
-use crate::parser::ParseError;
+use crate::parse_error::ParseError;
 use crate::rpn_visitor::{RpnNode, RpnStack, RpnVisitor, RpnVisitorIter};
 use std::fmt;
 
@@ -9,11 +9,23 @@ use std::fmt;
 /// To minimize allocations, this contains references into both the source text and the grammar, so
 /// it cannot outlive either.
 #[derive(Debug)]
-pub struct ParseTree<'s, 'g>(RpnStack<Node<'s, 'g>>);
+pub struct ParseTree<'s, 'g> {
+    filename: &'s str,
+    source: &'s str,
+    stack: RpnStack<Node<'s, 'g>>,
+}
 
 impl<'s, 'g> ParseTree<'s, 'g> {
-    pub(crate) fn new(stack: RpnStack<Node<'s, 'g>>) -> ParseTree<'s, 'g> {
-        ParseTree(stack)
+    pub(crate) fn new(
+        filename: &'s str,
+        source: &'s str,
+        stack: RpnStack<Node<'s, 'g>>,
+    ) -> ParseTree<'s, 'g> {
+        ParseTree {
+            filename,
+            source,
+            stack,
+        }
     }
 
     /// Obtains a "visitor" that can walk the source tree.
@@ -23,15 +35,31 @@ impl<'s, 'g> ParseTree<'s, 'g> {
     pub fn visitor<'t>(&'t self) -> Visitor<'s, 'g, 't> {
         Visitor {
             // Parser guarantees there's at least one node
-            node: self.0.last_group().unwrap(),
+            node: self.stack.last_group().unwrap(),
         }
+    }
+
+    /// The filename of the source text.
+    pub fn filename(&self) -> &'s str {
+        self.filename
+    }
+
+    /// The entire source text.
+    pub fn source(&self) -> &'s str {
+        self.source
+    }
+
+    /// Create a custom parse error at the given location.
+    pub fn error(&self, span: Span, message: &str) -> ParseError<'s> {
+        ParseError::custom_error(self.filename, self.source, message, span)
     }
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct Node<'s, 'g> {
     pub(crate) op: &'g Op,
-    pub(crate) source: &'s str,
+    pub(crate) op_span: Span,
+    pub(crate) slice: &'s str,
     pub(crate) span: Span,
 }
 
@@ -54,19 +82,19 @@ impl<'s, 'g, 't> Visitor<'s, 'g, 't> {
         &self.node.op.name
     }
 
-    /// The position just to the left of this operator and its arguments (if any).
-    pub fn start(&self) -> Position {
-        self.node.span.start
+    /// The span that includes only the initial lexeme of this operator.
+    pub fn op_span(&self) -> Span {
+        self.node.op_span
     }
 
-    /// The position just to the right of this operator and its arguments (if any).
-    pub fn end(&self) -> Position {
-        self.node.span.end
+    /// The span that includes this operator and all of its arguments.
+    pub fn span(&self) -> Span {
+        self.node.span
     }
 
-    /// The source text between the `start()` and `end()` position.
+    /// The source text covered by `span()`.
     pub fn source(&self) -> &'s str {
-        self.node.source
+        self.node.slice
     }
 
     /// The fixity of this node's operator.
@@ -111,11 +139,6 @@ impl<'s, 'g, 't> Visitor<'s, 'g, 't> {
             "Visitor::expect_children -- there are more children than were declared"
         );
         array
-    }
-
-    /// Create a custom parse error at this location.
-    pub fn error(&self, message: &str) -> ParseError<'s, 'g> {
-        ParseError::custom_error(message, Some(self.node.span))
     }
 }
 

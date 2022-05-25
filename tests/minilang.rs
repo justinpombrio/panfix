@@ -1,5 +1,6 @@
-use panfix::{pattern, Grammar, GrammarError, Parser, Visitor};
+use panfix::{pattern, Grammar, GrammarError, ParseError, ParseTree, Parser, Visitor};
 use std::fmt;
+use std::mem;
 
 fn make_parser() -> Result<Parser, GrammarError> {
     let mut grammar = Grammar::new_with_unicode_whitespace()?;
@@ -54,18 +55,6 @@ enum Binop {
     Eq,
 }
 
-#[derive(Debug)]
-enum ParseError {
-    DanglingElse,
-    ElseWithoutBraces,
-}
-
-impl fmt::Display for ParseError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -95,92 +84,142 @@ impl fmt::Display for Expr {
     }
 }
 
-fn parse_id(visitor: Visitor) -> Result<String, ParseError> {
-    match visitor.op() {
-        // TODO: blank / juxt
-        "id" => Ok(visitor.source().to_owned()),
-        _ => unreachable!(),
-    }
+struct Traverser<'a, 's, 'g> {
+    parse_tree: &'a ParseTree<'s, 'g>,
+    errors: Vec<ParseError<'s>>,
 }
 
-fn parse_expr(visitor: Visitor) -> Result<Expr, ParseError> {
-    match visitor.op() {
-        // TODO: blank / juxt
-        // TODO: num error
-        "id" => Ok(Expr::Id(visitor.source().to_owned())),
-        "num" => Ok(Expr::Num(visitor.source().parse::<i32>().unwrap())),
-        "lt" | "gt" | "eq" | "plus" => {
-            let comparison = match visitor.op() {
-                "lt" => Binop::Lt,
-                "gt" => Binop::Gt,
-                "eq" => Binop::Eq,
-                "plus" => Binop::Plus,
-                _ => unreachable!(),
-            };
-            let [left, right] = visitor.expect_children();
-            Ok(Expr::Binop(
-                comparison,
-                Box::new(parse_expr(left)?),
-                Box::new(parse_expr(right)?),
-            ))
+impl<'a, 's, 'g> Traverser<'a, 's, 'g> {
+    fn new(parse_tree: &'a ParseTree<'s, 'g>) -> Traverser<'a, 's, 'g> {
+        Traverser {
+            parse_tree,
+            errors: vec![],
         }
-        "group" | "block" => {
-            let [child] = visitor.expect_children();
-            parse_expr(child)
+    }
+
+    fn parse(mut self) -> Result<Expr, Vec<ParseError<'s>>> {
+        match self.parse_expr(self.parse_tree.visitor()) {
+            Ok(expr) => Ok(expr),
+            Err(()) => Err(mem::take(&mut self.errors)),
         }
-        "call" => {
-            let [func, arg] = visitor.expect_children();
-            //let func = parse_expr(func);
-            //let arg = parse_expr(arg);
-            Ok(Expr::Call(
-                //Box::new(func?), Box::new(arg?)
-                Box::new(parse_expr(func)?),
-                Box::new(parse_expr(arg)?),
-            ))
+    }
+
+    fn parse_id(&mut self, visitor: Visitor<'s, '_, '_>) -> Result<String, ()> {
+        match visitor.op() {
+            // TODO: blank / juxt
+            "id" => Ok(visitor.source().to_owned()),
+            _ => unreachable!(),
         }
-        "if" => {
-            let [cond, consq] = visitor.expect_children();
-            Ok(Expr::IfChain(vec![(parse_expr(cond)?, parse_expr(consq)?)]))
-        }
-        "else" => {
-            let mut clauses = visitor;
-            let mut chain = vec![];
-            while clauses.op() == "else" {
-                let [ifclause, else_clauses] = clauses.expect_children();
-                clauses = else_clauses;
-                if ifclause.op() != "if" {
-                    return Err(ParseError::DanglingElse);
+    }
+
+    fn parse_expr(&mut self, visitor: Visitor<'s, '_, '_>) -> Result<Expr, ()> {
+        match visitor.op() {
+            // TODO: blank / juxt
+            // TODO: num error
+            "id" => Ok(Expr::Id(visitor.source().to_owned())),
+            "num" => Ok(Expr::Num(visitor.source().parse::<i32>().unwrap())),
+            "lt" | "gt" | "eq" | "plus" => {
+                let comparison = match visitor.op() {
+                    "lt" => Binop::Lt,
+                    "gt" => Binop::Gt,
+                    "eq" => Binop::Eq,
+                    "plus" => Binop::Plus,
+                    _ => unreachable!(),
+                };
+                let [left, right] = visitor.expect_children();
+                let left = self.parse_expr(left);
+                let right = self.parse_expr(right);
+                Ok(Expr::Binop(comparison, Box::new(left?), Box::new(right?)))
+            }
+            "group" | "block" => {
+                let [child] = visitor.expect_children();
+                self.parse_expr(child)
+            }
+            "call" => {
+                let [func, arg] = visitor.expect_children();
+                let func = self.parse_expr(func);
+                let arg = self.parse_expr(arg);
+                Ok(Expr::Call(Box::new(func?), Box::new(arg?)))
+            }
+            "if" => {
+                let [cond, consq] = visitor.expect_children();
+                let cond = self.parse_expr(cond);
+                let consq = self.parse_expr(consq);
+                Ok(Expr::IfChain(vec![(cond?, consq?)]))
+            }
+            "else" => {
+                let mut clauses = visitor;
+                let mut chain = vec![];
+                while clauses.op() == "else" {
+                    let [ifclause, else_clauses] = clauses.expect_children();
+                    if ifclause.op() != "if" {
+                        self.errors.push(self.parse_tree.error(
+                            clauses.op_span(),
+                            "An 'else' may only come after an 'if', but this 'else' is on its own.",
+                        ));
+                        return Err(());
+                    }
+                    clauses = else_clauses;
+                    let [cond, consq] = ifclause.expect_children();
+                    let cond = self.parse_expr(cond);
+                    let consq = self.parse_expr(consq);
+                    chain.push((cond?, consq?));
                 }
-                let [cond, consq] = ifclause.expect_children();
-                chain.push((parse_expr(cond)?, parse_expr(consq)?));
+                if clauses.op() != "block" {
+                    self.errors.push(self.parse_tree.error(
+                        clauses.span(),
+                        "An 'else' must be followed by braces '{...}', but this 'else' was not.",
+                    ));
+                    return Err(());
+                }
+                let [final_else] = clauses.expect_children();
+                let final_else = self.parse_expr(final_else);
+                chain.push((Expr::Id("true".to_string()), final_else?));
+                Ok(Expr::IfChain(chain))
             }
-            if clauses.op() != "block" {
-                return Err(ParseError::ElseWithoutBraces);
+            "let" => {
+                let [id, val, body] = visitor.expect_children();
+                let id = self.parse_id(id);
+                let val = self.parse_expr(val);
+                let body = self.parse_expr(body);
+                Ok(Expr::Let(id?, Box::new(val?), Box::new(body?)))
             }
-            let [final_else] = clauses.expect_children();
-            chain.push((Expr::Id("true".to_string()), parse_expr(final_else)?));
-            Ok(Expr::IfChain(chain))
+            op => panic!("missing op case {}", op),
         }
-        "let" => {
-            let [id, val, body] = visitor.expect_children();
-            Ok(Expr::Let(
-                parse_id(id)?,
-                Box::new(parse_expr(val)?),
-                Box::new(parse_expr(body)?),
-            ))
-        }
-        op => panic!("missing op case {}", op),
     }
 }
 
 #[track_caller]
 fn parse_to_string(parser: &Parser, src: &str) -> String {
-    match parser.parse("Expr", src) {
-        Ok(tree) => match parse_expr(tree.visitor()) {
-            Ok(expr) => format!("{}", expr),
-            Err(err) => format!("{}", err),
-        },
+    use std::fmt::Write;
+
+    match parser.parse("testcase", src, "Expr") {
+        Ok(tree) => {
+            let traverser = Traverser::new(&tree);
+            match traverser.parse() {
+                Ok(expr) => format!("{}", expr),
+                Err(errors) => {
+                    let mut out = String::new();
+                    let mut errors = errors.into_iter();
+                    write!(&mut out, "{}", errors.next().unwrap()).unwrap();
+                    for err in errors {
+                        write!(&mut out, "\n\n{}", err).unwrap();
+                    }
+                    out
+                }
+            }
+        }
         Err(err) => format!("{}", err),
+    }
+}
+
+#[track_caller]
+fn test(parser: &Parser, src: &str, expected: &str) {
+    let actual = parse_to_string(parser, src);
+    if actual != expected {
+        println!("ACTUAL:\n{}", actual);
+        println!("EXPECTED:\n{}", expected);
+        panic!("test case failed");
     }
 }
 
@@ -188,7 +227,7 @@ fn parse_to_string(parser: &Parser, src: &str) -> String {
 fn test_parsing_parens() {
     let parser = make_parser().unwrap();
 
-    assert_eq!(parse_to_string(&parser, "f(x)"), "(call f x)");
+    test(&parser, "f(x)", "(call f x)");
     assert_eq!(parse_to_string(&parser, "x < y"), "(< x y)");
     assert_eq!(parse_to_string(&parser, "x < y < z"), "(< (< x y) z)");
     assert_eq!(parse_to_string(&parser, "x < (y < z)"), "(< x (< y z))");
@@ -214,8 +253,34 @@ fn test_parsing_let() {
         parse_to_string(&parser, "let x = 5 in x + 1"),
         "(let x 5 (+ x 1))"
     );
-    assert_eq!(
-        parse_to_string(&parser, "let x + 1 = 5 in x"),
-        "Parse error: While parsing 'let', expected '=' but found '+'.\nat 0:6-0:7"
+    test(
+        &parser,
+        "let x + 1 = 5 in x",
+        r#"Parse Error: While parsing 'let', expected '=' but found '+'.
+At 'testcase' line 0.
+
+let x + 1 = 5 in x
+      ^"#,
+    );
+}
+
+#[test]
+fn test_multiple_errors() {
+    let parser = make_parser().unwrap();
+
+    test(
+        &parser,
+        "(1 else { A }) + (if x > 5 { A } else B + C)",
+        r#"Parse Error: An 'else' may only come after an 'if', but this 'else' is on its own.
+At 'testcase' line 0.
+
+(1 else { A }) + (if x > 5 { A } else B + C)
+   ^^^^
+
+Parse Error: An 'else' must be followed by braces '{...}', but this 'else' was not.
+At 'testcase' line 0.
+
+(1 else { A }) + (if x > 5 { A } else B + C)
+                                      ^^^^^"#,
     );
 }

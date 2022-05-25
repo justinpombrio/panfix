@@ -64,14 +64,16 @@
 mod grammar;
 mod lexer;
 mod op;
+mod parse_error;
 mod parse_tree;
 mod parser;
 mod rpn_visitor;
 
 pub use grammar::{Grammar, GrammarError, Pattern};
 pub use op::{Fixity, Prec, Sort};
+pub use parse_error::ParseError;
 pub use parse_tree::{ParseTree, Visitor};
-pub use parser::{ParseError, Parser};
+pub use parser::Parser;
 
 /// The lexer used internally by the parser. It's provided here in case you wish to use it
 /// independently.
