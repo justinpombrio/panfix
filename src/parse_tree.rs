@@ -1,7 +1,7 @@
-use crate::lexer::Span;
 use crate::op::{Fixity, Op, Prec};
 use crate::parse_error::ParseError;
 use crate::rpn_visitor::{RpnNode, RpnStack, RpnVisitor, RpnVisitorIter};
+use crate::Span;
 use std::fmt;
 
 /// The result of parsing a source string. Call `.visitor()` to walk it.

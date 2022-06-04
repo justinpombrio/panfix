@@ -3,7 +3,8 @@
 //! Usage:
 //!
 //! ```
-//! use panfix::lexing::{LexerBuilder, Lexer, LEX_ERROR};
+//! use panfix::TOKEN_ERROR;
+//! use panfix::lexing::{LexerBuilder, Lexer};
 //!
 //! let whitespace_regex = r#"[ \t\r\n]+"#;
 //! let mut builder = LexerBuilder::new(whitespace_regex).unwrap();
@@ -19,11 +20,11 @@
 //!
 //! let mut lexemes = lexer.lex("x @$!");
 //! assert_eq!(lexemes.next().unwrap().token, tok_var);
-//! assert_eq!(lexemes.next().unwrap().token, LEX_ERROR);
+//! assert_eq!(lexemes.next().unwrap().token, TOKEN_ERROR);
 //! ```
 //!
 //! Whitespace is skipped. If there is a lexing error, it is represented as an item in the iterator
-//! whose `token` is `LEX_ERROR`.
+//! whose `token` is `TOKEN_ERROR`.
 //!
 //! If there are multiple possible matches:
 //!
@@ -33,17 +34,11 @@
 //! - If there is _still_ a tie, the regex that's first in the list provided to `Lexer::new()` will
 //! be used.
 
+use crate::{Lexeme, Position, Span, Token, TOKEN_ERROR};
 use regex::{escape, Regex, RegexSet};
 use std::fmt;
 
 pub use regex::Error as RegexError;
-
-/// A category of lexeme, such as "INTEGER" or "VARIABLE" or "OPEN_PAREN". The special Token called
-/// [`LEX_ERROR`] represents a lexing error.
-pub type Token = usize;
-
-/// Represents a lexing error.
-pub const LEX_ERROR: Token = Token::MAX;
 
 /// White space as defined by the Pattern_White_Space Unicode property.
 pub const UNICODE_WHITESPACE_REGEX: &str =
@@ -72,14 +67,19 @@ pub struct LexerBuilder {
 
 impl LexerBuilder {
     pub fn new(whitespace_regex: &str) -> Result<LexerBuilder, RegexError> {
-        Ok(LexerBuilder {
+        let mut builder = LexerBuilder {
             whitespace: new_regex(whitespace_regex)?,
             patterns: vec![],
-        })
+        };
+        builder.reserve_token()?; // Reserved for TOKEN_ERROR
+        builder.reserve_token()?; // Reserved for TOKEN_BLANK
+        builder.reserve_token()?; // Reserved for TOKEN_JUXTAPOSE
+        Ok(builder)
     }
 
     /// Add a pattern that matches exactly the string provided. Returns the token that will be
-    /// produced whenever this pattern matches.
+    /// produced whenever this pattern matches. If the provided pattern was already added,
+    /// returns the pre-existing token for it.
     pub fn string(&mut self, constant: &str) -> Result<Token, RegexError> {
         let pattern = Pattern {
             regex: new_regex(&escape(constant))?,
@@ -113,6 +113,18 @@ impl LexerBuilder {
                 return Ok(existing_token);
             }
         }
+
+        let token = self.patterns.len();
+        self.patterns.push(pattern);
+        Ok(token)
+    }
+
+    /// Reserve a token for personal use.
+    pub fn reserve_token(&mut self) -> Result<Token, RegexError> {
+        let pattern = Pattern {
+            regex: Regex::new("$.")?,
+            length: None,
+        };
 
         let token = self.patterns.len();
         self.patterns.push(pattern);
@@ -156,69 +168,11 @@ impl Lexer {
             },
         }
     }
-}
 
-/// One "word" in the stream returned by the lexer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Lexeme<'s> {
-    pub token: Token,
-    pub lexeme: &'s str,
-    pub span: Span,
-}
-
-/// A position in the source text. Positions are _between_ characters.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Position {
-    /// Byte offset from the beginning of the source string.
-    pub offset: usize,
-    /// Line number.
-    pub line: usize,
-    /// Column number, counted in bytes.
-    pub col: usize,
-    /// Column number, counted in utf8 codepoints.
-    pub utf8_col: usize,
-}
-
-/// A start and end position in the source text. Positions are _between_ characters.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Span {
-    pub start: Position,
-    pub end: Position,
-}
-
-impl fmt::Display for Position {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}:{}", self.line, self.utf8_col)
-    }
-}
-
-impl fmt::Display for Span {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}-{}", self.start, self.end)
-    }
-}
-
-impl Position {
-    /// The position at the start of any document.
-    pub fn start() -> Position {
-        Position {
-            offset: 0,
-            line: 0,
-            col: 0,
-            utf8_col: 0,
-        }
-    }
-
-    fn advance(&mut self, ch: char) {
-        self.offset += ch.len_utf8();
-        if ch == '\n' {
-            self.col = 0;
-            self.utf8_col = 0;
-            self.line += 1;
-        } else {
-            self.col += ch.len_utf8();
-            self.utf8_col += 1;
-        }
+    /// The number of tokens. Each `Token` returned by the builder is guaranteed to be smaller than
+    /// this number.
+    pub fn num_tokens(&self) -> usize {
+        self.patterns.len()
     }
 }
 
@@ -234,7 +188,7 @@ impl<'l, 's> LexemeIter<'l, 's> {
     fn consume(&mut self, len: usize) -> (&'s str, Span) {
         let start = self.position;
         for ch in self.source[..len].chars() {
-            self.position.advance(ch);
+            self.position = self.position.advance_by_char(ch);
         }
         let end = self.position;
 
@@ -301,7 +255,7 @@ impl<'l, 's> Iterator for LexemeIter<'l, 's> {
         };
         let (lexeme, span) = self.consume(len);
         Some(Lexeme {
-            token: LEX_ERROR,
+            token: TOKEN_ERROR,
             lexeme,
             span,
         })
@@ -312,4 +266,119 @@ impl<'s> fmt::Display for Lexeme<'s> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.lexeme)
     }
+}
+
+#[track_caller]
+#[cfg(test)]
+fn assert_lexeme<'a>(
+    src: &str,
+    stream: &mut impl Iterator<Item = Lexeme<'a>>,
+    expected: &str,
+    token: Token,
+) {
+    let lex = stream
+        .next()
+        .expect("Token stream in test case ended early");
+    assert_eq!(lex.token, token);
+    let start = lex.span.start;
+    let end = lex.span.end;
+    assert_eq!(&src[start.offset..end.offset], lex.lexeme);
+    let actual = format!(
+        "{}:{}({})-{}:{}({}) {}",
+        start.line, start.col, start.utf8_col, end.line, end.col, end.utf8_col, lex.lexeme
+    );
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn test_lexing_json() {
+    let string_regex = "\"([^\"\\\\]|\\\\.)*\"";
+    let number_regex = "-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?";
+    let whitespace_regex = "[ \\t\\n\\r\\v]*";
+
+    let mut builder = LexerBuilder::new(whitespace_regex).unwrap();
+    let tok_str = builder.regex(string_regex).unwrap();
+    let tok_num = builder.regex(number_regex).unwrap();
+    let tok_true = builder.string("true").unwrap();
+    let tok_false = builder.string("false").unwrap();
+    let tok_null = builder.string("null").unwrap();
+    let tok_colon = builder.string(":").unwrap();
+    let tok_comma = builder.string(",").unwrap();
+    let tok_lbracket = builder.string("[").unwrap();
+    let tok_rbracket = builder.string("]").unwrap();
+    let tok_lbrace = builder.string("{").unwrap();
+    let tok_rbrace = builder.string("}").unwrap();
+    let lexer = builder.finish().unwrap();
+
+    let src = " 3.1e5";
+    let lexemes = &mut lexer.lex(src);
+    assert_lexeme(src, lexemes, "0:1(1)-0:6(6) 3.1e5", tok_num);
+    assert!(lexemes.next().is_none());
+
+    let src = r#"{false]true  [5"5\"" "#;
+    let lexemes = &mut lexer.lex(src);
+    assert_lexeme(src, lexemes, "0:0(0)-0:1(1) {", tok_lbrace);
+    assert_lexeme(src, lexemes, "0:1(1)-0:6(6) false", tok_false);
+    assert_lexeme(src, lexemes, "0:6(6)-0:7(7) ]", tok_rbracket);
+    assert_lexeme(src, lexemes, "0:7(7)-0:11(11) true", tok_true);
+    assert_lexeme(src, lexemes, "0:13(13)-0:14(14) [", tok_lbracket);
+    assert_lexeme(src, lexemes, "0:14(14)-0:15(15) 5", tok_num);
+    assert_lexeme(src, lexemes, "0:15(15)-0:20(20) \"5\\\"\"", tok_str);
+    assert!(lexemes.next().is_none());
+
+    let src = " \r\n\"Καλημέρα\" :\"Καλησπέρα\",\n  \"Καληνύχτα\"null}";
+    let lexemes = &mut lexer.lex(src);
+    assert_lexeme(src, lexemes, "1:0(0)-1:18(10) \"Καλημέρα\"", tok_str);
+    assert_lexeme(src, lexemes, "1:19(11)-1:20(12) :", tok_colon);
+    assert_lexeme(src, lexemes, "1:20(12)-1:40(23) \"Καλησπέρα\"", tok_str);
+    assert_lexeme(src, lexemes, "1:40(23)-1:41(24) ,", tok_comma);
+    assert_lexeme(src, lexemes, "2:2(2)-2:22(13) \"Καληνύχτα\"", tok_str);
+    assert_lexeme(src, lexemes, "2:22(13)-2:26(17) null", tok_null);
+    assert_lexeme(src, lexemes, "2:26(17)-2:27(18) }", tok_rbrace);
+    assert!(lexemes.next().is_none());
+}
+
+#[test]
+fn test_lexing_horrible_things() {
+    let word_regex = "[a-yA-Y]+";
+    let angry_word_regex = "[A-Y]+";
+    let short_word_regex = "[a-zA-Z]";
+    let whitespace_regex = "[ \\t\\n\\re]*";
+
+    let mut builder = LexerBuilder::new(whitespace_regex).unwrap();
+    builder.regex(angry_word_regex).unwrap();
+    builder.regex(word_regex).unwrap();
+    builder.regex(short_word_regex).unwrap();
+    builder.string(":").unwrap();
+    builder.string("::").unwrap();
+    builder.string(":::").unwrap();
+    builder.string("(").unwrap();
+    builder.string(")").unwrap();
+    builder.string(":(").unwrap();
+    builder.string("true").unwrap();
+    builder.string("truer").unwrap();
+    builder.string("truest").unwrap();
+    let lexer = builder.finish().unwrap();
+
+    let lex = |source| lexer.lex(source).map(|lex| lex.lexeme).collect::<Vec<_>>();
+    assert_eq!(lex("HELLO"), vec!["HELLO"]);
+    assert_eq!(lex("Hello"), vec!["Hello"]);
+    assert_eq!(lex("hello"), vec!["hello"]);
+    assert_eq!(lex(":()"), vec![":(", ")"]);
+    assert_eq!(lex(":::()"), vec![":::", "(", ")"]);
+    assert_eq!(lex("::::()"), vec![":::", ":(", ")"]);
+    assert_eq!(lex(":::::()"), vec![":::", "::", "(", ")"]);
+    assert_eq!(lex("truertruetruerest"), vec!["truertruetruerest"]);
+    assert_eq!(
+        lex("truer true truerest"),
+        vec!["truer", "true", "truerest"]
+    );
+    assert_eq!(
+        lex("truery truey truerestytrue"),
+        vec!["truery", "truey", "truerestytrue"]
+    );
+    assert_eq!(lex(" eprom "), vec!["prom"]);
+    assert_eq!(lex("true! true"), vec!["true", "!", "true"]);
+    assert_eq!(lex("tr\nue"), vec!["tr", "ue"]);
+    assert_eq!(lex("tr%ue%% %%true"), vec!["tr", "%ue%%", "%%true"]);
 }

@@ -1,8 +1,10 @@
-use crate::lexer::{Lexeme, Lexer, Position, Span, Token};
+use crate::lexer::Lexer;
 use crate::op::{Op, Prec, Sort, SortId};
 use crate::parse_error::ParseError;
 use crate::parse_tree::{Node, ParseTree};
 use crate::rpn_visitor::RpnStack;
+use crate::Lexeme;
+use crate::{Position, Span, Token};
 use std::collections::HashMap;
 use std::iter::Peekable;
 

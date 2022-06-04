@@ -1,4 +1,4 @@
-use crate::lexer::{Lexeme, Span};
+use crate::{Lexeme, Span};
 use std::error;
 use std::fmt;
 use thiserror::Error;

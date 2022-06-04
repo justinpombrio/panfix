@@ -1,4 +1,4 @@
-use crate::lexer::Token;
+use crate::Token;
 use std::fmt;
 
 /// Precedence level. Smaller is tighter / wins.
@@ -48,7 +48,7 @@ pub(crate) struct Op {
     pub(crate) fixity: Fixity,
     pub(crate) assoc: Assoc,
     pub(crate) prec: Prec,
-    pub(crate) first_token: Option<Token>,
+    pub(crate) first_token: Token,
     pub(crate) followers: Vec<(SortId, Token)>,
     pub(crate) left_prec: Option<Prec>,
     pub(crate) right_prec: Option<Prec>,
@@ -66,19 +66,19 @@ impl Op {
     ) -> Op {
         assert_ne!(name, "$Blank");
         assert_ne!(name, "$Juxtapose");
-        Op::new_unchecked(name, fixity, assoc, prec, Some(first_token), followers)
+        Op::new_unchecked(name, fixity, assoc, prec, first_token, followers)
     }
 
     pub(crate) fn new_atom(name: &str, token: Token) -> Op {
-        Op::new_unchecked(name, Fixity::Nilfix, Assoc::Left, 0, Some(token), vec![])
+        Op::new_unchecked(name, Fixity::Nilfix, Assoc::Left, 0, token, vec![])
     }
 
-    pub(crate) fn new_blank() -> Op {
-        Op::new_unchecked("$Blank", Fixity::Nilfix, Assoc::Left, 0, None, vec![])
+    pub(crate) fn new_blank(token: Token) -> Op {
+        Op::new_unchecked("$Blank", Fixity::Nilfix, Assoc::Left, 0, token, vec![])
     }
 
-    pub(crate) fn new_juxtapose(assoc: Assoc, prec: Prec) -> Op {
-        Op::new_unchecked("$Juxtapose", Fixity::Infix, assoc, prec, None, vec![])
+    pub(crate) fn new_juxtapose(assoc: Assoc, prec: Prec, token: Token) -> Op {
+        Op::new_unchecked("$Juxtapose", Fixity::Infix, assoc, prec, token, vec![])
     }
 
     fn new_unchecked(
@@ -86,7 +86,7 @@ impl Op {
         fixity: Fixity,
         assoc: Assoc,
         prec: Prec,
-        first_token: Option<Token>,
+        first_token: Token,
         followers: Vec<(SortId, Token)>,
     ) -> Op {
         use Assoc::{Left, Right};

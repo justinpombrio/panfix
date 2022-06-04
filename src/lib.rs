@@ -61,30 +61,140 @@
 //! - [`lexing`] is the lexer used by the parser.
 //! - [`rpn`] is used by the parser to store the parse tree with only a single allocation.
 
+mod blank_inserter;
 mod grammar;
 mod lexer;
 mod op;
+mod op_resolver;
 mod parse_error;
 mod parse_tree;
 mod parser;
 mod rpn_visitor;
+mod shunter;
+mod tree_visitor;
+
+use std::fmt;
 
 pub use grammar::{Grammar, GrammarError, Pattern};
 pub use op::{Fixity, Prec, Sort};
 pub use parse_error::ParseError;
 pub use parse_tree::{ParseTree, Visitor};
 pub use parser::Parser;
+pub use shunter::Shunter;
+
+/// A category of lexeme, such as "INTEGER" or "VARIABLE" or "OPEN_PAREN". The special Token called
+/// [`TOKEN_ERROR`] represents a lexing error.
+pub type Token = usize;
+
+/// Represents a lexing error.
+pub const TOKEN_ERROR: Token = 0;
+/// Represents a missing argument.
+pub const TOKEN_BLANK: Token = 1;
+/// Represents a missing operator.
+pub const TOKEN_JUXTAPOSE: Token = 2;
+
+/// One "word" in the stream returned by the lexer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Lexeme<'s> {
+    pub token: Token,
+    pub lexeme: &'s str,
+    pub span: Span,
+}
+
+/// A position in the source text. Positions are _between_ characters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Position {
+    /// Byte offset from the beginning of the source string.
+    pub offset: usize,
+    /// Line number.
+    pub line: usize,
+    /// Column number, counted in bytes.
+    pub col: usize,
+    /// Column number, counted in utf8 codepoints.
+    pub utf8_col: usize,
+}
+
+/// A start and end position in the source text. Positions are _between_ characters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Span {
+    pub start: Position,
+    pub end: Position,
+}
+
+impl fmt::Display for Position {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}:{}", self.line, self.utf8_col)
+    }
+}
+
+impl fmt::Display for Span {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}-{}", self.start, self.end)
+    }
+}
+
+impl Position {
+    /// The position at the start of any document.
+    pub fn start() -> Position {
+        Position {
+            offset: 0,
+            line: 0,
+            col: 0,
+            utf8_col: 0,
+        }
+    }
+
+    /// Assuming that `ch` appears just to the right of this position, return the position just
+    /// after `ch`.
+    pub fn advance_by_char(self, ch: char) -> Position {
+        if ch == '\n' {
+            Position {
+                line: self.line + 1,
+                col: 0,
+                utf8_col: 0,
+                offset: self.offset + ch.len_utf8(),
+            }
+        } else {
+            Position {
+                line: self.line,
+                col: self.col + ch.len_utf8(),
+                utf8_col: self.utf8_col + 1,
+                offset: self.offset + ch.len_utf8(),
+            }
+        }
+    }
+}
+
+impl<'s> Lexeme<'s> {
+    pub fn new(token: Token, lexeme: &'s str, start: Position, end: Position) -> Lexeme<'s> {
+        Lexeme {
+            token,
+            lexeme,
+            span: Span { start, end },
+        }
+    }
+}
 
 /// The lexer used internally by the parser. It's provided here in case you wish to use it
 /// independently.
 pub mod lexing {
-    pub use crate::lexer::{Lexeme, Lexer, LexerBuilder, Position, Span, Token, LEX_ERROR};
+    pub use crate::lexer::{Lexer, LexerBuilder};
 }
 
 /// An separate utility for constructing a "tree" with only a single allocation. It's used
 /// internally by the parser, and provided here in case you wish to use it independently.
 pub mod rpn {
     pub use crate::rpn_visitor::{RpnStack, RpnVisitor};
+}
+
+// TODO: docs
+pub mod blank_insertion {
+    pub use crate::blank_inserter::BlankInserter;
+}
+
+// TODO: docs
+pub mod shunting {
+    pub use crate::shunter::Shunter;
 }
 
 // TODO: docs
