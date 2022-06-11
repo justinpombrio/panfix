@@ -1,3 +1,4 @@
+use crate::source::Source;
 use crate::{Lexeme, Span};
 use std::error;
 use std::fmt;
@@ -5,43 +6,30 @@ use thiserror::Error;
 
 #[derive(Debug)]
 pub struct ParseError<'s> {
-    filename: &'s str,
-    source: &'s str,
+    source: &'s Source,
     cause: ParseErrorCause<'s>,
     span: Option<Span>,
 }
 
 impl<'s> ParseError<'s> {
-    pub fn custom_error(
-        filename: &'s str,
-        source: &'s str,
-        message: &str,
-        span: Span,
-    ) -> ParseError<'s> {
+    pub fn custom_error(source: &'s Source, message: &str, span: Span) -> ParseError<'s> {
         ParseError {
-            filename,
             source,
             cause: ParseErrorCause::Custom(message.to_owned()),
             span: Some(span),
         }
     }
 
-    pub(crate) fn no_such_sort(filename: &'s str, source: &'s str, sort: &str) -> ParseError<'s> {
+    pub(crate) fn no_such_sort(source: &'s Source, sort: &str) -> ParseError<'s> {
         ParseError {
-            filename,
             source,
             cause: ParseErrorCause::NoSuchSort(sort.to_owned()),
             span: None,
         }
     }
 
-    pub(crate) fn unexpected_lexeme(
-        filename: &'s str,
-        source: &'s str,
-        lexeme: Lexeme<'s>,
-    ) -> ParseError<'s> {
+    pub(crate) fn unexpected_lexeme(source: &'s Source, lexeme: Lexeme<'s>) -> ParseError<'s> {
         ParseError {
-            filename,
             source,
             cause: ParseErrorCause::UnexpectedLexeme(lexeme),
             span: Some(lexeme.span),
@@ -49,14 +37,12 @@ impl<'s> ParseError<'s> {
     }
 
     pub(crate) fn missing_sep(
-        filename: &'s str,
-        source: &'s str,
+        source: &'s Source,
         op_name: &str,
         expected: &str,
         found: Lexeme<'s>,
     ) -> ParseError<'s> {
         ParseError {
-            filename,
             source,
             cause: ParseErrorCause::MissingSep {
                 op_name: op_name.to_owned(),
@@ -68,14 +54,12 @@ impl<'s> ParseError<'s> {
     }
 
     pub(crate) fn missing_sep_eof(
-        filename: &'s str,
-        source: &'s str,
+        source: &'s Source,
         op_name: &str,
         expected: &str,
         span: Span,
     ) -> ParseError<'s> {
         ParseError {
-            filename,
             source,
             cause: ParseErrorCause::MissingSepEof {
                 op_name: op_name.to_owned(),
@@ -91,9 +75,14 @@ impl<'s> fmt::Display for ParseError<'s> {
         writeln!(f, "Parse Error: {}", self.cause)?;
         if let Some(span) = self.span {
             if span.start.line == span.end.line {
-                writeln!(f, "At '{}' line {}.", self.filename, span.start.line)?;
+                writeln!(
+                    f,
+                    "At '{}' line {}.",
+                    self.source.filename(),
+                    span.start.line
+                )?;
                 writeln!(f)?;
-                let line = self.source.lines().nth(span.start.line).unwrap();
+                let line = self.source.line_contents(span.start.line);
                 writeln!(f, "{}", line)?;
                 for _ in 0..span.start.utf8_col {
                     write!(f, " ")?;
@@ -106,20 +95,22 @@ impl<'s> fmt::Display for ParseError<'s> {
                 writeln!(
                     f,
                     "At '{}' lines {}-{}.",
-                    self.filename, span.start.line, span.end.line
+                    self.source.filename(),
+                    span.start.line,
+                    span.end.line
                 )?;
                 writeln!(f)?;
-                let line = self.source.lines().nth(span.start.line).unwrap();
+                let line = self.source.line_contents(span.start.line);
                 writeln!(f, "{}", line)?;
                 for _ in 0..span.start.utf8_col {
                     write!(f, " ")?;
                 }
-                for _ in 0..(line.chars().count() - span.end.utf8_col) {
+                for _ in 0..(line.chars().count() - span.start.utf8_col as usize) {
                     write!(f, "^")?;
                 }
             }
         } else {
-            writeln!(f, "{}:", self.filename)?;
+            writeln!(f, "{}:", self.source.filename())?;
         }
         Ok(())
     }

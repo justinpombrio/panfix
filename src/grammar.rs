@@ -1,9 +1,11 @@
 use crate::lexer::{LexerBuilder, RegexError, UNICODE_WHITESPACE_REGEX};
 use crate::op::{Assoc, Fixity, Op, Prec, Sort, SortId};
 use crate::parser::{Parser, SortTable};
-use crate::Token;
+use crate::{Token, TOKEN_BLANK, TOKEN_JUXTAPOSE};
 use std::collections::HashMap;
 use thiserror::Error;
+
+const PREC_DELTA: Prec = 10;
 
 /// A grammar for a language. Add operators until the grammar is complete, then call `.finish()` to
 /// construct a `Parser` you can use to parse.
@@ -13,8 +15,6 @@ pub struct Grammar {
     sort_tables: Vec<SortTable>,
     sort_ids: HashMap<String, SortId>,
     token_names: HashMap<Token, String>,
-    token_blank: Token,
-    token_juxtapose: Token,
     largest_token: Token,
     lexer_builder: LexerBuilder,
     current_sort: Option<SortId>,
@@ -59,19 +59,15 @@ impl Grammar {
     pub fn new(whitespace_regex: &str) -> Result<Grammar, GrammarError> {
         use GrammarError::RegexError;
 
-        let mut lexer_builder = LexerBuilder::new(whitespace_regex).map_err(RegexError)?;
-        let token_blank = lexer_builder.reserve_token().map_err(RegexError)?;
-        let token_juxtapose = lexer_builder.reserve_token().map_err(RegexError)?;
+        let lexer_builder = LexerBuilder::new(whitespace_regex).map_err(RegexError)?;
         let mut token_names = HashMap::new();
-        token_names.insert(token_blank, "_".to_owned());
-        token_names.insert(token_juxtapose, "_".to_owned());
+        token_names.insert(TOKEN_BLANK, "_".to_owned());
+        token_names.insert(TOKEN_JUXTAPOSE, "_".to_owned());
         Ok(Grammar {
             sort_tables: vec![],
             sort_ids: HashMap::new(),
             token_names,
-            token_blank,
-            token_juxtapose,
-            largest_token: 0,
+            largest_token: 2,
             lexer_builder,
             current_sort: None,
             current_prec: 0,
@@ -89,7 +85,7 @@ impl Grammar {
     /// bind _looser_) than any of the groups added so far. Any infix operators in this group will
     /// be _left associative_.
     pub fn lgroup(&mut self) {
-        self.current_prec += 10;
+        self.current_prec += PREC_DELTA;
         self.current_assoc = Assoc::Left;
     }
 
@@ -97,7 +93,7 @@ impl Grammar {
     /// bind _looser_) than any of the groups added so far. Any infix operators in this group will
     /// be _left associative_.
     pub fn rgroup(&mut self) {
-        self.current_prec += 1;
+        self.current_prec += PREC_DELTA;
         self.current_assoc = Assoc::Right;
     }
 
@@ -124,7 +120,7 @@ impl Grammar {
 
     pub fn juxtapose(&mut self) -> Result<(), GrammarError> {
         let (prec, assoc) = self.get_prec_and_assoc()?;
-        let op = Op::new_juxtapose(assoc, prec, self.token_juxtapose);
+        let op = Op::new_juxtapose(assoc, prec, TOKEN_JUXTAPOSE);
         let sort_table = self.get_sort_table()?;
         sort_table.add_op(op)
     }
@@ -260,21 +256,20 @@ impl Grammar {
         } else {
             let sort_id = self.sort_tables.len();
             self.sort_ids.insert(sort.to_owned(), sort_id);
-            self.sort_tables
-                .push(SortTable::new(sort, self.token_blank, self.token_juxtapose));
+            self.sort_tables.push(SortTable::new(sort));
             sort_id
         }
     }
 }
 
 impl SortTable {
-    fn new(sort: &str, token_blank: Token, token_juxtapose: Token) -> SortTable {
+    fn new(sort: &str) -> SortTable {
         SortTable {
             sort: sort.to_owned(),
             token_to_prefixy_op: vec![],
             token_to_suffixy_op: vec![],
-            blank: Op::new_blank(token_blank),
-            juxtapose: Op::new_juxtapose(Assoc::Left, 1, token_juxtapose),
+            blank: Op::new_blank(TOKEN_BLANK),
+            juxtapose: Op::new_juxtapose(Assoc::Left, 1, TOKEN_JUXTAPOSE),
         }
     }
 

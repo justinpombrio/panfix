@@ -34,7 +34,7 @@
 //! - If there is _still_ a tie, the regex that's first in the list provided to `Lexer::new()` will
 //! be used.
 
-use crate::{Lexeme, Position, Span, Token, TOKEN_ERROR};
+use crate::{Lexeme, Offset, Position, Span, Token, TOKEN_ERROR};
 use regex::{escape, Regex, RegexSet};
 use std::fmt;
 
@@ -157,16 +157,7 @@ impl Lexer {
     /// Split `source` into a stream of lexemes. It is frequently useful to wrap this in
     /// [`iter::Peekable`](https://doc.rust-lang.org/stable/std/iter/struct.Peekable.html).
     pub fn lex<'l, 's: 'l>(&'l self, source: &'s str) -> impl Iterator<Item = Lexeme<'s>> + 'l {
-        LexemeIter {
-            source,
-            lexer: self,
-            position: Position {
-                offset: 0,
-                line: 0,
-                col: 0,
-                utf8_col: 0,
-            },
-        }
+        LexemeIter::new(self, source)
     }
 
     /// The number of tokens. Each `Token` returned by the builder is guaranteed to be smaller than
@@ -178,16 +169,34 @@ impl Lexer {
 
 #[derive(Debug, Clone)]
 struct LexemeIter<'l, 's> {
-    position: Position,
-    // The _remaining, unlexed_ source text
-    source: &'s str,
     lexer: &'l Lexer,
+    source: &'s str,
+    remaining_source: &'s str,
+    position: Position,
+    offset: Offset,
+    newline_offsets: Vec<Offset>,
 }
 
 impl<'l, 's> LexemeIter<'l, 's> {
+    fn new(lexer: &'l Lexer, source: &'s str) -> LexemeIter<'l, 's> {
+        LexemeIter {
+            lexer,
+            source,
+            remaining_source: source,
+            position: Position {
+                line: 0,
+                col: 0,
+                utf8_col: 0,
+            },
+            offset: 0,
+            newline_offsets: vec![0],
+        }
+    }
+
     fn consume(&mut self, len: usize) -> (&'s str, Span) {
         let start = self.position;
         for ch in self.source[..len].chars() {
+            self.offset += ch.len_utf8();
             self.position = self.position.advance_by_char(ch);
         }
         let end = self.position;
@@ -282,7 +291,6 @@ fn assert_lexeme<'a>(
     assert_eq!(lex.token, token);
     let start = lex.span.start;
     let end = lex.span.end;
-    assert_eq!(&src[start.offset..end.offset], lex.lexeme);
     let actual = format!(
         "{}:{}({})-{}:{}({}) {}",
         start.line, start.col, start.utf8_col, end.line, end.col, end.utf8_col, lex.lexeme

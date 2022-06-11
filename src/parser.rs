@@ -3,7 +3,7 @@ use crate::op::{Op, Prec, Sort, SortId};
 use crate::parse_error::ParseError;
 use crate::parse_tree::{Node, ParseTree};
 use crate::rpn_visitor::RpnStack;
-use crate::Lexeme;
+use crate::{Lexeme, Source};
 use crate::{Position, Span, Token};
 use std::collections::HashMap;
 use std::iter::Peekable;
@@ -32,18 +32,16 @@ impl Parser {
     /// Parse the `source` text as the given `sort`. Runs in linear time.
     pub fn parse<'s, 'g>(
         &'g self,
-        filename: &'s str,
-        source: &'s str,
+        source: &'s Source,
         sort: &str,
     ) -> Result<ParseTree<'s, 'g>, ParseError<'s>> {
-        let lexeme_stream = self.lexer.lex(source);
-        ParseState::new(filename, source, self, lexeme_stream).parse(sort)
+        let lexeme_stream = self.lexer.lex(source.source());
+        ParseState::new(source, self, lexeme_stream).parse(sort)
     }
 }
 
 struct ParseState<'s, 'g, I: Iterator<Item = Lexeme<'s>>> {
-    filename: &'s str,
-    source: &'s str,
+    source: &'s Source,
     parser: &'g Parser,
     lexemes: Peekable<I>,
     last_pos: Position,
@@ -51,14 +49,8 @@ struct ParseState<'s, 'g, I: Iterator<Item = Lexeme<'s>>> {
 }
 
 impl<'s, 'g, I: Iterator<Item = Lexeme<'s>>> ParseState<'s, 'g, I> {
-    fn new(
-        filename: &'s str,
-        source: &'s str,
-        parser: &'g Parser,
-        lexemes: I,
-    ) -> ParseState<'s, 'g, I> {
+    fn new(source: &'s Source, parser: &'g Parser, lexemes: I) -> ParseState<'s, 'g, I> {
         ParseState {
-            filename,
             source,
             parser,
             lexemes: lexemes.peekable(),
@@ -71,17 +63,13 @@ impl<'s, 'g, I: Iterator<Item = Lexeme<'s>>> ParseState<'s, 'g, I> {
         let sort_table = if let Some(sort_id) = self.parser.sort_ids.get(sort) {
             &self.parser.sort_tables[*sort_id]
         } else {
-            return Err(ParseError::no_such_sort(self.filename, self.source, sort));
+            return Err(ParseError::no_such_sort(self.source, sort));
         };
         self.parse_expr(sort_table, Prec::MAX, None)?;
         if let Some(lexeme) = self.lexemes.next() {
-            return Err(ParseError::unexpected_lexeme(
-                self.filename,
-                self.source,
-                lexeme,
-            ));
+            return Err(ParseError::unexpected_lexeme(self.source, lexeme));
         }
-        Ok(ParseTree::new(self.filename, self.source, self.output))
+        Ok(ParseTree::new(self.source, self.output))
     }
 
     fn parse_expr(
@@ -153,7 +141,6 @@ impl<'s, 'g, I: Iterator<Item = Lexeme<'s>>> ParseState<'s, 'g, I> {
             if let Some(lexeme) = lexeme {
                 if lexeme.token != *expected_token {
                     return Err(ParseError::missing_sep(
-                        self.filename,
                         self.source,
                         &op.name,
                         self.parser.token_names.get(expected_token).unwrap(),
@@ -166,7 +153,6 @@ impl<'s, 'g, I: Iterator<Item = Lexeme<'s>>> ParseState<'s, 'g, I> {
                     end: self.last_pos,
                 };
                 return Err(ParseError::missing_sep_eof(
-                    self.filename,
                     self.source,
                     &op.name,
                     self.parser.token_names.get(expected_token).unwrap(),
@@ -182,7 +168,7 @@ impl<'s, 'g, I: Iterator<Item = Lexeme<'s>>> ParseState<'s, 'g, I> {
             op,
             op_span: lexeme.span,
             span: Span { start, end },
-            slice: &self.source[start.offset..end.offset],
+            slice: self.source.substr(Span { start, end }),
         });
     }
 
@@ -195,7 +181,10 @@ impl<'s, 'g, I: Iterator<Item = Lexeme<'s>>> ParseState<'s, 'g, I> {
             op: &sort_table.blank,
             op_span: span,
             span,
-            slice: &self.source[self.last_pos.offset..self.last_pos.offset],
+            slice: self.source.substr(Span {
+                start: self.last_pos,
+                end: self.last_pos,
+            }),
         });
     }
 

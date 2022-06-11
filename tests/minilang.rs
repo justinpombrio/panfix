@@ -1,4 +1,4 @@
-use panfix::{pattern, Grammar, GrammarError, ParseError, ParseTree, Parser, Visitor};
+use panfix::{pattern, Grammar, GrammarError, ParseError, ParseTree, Parser, Source, Visitor};
 use std::fmt;
 use std::mem;
 
@@ -193,7 +193,8 @@ impl<'a, 's, 'g> Traverser<'a, 's, 'g> {
 fn parse_to_string(parser: &Parser, src: &str) -> String {
     use std::fmt::Write;
 
-    match parser.parse("testcase", src, "Expr") {
+    let source = Source::new("testcase", src.to_owned());
+    match parser.parse(&source, "Expr") {
         Ok(tree) => {
             let traverser = Traverser::new(&tree);
             match traverser.parse() {

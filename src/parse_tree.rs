@@ -1,7 +1,7 @@
 use crate::op::{Fixity, Op, Prec};
 use crate::parse_error::ParseError;
 use crate::rpn_visitor::{RpnNode, RpnStack, RpnVisitor, RpnVisitorIter};
-use crate::Span;
+use crate::{Source, Span};
 use std::fmt;
 
 /// The result of parsing a source string. Call `.visitor()` to walk it.
@@ -10,22 +10,13 @@ use std::fmt;
 /// it cannot outlive either.
 #[derive(Debug)]
 pub struct ParseTree<'s, 'g> {
-    filename: &'s str,
-    source: &'s str,
+    source: &'s Source,
     stack: RpnStack<Node<'s, 'g>>,
 }
 
 impl<'s, 'g> ParseTree<'s, 'g> {
-    pub(crate) fn new(
-        filename: &'s str,
-        source: &'s str,
-        stack: RpnStack<Node<'s, 'g>>,
-    ) -> ParseTree<'s, 'g> {
-        ParseTree {
-            filename,
-            source,
-            stack,
-        }
+    pub(crate) fn new(source: &'s Source, stack: RpnStack<Node<'s, 'g>>) -> ParseTree<'s, 'g> {
+        ParseTree { source, stack }
     }
 
     /// Obtains a "visitor" that can walk the source tree.
@@ -41,17 +32,17 @@ impl<'s, 'g> ParseTree<'s, 'g> {
 
     /// The filename of the source text.
     pub fn filename(&self) -> &'s str {
-        self.filename
+        self.source.filename()
     }
 
     /// The entire source text.
     pub fn source(&self) -> &'s str {
-        self.source
+        self.source.source()
     }
 
     /// Create a custom parse error at the given location.
     pub fn error(&self, span: Span, message: &str) -> ParseError<'s> {
-        ParseError::custom_error(self.filename, self.source, message, span)
+        ParseError::custom_error(self.source, message, span)
     }
 }
 

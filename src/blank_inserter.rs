@@ -1,27 +1,24 @@
 use crate::{Lexeme, Position, Token, TOKEN_BLANK, TOKEN_JUXTAPOSE};
 use std::iter;
 
-pub struct BlankInserter {
-    pub prefixy_tokens: Vec<Option<(Token, bool)>>,
-    pub suffixy_tokens: Vec<Option<(Token, bool)>>,
-}
-
-impl BlankInserter {
-    pub fn transform<'h, 's: 'h, I>(&'h self, iter: I) -> impl Iterator<Item = Lexeme<'s>> + 'h
-    where
-        I: Iterator<Item = Lexeme<'s>> + 'h,
-    {
-        BlankInserterIter {
-            last_pos: Position::start(),
-            arg_mode: true,
-            prefixy_tokens: &self.prefixy_tokens,
-            suffixy_tokens: &self.suffixy_tokens,
-            iter: iter.peekable(),
-        }
+pub fn insert_blanks<'h, 's: 'h, I>(
+    prefixy_tokens: &'h [Option<(Token, bool)>],
+    suffixy_tokens: &'h [Option<(Token, bool)>],
+    iter: I,
+) -> impl Iterator<Item = Lexeme<'s>> + 'h
+where
+    I: Iterator<Item = Lexeme<'s>> + 'h,
+{
+    BlankInserter {
+        last_pos: Position::start(),
+        arg_mode: true,
+        prefixy_tokens,
+        suffixy_tokens,
+        iter: iter.peekable(),
     }
 }
 
-struct BlankInserterIter<'h, 's, I>
+struct BlankInserter<'h, 's, I>
 where
     I: Iterator<Item = Lexeme<'s>>,
 {
@@ -32,7 +29,7 @@ where
     iter: iter::Peekable<I>,
 }
 
-impl<'h, 's, I> BlankInserterIter<'h, 's, I>
+impl<'h, 's, I> BlankInserter<'h, 's, I>
 where
     I: Iterator<Item = Lexeme<'s>>,
 {
@@ -47,7 +44,7 @@ where
     }
 }
 
-impl<'h, 's, I> Iterator for BlankInserterIter<'h, 's, I>
+impl<'h, 's, I> Iterator for BlankInserter<'h, 's, I>
 where
     I: Iterator<Item = Lexeme<'s>>,
 {
@@ -159,29 +156,24 @@ fn test_blank_insertion() {
     prefixy_tokens[TOKEN_OPEN] = Some((TOKEN_OPEN, true));
     suffixy_tokens[TOKEN_CLOSE] = Some((TOKEN_CLOSE, false));
 
-    let blank_inserter = BlankInserter {
-        prefixy_tokens,
-        suffixy_tokens,
-    };
-
     let src = " a";
-    let lexemes = &mut blank_inserter.transform(lex(src));
+    let lexemes = &mut insert_blanks(&prefixy_tokens, &suffixy_tokens, lex(src));
     assert_lexeme(lexemes, "0:1-0:2 a", TOKEN_ID);
     assert!(lexemes.next().is_none());
 
     let src = "";
-    let lexemes = &mut blank_inserter.transform(lex(src));
+    let lexemes = &mut insert_blanks(&prefixy_tokens, &suffixy_tokens, lex(src));
     assert_lexeme(lexemes, "0:0-0:0 ", TOKEN_BLANK);
     assert!(lexemes.next().is_none());
 
     let src = "-";
-    let lexemes = &mut blank_inserter.transform(lex(src));
+    let lexemes = &mut insert_blanks(&prefixy_tokens, &suffixy_tokens, lex(src));
     assert_lexeme(lexemes, "0:0-0:1 -", TOKEN_NEG);
     assert_lexeme(lexemes, "0:1-0:1 ", TOKEN_BLANK);
     assert!(lexemes.next().is_none());
 
     let src = "-o o-";
-    let lexemes = &mut blank_inserter.transform(lex(src));
+    let lexemes = &mut insert_blanks(&prefixy_tokens, &suffixy_tokens, lex(src));
     assert_lexeme(lexemes, "0:0-0:1 -", TOKEN_NEG);
     assert_lexeme(lexemes, "0:1-0:2 o", TOKEN_ID);
     assert_lexeme(lexemes, "0:2-0:2 ", TOKEN_JUXTAPOSE);
@@ -191,14 +183,14 @@ fn test_blank_insertion() {
     assert!(lexemes.next().is_none());
 
     let src = "(x)";
-    let lexemes = &mut blank_inserter.transform(lex(src));
+    let lexemes = &mut insert_blanks(&prefixy_tokens, &suffixy_tokens, lex(src));
     assert_lexeme(lexemes, "0:0-0:1 (", TOKEN_OPEN);
     assert_lexeme(lexemes, "0:1-0:2 x", TOKEN_ID);
     assert_lexeme(lexemes, "0:2-0:3 )", TOKEN_CLOSE);
     assert!(lexemes.next().is_none());
 
     let src = "%";
-    let lexemes = &mut blank_inserter.transform(lex(src));
+    let lexemes = &mut insert_blanks(&prefixy_tokens, &suffixy_tokens, lex(src));
     assert_lexeme(lexemes, "0:0-0:1 %", TOKEN_ERROR);
     assert!(lexemes.next().is_none());
 }

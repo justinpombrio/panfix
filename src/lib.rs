@@ -3,6 +3,9 @@
 // - Method to display the grammar as a pretty table, given a way to display a token
 // - Think about what happens if a starting token is also a follower token in the same subgrammar.
 
+// TODO: temporary
+#![allow(unused)]
+
 //! # Panfix
 //!
 //! Panfix is a new approach to parsing, using a modified version of [operator precedence
@@ -63,14 +66,19 @@
 
 mod blank_inserter;
 mod grammar;
+pub mod grammar2;
 mod lexer;
 mod op;
 mod op_resolver;
 mod parse_error;
 mod parse_tree;
 mod parser;
+mod resolver;
 mod rpn_visitor;
 mod shunter;
+mod simple_op_resolver;
+mod simple_shunter;
+mod source;
 mod tree_visitor;
 
 use std::fmt;
@@ -80,7 +88,9 @@ pub use op::{Fixity, Prec, Sort};
 pub use parse_error::ParseError;
 pub use parse_tree::{ParseTree, Visitor};
 pub use parser::Parser;
-pub use shunter::Shunter;
+pub use shunter::shunt;
+
+pub use source::Source;
 
 /// A category of lexeme, such as "INTEGER" or "VARIABLE" or "OPEN_PAREN". The special Token called
 /// [`TOKEN_ERROR`] represents a lexing error.
@@ -101,17 +111,19 @@ pub struct Lexeme<'s> {
     pub span: Span,
 }
 
+pub type Offset = usize;
+pub type Line = u32;
+pub type Col = u32;
+
 /// A position in the source text. Positions are _between_ characters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Position {
-    /// Byte offset from the beginning of the source string.
-    pub offset: usize,
-    /// Line number.
-    pub line: usize,
-    /// Column number, counted in bytes.
-    pub col: usize,
-    /// Column number, counted in utf8 codepoints.
-    pub utf8_col: usize,
+    /// Line number. Zero-indexed.
+    pub line: Line,
+    /// Column number, counted in bytes. Zero-indexed.
+    pub col: Col,
+    /// Column number, counted in utf8 codepoints. Zero-indexed.
+    pub utf8_col: Col,
 }
 
 /// A start and end position in the source text. Positions are _between_ characters.
@@ -137,7 +149,6 @@ impl Position {
     /// The position at the start of any document.
     pub fn start() -> Position {
         Position {
-            offset: 0,
             line: 0,
             col: 0,
             utf8_col: 0,
@@ -152,14 +163,12 @@ impl Position {
                 line: self.line + 1,
                 col: 0,
                 utf8_col: 0,
-                offset: self.offset + ch.len_utf8(),
             }
         } else {
             Position {
                 line: self.line,
-                col: self.col + ch.len_utf8(),
+                col: self.col + ch.len_utf8() as Col,
                 utf8_col: self.utf8_col + 1,
-                offset: self.offset + ch.len_utf8(),
             }
         }
     }
@@ -189,12 +198,12 @@ pub mod rpn {
 
 // TODO: docs
 pub mod blank_insertion {
-    pub use crate::blank_inserter::BlankInserter;
+    pub use crate::blank_inserter::insert_blanks;
 }
 
 // TODO: docs
 pub mod shunting {
-    pub use crate::shunter::Shunter;
+    pub use crate::shunter::shunt;
 }
 
 // TODO: docs

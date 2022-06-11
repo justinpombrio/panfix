@@ -1,6 +1,11 @@
 use crate::{Lexeme, Prec};
 use std::iter;
 
+/// Convert a token stream into reverse polish notation. For example, `1 * 2 + 3 * 4` would become
+/// `1 2 * 3 4 * +`.
+///
+/// The precedence table is indexed by `Token`, and says what that token's left and right
+/// precedence is. Smaller precedence binds tighter.
 pub fn shunt<'a, 's: 'a, I>(
     prec_table: &'a Vec<(Prec, Prec)>,
     iter: I,
@@ -12,6 +17,7 @@ where
         prec_table,
         stack: vec![],
         iter: iter.peekable(),
+        pop_mode: false,
     }
 }
 
@@ -22,37 +28,42 @@ where
     prec_table: &'a Vec<(Prec, Prec)>,
     stack: Vec<Lexeme<'s>>,
     iter: iter::Peekable<I>,
+    pop_mode: bool,
 }
 
-impl<'a, 's, I> Iterator for Shunter<'a, 's, I>
-where
-    I: Iterator<Item = Lexeme<'s>>,
-{
+impl<'a, 's, I: Iterator<Item = Lexeme<'s>>> Shunter<'a, 's, I> {
+    fn top_rprec(&self) -> Prec {
+        self.stack
+            .last()
+            .map(|lex| self.prec_table[lex.token].1)
+            .unwrap_or(Prec::MAX)
+    }
+}
+
+impl<'a, 's, I: Iterator<Item = Lexeme<'s>>> Iterator for Shunter<'a, 's, I> {
     type Item = Lexeme<'s>;
 
     fn next(&mut self) -> Option<Lexeme<'s>> {
         loop {
-            // TODO: debugging
-            print!("shunting:");
-            for item in &self.stack {
-                print!(" {}", item.lexeme);
-            }
-            if let Some(lexeme) = self.iter.peek() {
-                println!(" | {}", lexeme.lexeme);
-            }
-
-            let top = self.stack.last().copied();
-            let rprec = top.map(|lex| self.prec_table[lex.token].1);
-
-            let next = self.iter.peek().copied();
-            let lprec = next.map(|lex| self.prec_table[lex.token].0);
-
-            if rprec == None && lprec == None {
-                return None;
-            } else if rprec.unwrap_or(Prec::MAX) >= lprec.unwrap_or(Prec::MAX) {
-                self.stack.push(self.iter.next().unwrap());
+            if self.pop_mode {
+                let lexeme = self.stack.pop().unwrap();
+                let lprec = self.prec_table[lexeme.token].0;
+                let rprec = self.top_rprec();
+                if rprec > lprec {
+                    self.pop_mode = false;
+                }
+                return Some(lexeme);
+            } else if let Some(lexeme) = self.iter.peek().copied() {
+                let rprec = self.top_rprec();
+                let lprec = self.prec_table[lexeme.token].0;
+                if rprec >= lprec {
+                    self.stack.push(lexeme);
+                    self.iter.next();
+                } else {
+                    self.pop_mode = true;
+                }
             } else {
-                return Some(self.stack.pop().unwrap());
+                return self.stack.pop();
             }
         }
     }

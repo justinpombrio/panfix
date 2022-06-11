@@ -1,8 +1,9 @@
-use panfix::{pattern, Grammar, GrammarError, Parser};
+use panfix::{pattern, Grammar, GrammarError, Parser, Source};
 
 #[track_caller]
 fn assert_parse(parser: &Parser, sort: &str, src: &str, expected: &str) {
-    let tree = parser.parse("testcase", src, sort).unwrap();
+    let source = Source::new("testcase", src.to_owned());
+    let tree = parser.parse(&source, sort).unwrap();
     assert_eq!(format!("{}", tree.visitor()), expected);
 }
 
