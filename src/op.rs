@@ -1,13 +1,8 @@
-use crate::Token;
+use crate::{Token, TOKEN_BLANK, TOKEN_JUXTAPOSE};
 use std::fmt;
 
 /// Precedence level. Smaller is tighter / wins.
 pub type Prec = u16;
-/// A category of thing to parse. Every operator is part of a sort. For example, common sorts might
-/// include "expression", "statement", "type", and "argument_list".  (If you've heard of
-/// non-terminals, a sort is essentially a non-terminal.)
-pub type Sort = String;
-pub(crate) type SortId = usize;
 
 /// Whether the operator takes an argument on the left, on the right, both, or neither. And
 /// furthermore, if the operator takes an argument on both sides, whether
@@ -49,10 +44,8 @@ pub(crate) struct Op {
     pub(crate) assoc: Assoc,
     pub(crate) prec: Prec,
     pub(crate) first_token: Token,
-    pub(crate) followers: Vec<(SortId, Token)>,
     pub(crate) left_prec: Option<Prec>,
     pub(crate) right_prec: Option<Prec>,
-    pub(crate) arity: usize,
 }
 
 impl Op {
@@ -62,23 +55,22 @@ impl Op {
         assoc: Assoc,
         prec: Prec,
         first_token: Token,
-        followers: Vec<(SortId, Token)>,
     ) -> Op {
         assert_ne!(name, "$Blank");
         assert_ne!(name, "$Juxtapose");
-        Op::new_unchecked(name, fixity, assoc, prec, first_token, followers)
+        Op::new_unchecked(name, fixity, assoc, prec, first_token)
     }
 
     pub(crate) fn new_atom(name: &str, token: Token) -> Op {
-        Op::new_unchecked(name, Fixity::Nilfix, Assoc::Left, 0, token, vec![])
+        Op::new_unchecked(name, Fixity::Nilfix, Assoc::Left, 0, token)
     }
 
-    pub(crate) fn new_blank(token: Token) -> Op {
-        Op::new_unchecked("$Blank", Fixity::Nilfix, Assoc::Left, 0, token, vec![])
+    pub(crate) fn new_blank() -> Op {
+        Op::new_unchecked("$Blank", Fixity::Nilfix, Assoc::Left, 0, TOKEN_BLANK)
     }
 
-    pub(crate) fn new_juxtapose(assoc: Assoc, prec: Prec, token: Token) -> Op {
-        Op::new_unchecked("$Juxtapose", Fixity::Infix, assoc, prec, token, vec![])
+    pub(crate) fn new_juxtapose(assoc: Assoc, prec: Prec) -> Op {
+        Op::new_unchecked("$Juxtapose", Fixity::Infix, assoc, prec, TOKEN_JUXTAPOSE)
     }
 
     fn new_unchecked(
@@ -87,7 +79,6 @@ impl Op {
         assoc: Assoc,
         prec: Prec,
         first_token: Token,
-        followers: Vec<(SortId, Token)>,
     ) -> Op {
         use Assoc::{Left, Right};
         use Fixity::{Infix, Nilfix, Prefix, Suffix};
@@ -101,21 +92,14 @@ impl Op {
             (Infix, Left) => (Some(prec), Some(prec - 1)),
             (Infix, Right) => (Some(prec - 1), Some(prec)),
         };
-        let arity = match fixity {
-            Nilfix => followers.len(),
-            Prefix | Suffix => followers.len() + 1,
-            Infix => followers.len() + 2,
-        };
         Op {
             name: name.to_owned(),
             fixity,
             assoc,
             prec,
             first_token,
-            followers,
             left_prec,
             right_prec,
-            arity,
         }
     }
 }

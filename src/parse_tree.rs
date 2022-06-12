@@ -1,6 +1,6 @@
 use crate::op::{Fixity, Op, Prec};
 use crate::parse_error::ParseError;
-use crate::rpn_visitor::{RpnNode, RpnStack, RpnVisitor, RpnVisitorIter};
+use crate::tree_visitor::{Arity, Forest, Visitor as RpnVisitor};
 use crate::{Source, Span};
 use std::fmt;
 
@@ -11,22 +11,22 @@ use std::fmt;
 #[derive(Debug)]
 pub struct ParseTree<'s, 'g> {
     source: &'s Source,
-    stack: RpnStack<Node<'s, 'g>>,
+    stack: Forest<Node<'s, 'g>>,
 }
 
 impl<'s, 'g> ParseTree<'s, 'g> {
-    pub(crate) fn new(source: &'s Source, stack: RpnStack<Node<'s, 'g>>) -> ParseTree<'s, 'g> {
+    pub(crate) fn new(source: &'s Source, stack: Forest<Node<'s, 'g>>) -> ParseTree<'s, 'g> {
         ParseTree { source, stack }
     }
 
     /// Obtains a "visitor" that can walk the source tree.
     ///
     /// (This is not the visitor pattern: you're not supplying a function to run on each node.
-    /// Instead you can inspect the nodes and do whatever you want yourself.)
+    /// Instead you can navigate the nodes and do whatever you want yourself.)
     pub fn visitor<'t>(&'t self) -> Visitor<'s, 'g, 't> {
         Visitor {
             // Parser guarantees there's at least one node
-            node: self.stack.last_group().unwrap(),
+            node: self.stack.tree(0).unwrap(),
         }
     }
 
@@ -46,7 +46,7 @@ impl<'s, 'g> ParseTree<'s, 'g> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct Node<'s, 'g> {
     pub(crate) op: &'g Op,
     pub(crate) op_span: Span,
@@ -54,9 +54,9 @@ pub(crate) struct Node<'s, 'g> {
     pub(crate) span: Span,
 }
 
-impl<'s, 'g> RpnNode for Node<'s, 'g> {
+impl<'s, 'g> Arity for Node<'s, 'g> {
     fn arity(&self) -> usize {
-        self.op.arity
+        unimplemented!()
     }
 }
 
@@ -70,43 +70,59 @@ pub struct Visitor<'s, 'g, 't> {
 impl<'s, 'g, 't> Visitor<'s, 'g, 't> {
     /// The name of the operator at this node.
     pub fn op(&self) -> &'g str {
-        &self.node.op.name
+        &self.node.item().op.name
+    }
+
+    /// How many children this node has
+    pub fn num_children(&self) -> usize {
+        unimplemented!()
     }
 
     /// The span that includes only the initial lexeme of this operator.
     pub fn op_span(&self) -> Span {
-        self.node.op_span
+        self.node.item().op_span
     }
 
     /// The span that includes this operator and all of its arguments.
     pub fn span(&self) -> Span {
-        self.node.span
+        self.node.item().span
     }
 
     /// The source text covered by `span()`.
     pub fn source(&self) -> &'s str {
-        self.node.slice
+        self.node.item().slice
     }
 
     /// The fixity of this node's operator.
     pub fn fixity(&self) -> Fixity {
-        self.node.op.fixity
+        self.node.item().op.fixity
     }
 
     /// The precedence of this node's operator.
     pub fn prec(&self) -> Prec {
-        self.node.op.prec
+        self.node.item().op.prec
     }
 
-    /// The number of children this node has.
-    pub fn num_children(&self) -> usize {
-        self.node.op.arity
+    /// Get this node's `n`th child.
+    ///
+    /// # Panics if there aren't at least `n` children.
+    pub fn child(&self, n: usize) -> Visitor<'s, 'g, 't> {
+        Visitor {
+            node: self.node.child(n).unwrap_or_else(|| {
+                panic!(
+                    "Visitor: child index '{}' out of bound for op '{}'",
+                    n,
+                    self.node.item().op.name
+                )
+            }),
+        }
     }
 
     /// Iterate over this node's children.
     pub fn children(&self) -> impl Iterator<Item = Visitor<'s, 'g, 't>> {
         VisitorIter {
-            node: self.node.children(),
+            node: self.node,
+            index: 0,
         }
     }
 
@@ -118,17 +134,19 @@ impl<'s, 'g, 't> Visitor<'s, 'g, 't> {
     /// not dynamic: you can tell how many there will be from the grammar. Even if a child is
     /// "missing", it will actually be represented as $blank.
     pub fn expect_children<const N: usize>(&self) -> [Visitor<'s, 'g, 't>; N] {
-        let mut children = self.children();
         let mut array = [*self; N]; // dummy value
-        for i in 0..N {
-            array[i] = children
-                .next()
-                .expect("Visitor::expect_children -- there are not as many children as declared");
+        if N != self.num_children() {
+            panic!(
+                "Visitor::expect_children -- expected {} children but found {}",
+                N,
+                self.num_children()
+            );
         }
-        assert!(
-            children.next().is_none(),
-            "Visitor::expect_children -- there are more children than were declared"
-        );
+        for i in 0..N {
+            array[i] = Visitor {
+                node: self.node.child(i).unwrap(),
+            };
+        }
         array
     }
 }
@@ -146,8 +164,8 @@ impl<'s, 'g, 't> fmt::Display for Visitor<'s, 'g, 't> {
             } else {
                 write!(f, "{}", self.op())?;
             }
-            for child in self.children() {
-                write!(f, " {}", child)?;
+            for i in 0..self.num_children() {
+                write!(f, " {}", self.child(i))?;
             }
             write!(f, ")")
         }
@@ -156,14 +174,22 @@ impl<'s, 'g, 't> fmt::Display for Visitor<'s, 'g, 't> {
 
 #[derive(Debug)]
 struct VisitorIter<'s, 'g, 't> {
-    node: RpnVisitorIter<'t, Node<'s, 'g>>,
+    node: RpnVisitor<'t, Node<'s, 'g>>,
+    index: usize,
 }
 
 impl<'s, 'g, 't> Iterator for VisitorIter<'s, 'g, 't> {
     type Item = Visitor<'s, 'g, 't>;
 
     fn next(&mut self) -> Option<Visitor<'s, 'g, 't>> {
-        let node = self.node.next()?;
-        Some(Visitor { node })
+        let num_children = unimplemented!();
+        if self.index < num_children {
+            self.index += 1;
+            Some(Visitor {
+                node: self.node.child(self.index).unwrap(),
+            })
+        } else {
+            None
+        }
     }
 }

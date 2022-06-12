@@ -10,10 +10,10 @@ fn make_parser() -> Result<Parser, GrammarError> {
     grammar.sort("Expr");
     grammar.regex("id", "[a-zA-Z]+")?;
     grammar.regex("num", "[+-]?[0-9]+")?;
-    grammar.op("block", pattern!("{" Expr "}"))?;
-    grammar.op("group", pattern!("(" Expr ")"))?;
+    grammar.op("block", pattern!("{" "}"))?;
+    grammar.op("group", pattern!("(" ")"))?;
     grammar.lgroup();
-    grammar.op("call", pattern!(_ "(" Expr ")"))?;
+    grammar.op("call", pattern!(_ "(" ")"))?;
     grammar.lgroup();
     grammar.op("plus", pattern!(_ "+" _))?;
     grammar.lgroup();
@@ -21,16 +21,13 @@ fn make_parser() -> Result<Parser, GrammarError> {
     grammar.op("gt", pattern!(_ ">" _))?;
     grammar.op("eq", pattern!(_ "==" _))?;
     grammar.rgroup();
-    grammar.op("if", pattern!("if" Expr "{" Expr "}"))?;
+    grammar.op("if", pattern!("if" "{" "}"))?;
     grammar.op("else", pattern!(_ "else" _))?;
     grammar.lgroup();
     grammar.op("args", pattern!(_ "," _))?;
     grammar.lgroup();
-    grammar.op("let", pattern!("let" Id "=" Expr "in" _))?;
-    grammar.op(
-        "func",
-        pattern!("fn" Id "(" Expr ")" Empty "{" Expr "}" Empty ";" _),
-    )?;
+    grammar.op("let", pattern!("let" "=" "in" _))?;
+    grammar.op("func", pattern!("fn" "(" ")" "{" "}" ";" _))?;
     grammar.finish()
 }
 

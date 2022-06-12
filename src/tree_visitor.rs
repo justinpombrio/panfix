@@ -103,12 +103,12 @@ impl<I: Arity> Forest<I> {
         self.roots.len()
     }
 
-    /// Get the `index`th tree.
-    pub fn tree(&self, index: usize) -> Option<Visitor<I>> {
-        if index <= self.roots.len() {
+    /// Get the `n`th tree.
+    pub fn tree(&self, n: usize) -> Option<Visitor<I>> {
+        if n <= self.roots.len() {
             Some(Visitor {
                 forest: &self,
-                node: self.roots[index],
+                node: self.roots[n],
             })
         } else {
             None

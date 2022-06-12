@@ -6,90 +6,23 @@
 // TODO: temporary
 #![allow(unused)]
 
-//! # Panfix
-//!
-//! Panfix is a new approach to parsing, using a modified version of [operator precedence
-//! grammars](https://en.wikipedia.org/wiki/Operator-precedence_grammar):
-//!
-//! - It is not a CFG parser nor a PEG parser, it's something new.
-//! - It runs in linear time. (O(N), to be precise, not O(NG) like PEG packrat parsing.)
-//! - It has *very* clear error cases both around constructing grammars and parsing.
-//! - It's quite simple to implement.
-//!
-//! The main question is how expressive it is. You'll find examples of things you might want to
-//! parse, and how to parse them, in the [Examples](#examples) section below. If you encounter
-//! something that you have difficulty parsing with this approach, please open an issue to let me
-//! know!
-//!
-//! ## Overview
-//!
-//!
-//!
-//! [FILL]
-//!
-//! ## Examples
-//!
-//! ### Unary vs. Binary Minus
-//!
-//! Two operators are allowed to start with the same token, as long as one of them takes a left
-//! argument and the other does not. This let's us parse both unary and binary minus:
-//!
-//! [TODO]
-//! ```
-//! use panfix::{Grammar, Visitor, pattern};
-//!
-//! fn to_sexpr(visitor: Visitor) -> String {
-//!     if visitor.num_children() == 0 {
-//!         visitor.source().to_string()
-//!     } else {
-//!         let mut sexpr = "(".to_string();
-//!         sexpr.push_str(visitor.op());
-//!         for child in visitor.children() {
-//!             sexpr.push_str(" ");
-//!             sexpr.push_str(&to_sexpr(child));
-//!         }
-//!         sexpr
-//!     }
-//! }
-//!
-//! let mut grammar = Grammar::new_with_unicode_whitespace().unwrap();
-//! ```
-//!
-//! ## Spec
-//!
-//! ## Independent Modules
-//!
-//! This crate has two modules used by the parser, that could be used indepdendently of parsing:
-//!
-//! - [`lexing`] is the lexer used by the parser.
-//! - [`rpn`] is used by the parser to store the parse tree with only a single allocation.
-
-mod blank_inserter;
 mod grammar;
-pub mod grammar2;
 mod lexer;
 mod op;
-mod op_resolver;
 mod parse_error;
 mod parse_tree;
-mod parser;
 mod resolver;
-mod rpn_visitor;
 mod shunter;
-mod simple_op_resolver;
-mod simple_shunter;
 mod source;
 mod tree_visitor;
 
 use std::fmt;
 
 pub use grammar::{Grammar, GrammarError, Pattern};
-pub use op::{Fixity, Prec, Sort};
+pub use op::{Fixity, Prec};
 pub use parse_error::ParseError;
 pub use parse_tree::{ParseTree, Visitor};
-pub use parser::Parser;
 pub use shunter::shunt;
-
 pub use source::Source;
 
 /// A category of lexeme, such as "INTEGER" or "VARIABLE" or "OPEN_PAREN". The special Token called
@@ -184,29 +117,6 @@ impl<'s> Lexeme<'s> {
     }
 }
 
-/// The lexer used internally by the parser. It's provided here in case you wish to use it
-/// independently.
-pub mod lexing {
-    pub use crate::lexer::{Lexer, LexerBuilder};
-}
-
-/// An separate utility for constructing a "tree" with only a single allocation. It's used
-/// internally by the parser, and provided here in case you wish to use it independently.
-pub mod rpn {
-    pub use crate::rpn_visitor::{RpnStack, RpnVisitor};
-}
-
-// TODO: docs
-pub mod blank_insertion {
-    pub use crate::blank_inserter::insert_blanks;
-}
-
-// TODO: docs
-pub mod shunting {
-    pub use crate::shunter::shunt;
-}
-
-// TODO: docs
 #[macro_export]
 macro_rules! pattern {
     (_ $token:literal $($followers:tt)*) => {
@@ -217,8 +127,8 @@ macro_rules! pattern {
         pattern!(@ N $token [ ] $($followers)*)
     };
 
-    (@ $l:ident $token:literal [ $($followers:tt)* ] $nt:ident $tok:literal $($rest:tt)*) => {
-        pattern!(@ $l $token [ $($followers)* (std::stringify!($nt), $tok), ] $($rest)*)
+    (@ $l:ident $token:literal [ $($followers:tt)* ] $tok:literal $($rest:tt)*) => {
+        pattern!(@ $l $token [ $($followers)* $tok, ] $($rest)*)
     };
 
     (@ Y $token:literal [ $($followers:tt)* ] _) => {
@@ -253,3 +163,63 @@ macro_rules! pattern {
         }
     };
 }
+
+/*
+//! # Panfix
+//!
+//! Panfix is a new approach to parsing, using a modified version of [operator precedence
+//! grammars](https://en.wikipedia.org/wiki/Operator-precedence_grammar):
+//!
+//! - It is not a CFG parser nor a PEG parser, it's something new.
+//! - It runs in linear time. (O(N), to be precise, not O(NG) like PEG packrat parsing.)
+//! - It has *very* clear error cases both around constructing grammars and parsing.
+//! - It's quite simple to implement.
+//!
+//! The main question is how expressive it is. You'll find examples of things you might want to
+//! parse, and how to parse them, in the [Examples](#examples) section below. If you encounter
+//! something that you have difficulty parsing with this approach, please open an issue to let me
+//! know!
+//!
+//! ## Overview
+//!
+//!
+//!
+//! [FILL]
+//!
+//! ## Examples
+//!
+//! ### Unary vs. Binary Minus
+//!
+//! Two operators are allowed to start with the same token, as long as one of them takes a left
+//! argument and the other does not. This let's us parse both unary and binary minus:
+//!
+//! [TODO]
+//! ```
+//! use panfix::{Grammar, Visitor, pattern};
+//!
+//! fn to_sexpr(visitor: Visitor) -> String {
+//!     if visitor.num_children() == 0 {
+//!         visitor.source().to_string()
+//!     } else {
+//!         let mut sexpr = "(".to_string();
+//!         sexpr.push_str(visitor.op());
+//!         for child in visitor.children() {
+//!             sexpr.push_str(" ");
+//!             sexpr.push_str(&to_sexpr(child));
+//!         }
+//!         sexpr
+//!     }
+//! }
+//!
+//! let mut grammar = Grammar::new_with_unicode_whitespace().unwrap();
+//! ```
+//!
+//! ## Spec
+//!
+//! ## Independent Modules
+//!
+//! This crate has two modules used by the parser, that could be used indepdendently of parsing:
+//!
+//! - [`lexing`] is the lexer used by the parser.
+//! - [`rpn`] is used by the parser to store the parse tree with only a single allocation.
+*/

@@ -1,21 +1,33 @@
+/// A Panfix grammar, that's ready to parse.
+#[derive(Debug, Clone)]
+pub struct Parser {
+    pub(crate) lexer: Lexer,
+
+    pub(crate) sort_tables: Vec<SortTable>,
+    pub(crate) sort_ids: HashMap<String, SortId>,
+    pub(crate) token_names: HashMap<Token, String>,
+}
+
+impl Parser {
+    /// Parse `source`. Runs in linear time.
+    pub fn parse<'s, 'g>(
+        &'g self,
+        source: &'s Source,
+    ) -> Result<ParseTree<'s, 'g>, ParseError<'s>> {
+        let lexeme_stream = self.lexer.lex(source.source());
+        ParseState::new(source, self, lexeme_stream).parse(sort)
+    }
+}
+
 use crate::lexer::Lexer;
-use crate::op::{Op, Prec, Sort, SortId};
+use crate::op::{Op, Prec};
 use crate::parse_error::ParseError;
 use crate::parse_tree::{Node, ParseTree};
-use crate::rpn_visitor::RpnStack;
+use crate::tree_visitor::Forest;
 use crate::{Lexeme, Source};
 use crate::{Position, Span, Token};
 use std::collections::HashMap;
 use std::iter::Peekable;
-
-/// A Panfix grammar, that's ready to parse.
-#[derive(Debug, Clone)]
-pub struct Parser {
-    pub(crate) sort_tables: Vec<SortTable>,
-    pub(crate) sort_ids: HashMap<String, SortId>,
-    pub(crate) lexer: Lexer,
-    pub(crate) token_names: HashMap<Token, String>,
-}
 
 #[derive(Debug, Clone)]
 pub(crate) struct SortTable {
@@ -45,7 +57,7 @@ struct ParseState<'s, 'g, I: Iterator<Item = Lexeme<'s>>> {
     parser: &'g Parser,
     lexemes: Peekable<I>,
     last_pos: Position,
-    output: RpnStack<Node<'s, 'g>>,
+    output: Forest<Node<'s, 'g>>,
 }
 
 impl<'s, 'g, I: Iterator<Item = Lexeme<'s>>> ParseState<'s, 'g, I> {
@@ -55,7 +67,7 @@ impl<'s, 'g, I: Iterator<Item = Lexeme<'s>>> ParseState<'s, 'g, I> {
             parser,
             lexemes: lexemes.peekable(),
             last_pos: Position::start(),
-            output: RpnStack::new(),
+            output: Forest::new(),
         }
     }
 

@@ -14,11 +14,11 @@ fn test_pattern_macro() {
     );
 
     assert_eq!(
-        pattern!("(" Expr ")"),
+        pattern!("(" ")"),
         Pattern {
             fixity: Nilfix,
             first_token: "(",
-            followers: vec![("Expr", ")")],
+            followers: vec![")"],
         }
     );
 
@@ -32,11 +32,11 @@ fn test_pattern_macro() {
     );
 
     assert_eq!(
-        pattern!("if" Expr "then" Stmt "else" _),
+        pattern!("if" "then" "else" _),
         Pattern {
             fixity: Prefix,
             first_token: "if",
-            followers: vec![("Expr", "then"), ("Stmt", "else")],
+            followers: vec!["then", "else"],
         }
     );
 
@@ -50,11 +50,11 @@ fn test_pattern_macro() {
     );
 
     assert_eq!(
-        pattern!(_ "[" Expr "]"),
+        pattern!(_ "[" "]"),
         Pattern {
             fixity: Suffix,
             first_token: "[",
-            followers: vec![("Expr", "]")],
+            followers: vec!["]"],
         }
     );
 
@@ -68,11 +68,11 @@ fn test_pattern_macro() {
     );
 
     assert_eq!(
-        pattern!(_ "?" Expr ":" _),
+        pattern!(_ "?" ":" _),
         Pattern {
             fixity: Infix,
             first_token: "?",
-            followers: vec![("Expr", ":")],
+            followers: vec![":"],
         }
     );
 }
