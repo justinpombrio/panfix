@@ -179,7 +179,7 @@ impl Grammar {
         let token = self.add_string_token(&pattern.first_token)?;
         let op = Op::new(name, pattern.fixity, assoc, prec, token);
         let (lprec, rprec) = (op.left_prec, op.right_prec);
-        let second_prec = if pattern.followers.len() == 0 {
+        let second_prec = if pattern.followers.is_empty() {
             rprec
         } else {
             Some(Prec::MAX)

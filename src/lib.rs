@@ -5,6 +5,7 @@
 
 // TODO: temporary
 #![allow(unused)]
+#![allow(clippy::diverging_sub_expression)]
 
 mod grammar;
 mod lexer;
@@ -38,9 +39,8 @@ pub const TOKEN_JUXTAPOSE: Token = 2;
 
 /// One "word" in the stream returned by the lexer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Lexeme<'s> {
+pub struct Lexeme {
     pub token: Token,
-    pub lexeme: &'s str,
     pub span: Span,
 }
 
@@ -107,11 +107,10 @@ impl Position {
     }
 }
 
-impl<'s> Lexeme<'s> {
-    pub fn new(token: Token, lexeme: &'s str, start: Position, end: Position) -> Lexeme<'s> {
+impl Lexeme {
+    pub fn new(token: Token, start: Position, end: Position) -> Lexeme {
         Lexeme {
             token,
-            lexeme,
             span: Span { start, end },
         }
     }
@@ -128,13 +127,13 @@ macro_rules! pattern {
     };
 
     (@ $l:ident $token:literal [ $($followers:tt)* ] $tok:literal $($rest:tt)*) => {
-        pattern!(@ $l $token [ $($followers)* $tok, ] $($rest)*)
+        pattern!(@ $l $token [ $($followers)* $tok.to_string(), ] $($rest)*)
     };
 
     (@ Y $token:literal [ $($followers:tt)* ] _) => {
         $crate::Pattern {
             fixity: $crate::Fixity::Infix,
-            first_token: $token,
+            first_token: $token.to_string(),
             followers: vec![$($followers)*],
         }
     };
@@ -142,7 +141,7 @@ macro_rules! pattern {
     (@ Y $token:literal [ $($followers:tt)* ]) => {
         $crate::Pattern {
             fixity: $crate::Fixity::Suffix,
-            first_token: $token,
+            first_token: $token.to_string(),
             followers: vec![$($followers)*],
         }
     };
@@ -150,7 +149,7 @@ macro_rules! pattern {
     (@ N $token:literal [ $($followers:tt)* ] _) => {
         $crate::Pattern {
             fixity: $crate::Fixity::Prefix,
-            first_token: $token,
+            first_token: $token.to_string(),
             followers: vec![$($followers)*],
         }
     };
@@ -158,10 +157,15 @@ macro_rules! pattern {
     (@ N $token:literal [ $($followers:tt)* ]) => {
         $crate::Pattern {
             fixity: $crate::Fixity::Nilfix,
-            first_token: $token,
+            first_token: $token.to_string(),
             followers: vec![$($followers)*],
         }
     };
+}
+
+// TODO: private?
+pub mod lexing {
+    pub use super::lexer::*;
 }
 
 /*

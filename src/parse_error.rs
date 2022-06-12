@@ -7,7 +7,7 @@ use thiserror::Error;
 #[derive(Debug)]
 pub struct ParseError<'s> {
     source: &'s Source,
-    cause: ParseErrorCause<'s>,
+    cause: ParseErrorCause,
     span: Option<Span>,
 }
 
@@ -28,10 +28,10 @@ impl<'s> ParseError<'s> {
         }
     }
 
-    pub(crate) fn unexpected_lexeme(source: &'s Source, lexeme: Lexeme<'s>) -> ParseError<'s> {
+    pub(crate) fn unexpected_lexeme(source: &'s Source, lexeme: Lexeme) -> ParseError<'s> {
         ParseError {
             source,
-            cause: ParseErrorCause::UnexpectedLexeme(lexeme),
+            cause: ParseErrorCause::UnexpectedLexeme(source.substr(lexeme.span).to_owned()),
             span: Some(lexeme.span),
         }
     }
@@ -40,14 +40,14 @@ impl<'s> ParseError<'s> {
         source: &'s Source,
         op_name: &str,
         expected: &str,
-        found: Lexeme<'s>,
+        found: Lexeme,
     ) -> ParseError<'s> {
         ParseError {
             source,
             cause: ParseErrorCause::MissingSep {
                 op_name: op_name.to_owned(),
                 expected: expected.to_owned(),
-                found,
+                found: source.substr(found.span).to_owned(),
             },
             span: Some(found.span),
         }
@@ -118,17 +118,21 @@ impl<'s> fmt::Display for ParseError<'s> {
 impl<'s> error::Error for ParseError<'s> {}
 
 #[derive(Debug, Error)]
-enum ParseErrorCause<'s> {
+enum ParseErrorCause {
     #[error("{0}")]
     Custom(String),
     #[error("Unexpected token '{0}'.")]
-    UnexpectedLexeme(Lexeme<'s>),
-    #[error("While parsing '{}', expected '{}' but found '{}'.",
-            op_name, expected, found.lexeme)]
+    UnexpectedLexeme(String),
+    #[error(
+        "While parsing '{}', expected '{}' but found '{}'.",
+        op_name,
+        expected,
+        found
+    )]
     MissingSep {
         op_name: String,
         expected: String,
-        found: Lexeme<'s>,
+        found: String,
     },
     #[error(
         "While parsing '{}', expected '{}' but found end of file.",

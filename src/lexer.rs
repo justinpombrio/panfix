@@ -156,7 +156,7 @@ pub struct Lexer {
 impl Lexer {
     /// Split `source` into a stream of lexemes. It is frequently useful to wrap this in
     /// [`iter::Peekable`](https://doc.rust-lang.org/stable/std/iter/struct.Peekable.html).
-    pub fn lex<'l, 's: 'l>(&'l self, source: &'s str) -> impl Iterator<Item = Lexeme<'s>> + 'l {
+    pub fn lex<'l, 's: 'l>(&'l self, source: &'s str) -> impl Iterator<Item = Lexeme> + 'l {
         LexemeIter::new(self, source)
     }
 
@@ -193,7 +193,7 @@ impl<'l, 's> LexemeIter<'l, 's> {
         }
     }
 
-    fn consume(&mut self, len: usize) -> (&'s str, Span) {
+    fn consume(&mut self, len: usize) -> Span {
         let start = self.position;
         for ch in self.source[..len].chars() {
             self.offset += ch.len_utf8();
@@ -201,16 +201,15 @@ impl<'l, 's> LexemeIter<'l, 's> {
         }
         let end = self.position;
 
-        let lexeme = &self.source[..len];
         self.source = &self.source[len..];
-        (lexeme, Span { start, end })
+        Span { start, end }
     }
 }
 
 impl<'l, 's> Iterator for LexemeIter<'l, 's> {
-    type Item = Lexeme<'s>;
+    type Item = Lexeme;
 
-    fn next(&mut self) -> Option<Lexeme<'s>> {
+    fn next(&mut self) -> Option<Lexeme> {
         // Consume whitespace
         if let Some(span) = self.lexer.whitespace.find(self.source) {
             self.consume(span.end());
@@ -246,12 +245,8 @@ impl<'l, 's> Iterator for LexemeIter<'l, 's> {
 
         // If there was a best match, consume and return it.
         if let Some((token, len, _)) = best_match {
-            let (lexeme, span) = self.consume(len);
-            return Some(Lexeme {
-                token,
-                lexeme,
-                span,
-            });
+            let span = self.consume(len);
+            return Some(Lexeme { token, span });
         }
 
         // Otherwise, nothing matched. Lex error! By definition we can't lex, but let's say the
@@ -262,26 +257,26 @@ impl<'l, 's> Iterator for LexemeIter<'l, 's> {
         } else {
             self.source.len()
         };
-        let (lexeme, span) = self.consume(len);
+        let span = self.consume(len);
         Some(Lexeme {
             token: TOKEN_ERROR,
-            lexeme,
             span,
         })
     }
 }
 
-impl<'s> fmt::Display for Lexeme<'s> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.lexeme)
-    }
+#[cfg(test)]
+fn get_span(src: &str, span: Span) -> &str {
+    // Assuming that no lexeme spans multiple lines!
+    let line = &src.lines().nth(span.start.line as usize).unwrap();
+    &line[span.start.col as usize..span.end.col as usize]
 }
 
 #[track_caller]
 #[cfg(test)]
 fn assert_lexeme<'a>(
     src: &str,
-    stream: &mut impl Iterator<Item = Lexeme<'a>>,
+    stream: &mut impl Iterator<Item = Lexeme>,
     expected: &str,
     token: Token,
 ) {
@@ -291,9 +286,10 @@ fn assert_lexeme<'a>(
     assert_eq!(lex.token, token);
     let start = lex.span.start;
     let end = lex.span.end;
+    let lexeme = get_span(src, lex.span);
     let actual = format!(
         "{}:{}({})-{}:{}({}) {}",
-        start.line, start.col, start.utf8_col, end.line, end.col, end.utf8_col, lex.lexeme
+        start.line, start.col, start.utf8_col, end.line, end.col, end.utf8_col, lexeme
     );
     assert_eq!(actual, expected);
 }
@@ -368,7 +364,12 @@ fn test_lexing_horrible_things() {
     builder.string("truest").unwrap();
     let lexer = builder.finish().unwrap();
 
-    let lex = |source| lexer.lex(source).map(|lex| lex.lexeme).collect::<Vec<_>>();
+    let lex = |source| {
+        lexer
+            .lex(source)
+            .map(|lex| get_span(source, lex.span))
+            .collect::<Vec<_>>()
+    };
     assert_eq!(lex("HELLO"), vec!["HELLO"]);
     assert_eq!(lex("Hello"), vec!["Hello"]);
     assert_eq!(lex("hello"), vec!["hello"]);

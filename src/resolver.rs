@@ -19,9 +19,9 @@ pub fn resolve<'a, 's: 'a, I>(
     prefixy_tokens: &'a Vec<Option<(OpToken, bool)>>,
     suffixy_tokens: &'a Vec<Option<(OpToken, bool)>>,
     iter: I,
-) -> impl Iterator<Item = Lexeme<'s>> + 'a
+) -> impl Iterator<Item = Lexeme> + 'a
 where
-    I: Iterator<Item = Lexeme<'s>> + 'a,
+    I: Iterator<Item = Lexeme> + 'a,
 {
     Resolver {
         last_pos: Position::start(),
@@ -32,9 +32,9 @@ where
     }
 }
 
-struct Resolver<'a, 's, I>
+struct Resolver<'a, I>
 where
-    I: Iterator<Item = Lexeme<'s>>,
+    I: Iterator<Item = Lexeme>,
 {
     last_pos: Position,
     expr_mode: bool,
@@ -43,28 +43,29 @@ where
     iter: iter::Peekable<I>,
 }
 
-impl<'a, 's, I> Resolver<'a, 's, I>
+impl<'a, I> Resolver<'a, I>
 where
-    I: Iterator<Item = Lexeme<'s>>,
+    I: Iterator<Item = Lexeme>,
 {
-    fn insert_fake_token(&self, token: Token) -> Lexeme<'s> {
-        Lexeme::new(token, "", self.last_pos, self.last_pos)
+    fn insert_fake_token(&self, token: Token) -> Lexeme {
+        Lexeme::new(token, self.last_pos, self.last_pos)
     }
 
-    fn consume_lexeme(&mut self, token: Token) -> Lexeme<'s> {
+    fn consume_lexeme(&mut self, token: Token) -> Lexeme {
         let lexeme = self.iter.next().unwrap();
         self.last_pos = lexeme.span.end;
         Lexeme { token, ..lexeme }
     }
 }
 
-impl<'a, 's, I> Iterator for Resolver<'a, 's, I>
+impl<'a, I> Iterator for Resolver<'a, I>
 where
-    I: Iterator<Item = Lexeme<'s>>,
+    I: Iterator<Item = Lexeme>,
 {
-    type Item = Lexeme<'s>;
+    type Item = Lexeme;
 
-    fn next(&mut self) -> Option<Lexeme<'s>> {
+    #[allow(clippy::collapsible_else_if)]
+    fn next(&mut self) -> Option<Lexeme> {
         let lexeme = match self.iter.peek() {
             Some(lexeme) => lexeme,
             None if self.expr_mode => {
@@ -130,7 +131,7 @@ fn test_resolver() {
     const OP_TERNARY: Token = 11;
     const OP_COLON: Token = 12;
 
-    fn lex<'s>(src: &'s str) -> impl Iterator<Item = Lexeme<'s>> {
+    fn lex(src: &str) -> impl Iterator<Item = Lexeme> {
         let mut lexemes = vec![];
         let mut pos = Position::start();
         for i in 0..src.len() {
@@ -153,7 +154,7 @@ fn test_resolver() {
             let start_pos = pos;
             pos = pos.advance_by_char(ch);
             let end_pos = pos;
-            lexemes.push(Lexeme::new(token, &src[i..i + 1], start_pos, end_pos));
+            lexemes.push(Lexeme::new(token, start_pos, end_pos));
         }
         lexemes.into_iter()
     }
@@ -161,7 +162,7 @@ fn test_resolver() {
     #[track_caller]
     fn assert_lexeme<'s>(
         src: &'s str,
-        stream: &mut impl Iterator<Item = Lexeme<'s>>,
+        stream: &mut impl Iterator<Item = Lexeme>,
         expected: &str,
         token: Token,
     ) {

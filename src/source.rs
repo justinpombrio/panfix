@@ -83,7 +83,7 @@ impl Source {
         let line = &self.source[start..end];
         if line.ends_with("\r\n") {
             end -= 2;
-        } else if line.ends_with("\n") {
+        } else if line.ends_with('\n') {
             end -= 1;
         }
         (start, end)

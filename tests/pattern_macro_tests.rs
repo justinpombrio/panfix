@@ -8,7 +8,7 @@ fn test_pattern_macro() {
         pattern!("null"),
         Pattern {
             fixity: Nilfix,
-            first_token: "null",
+            first_token: "null".to_string(),
             followers: vec![],
         }
     );
@@ -17,8 +17,8 @@ fn test_pattern_macro() {
         pattern!("(" ")"),
         Pattern {
             fixity: Nilfix,
-            first_token: "(",
-            followers: vec![")"],
+            first_token: "(".to_string(),
+            followers: vec![")".to_string()],
         }
     );
 
@@ -26,7 +26,7 @@ fn test_pattern_macro() {
         pattern!("-" _),
         Pattern {
             fixity: Prefix,
-            first_token: "-",
+            first_token: "-".to_string(),
             followers: vec![],
         }
     );
@@ -35,8 +35,8 @@ fn test_pattern_macro() {
         pattern!("if" "then" "else" _),
         Pattern {
             fixity: Prefix,
-            first_token: "if",
-            followers: vec!["then", "else"],
+            first_token: "if".to_string(),
+            followers: vec!["then".to_string(), "else".to_string()],
         }
     );
 
@@ -44,7 +44,7 @@ fn test_pattern_macro() {
         pattern!(_ "++"),
         Pattern {
             fixity: Suffix,
-            first_token: "++",
+            first_token: "++".to_string(),
             followers: vec![],
         }
     );
@@ -53,8 +53,8 @@ fn test_pattern_macro() {
         pattern!(_ "[" "]"),
         Pattern {
             fixity: Suffix,
-            first_token: "[",
-            followers: vec!["]"],
+            first_token: "[".to_string(),
+            followers: vec!["]".to_string()],
         }
     );
 
@@ -62,7 +62,7 @@ fn test_pattern_macro() {
         pattern!(_ "+" _),
         Pattern {
             fixity: Infix,
-            first_token: "+",
+            first_token: "+".to_string(),
             followers: vec![],
         }
     );
@@ -71,8 +71,8 @@ fn test_pattern_macro() {
         pattern!(_ "?" ":" _),
         Pattern {
             fixity: Infix,
-            first_token: "?",
-            followers: vec![":"],
+            first_token: "?".to_string(),
+            followers: vec![":".to_string()],
         }
     );
 }

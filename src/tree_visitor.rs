@@ -93,7 +93,7 @@ impl<I: Arity> Forest<I> {
         if arity > 0 {
             let mut tail = self.roots.split_off(self.roots.len() - arity);
             node.first_child_ptr = self.nodes.len();
-            self.nodes.extend_from_slice(&mut tail);
+            self.nodes.extend_from_slice(&tail);
         }
         self.roots.push(node);
     }
@@ -107,7 +107,7 @@ impl<I: Arity> Forest<I> {
     pub fn tree(&self, n: usize) -> Option<Visitor<I>> {
         if n <= self.roots.len() {
             Some(Visitor {
-                forest: &self,
+                forest: self,
                 node: self.roots[n],
             })
         } else {

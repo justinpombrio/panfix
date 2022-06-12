@@ -142,8 +142,8 @@ impl<'s, 'g, 't> Visitor<'s, 'g, 't> {
                 self.num_children()
             );
         }
-        for i in 0..N {
-            array[i] = Visitor {
+        for (i, child) in array.iter_mut().enumerate() {
+            *child = Visitor {
                 node: self.node.child(i).unwrap(),
             };
         }

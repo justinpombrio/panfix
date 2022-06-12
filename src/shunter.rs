@@ -1,4 +1,4 @@
-use crate::{Lexeme, Prec};
+use crate::{Col, Lexeme, Prec};
 use std::iter;
 
 /// Convert a token stream into reverse polish notation. For example, `1 * 2 + 3 * 4` would become
@@ -9,9 +9,9 @@ use std::iter;
 pub fn shunt<'a, 's: 'a, I>(
     prec_table: &'a Vec<(Prec, Prec)>,
     iter: I,
-) -> impl Iterator<Item = Lexeme<'s>> + 'a
+) -> impl Iterator<Item = Lexeme> + 'a
 where
-    I: Iterator<Item = Lexeme<'s>> + 'a,
+    I: Iterator<Item = Lexeme> + 'a,
 {
     Shunter {
         prec_table,
@@ -21,17 +21,17 @@ where
     }
 }
 
-struct Shunter<'a, 's, I>
+struct Shunter<'a, I>
 where
-    I: Iterator<Item = Lexeme<'s>>,
+    I: Iterator<Item = Lexeme>,
 {
     prec_table: &'a Vec<(Prec, Prec)>,
-    stack: Vec<Lexeme<'s>>,
+    stack: Vec<Lexeme>,
     iter: iter::Peekable<I>,
     pop_mode: bool,
 }
 
-impl<'a, 's, I: Iterator<Item = Lexeme<'s>>> Shunter<'a, 's, I> {
+impl<'a, I: Iterator<Item = Lexeme>> Shunter<'a, I> {
     fn top_rprec(&self) -> Prec {
         self.stack
             .last()
@@ -40,10 +40,10 @@ impl<'a, 's, I: Iterator<Item = Lexeme<'s>>> Shunter<'a, 's, I> {
     }
 }
 
-impl<'a, 's, I: Iterator<Item = Lexeme<'s>>> Iterator for Shunter<'a, 's, I> {
-    type Item = Lexeme<'s>;
+impl<'a, I: Iterator<Item = Lexeme>> Iterator for Shunter<'a, I> {
+    type Item = Lexeme;
 
-    fn next(&mut self) -> Option<Lexeme<'s>> {
+    fn next(&mut self) -> Option<Lexeme> {
         loop {
             if self.pop_mode {
                 let lexeme = self.stack.pop().unwrap();
@@ -83,7 +83,7 @@ fn test_shunting() {
     const TOKEN_CLOSE: Token = 10;
     const NUM_TOKENS: usize = 11;
 
-    fn lex<'s>(src: &'s str) -> impl Iterator<Item = Lexeme<'s>> {
+    fn lex(src: &str) -> impl Iterator<Item = Lexeme> {
         let mut lexemes = vec![];
         for i in 0..src.len() {
             let ch = src[i..i + 1].chars().next().unwrap();
@@ -103,15 +103,25 @@ fn test_shunting() {
                 ')' => TOKEN_CLOSE,
                 _ => TOKEN_ERROR,
             };
-            let pos = Position::start(); // we don't care about positions in this test
-            lexemes.push(Lexeme::new(token, &src[i..i + 1], pos, pos));
+            let start = Position {
+                line: 0,
+                col: i as Col,
+                utf8_col: i as Col,
+            };
+            let end = Position {
+                line: 0,
+                col: (i + 1) as Col,
+                utf8_col: (i + 1) as Col,
+            };
+            lexemes.push(Lexeme::new(token, start, end));
         }
         lexemes.into_iter()
     }
 
-    fn show_stream<'s>(stream: &mut impl Iterator<Item = Lexeme<'s>>) -> String {
+    fn show_stream<'s>(src: &str, stream: &mut impl Iterator<Item = Lexeme>) -> String {
         stream
-            .map(|lex| if lex.lexeme == "" { "_" } else { lex.lexeme })
+            .map(|lex| &src[lex.span.start.col as usize..lex.span.end.col as usize])
+            .map(|lex| if lex == "" { "_" } else { lex })
             .collect::<Vec<_>>()
             .join(" ")
     }
@@ -134,25 +144,25 @@ fn test_shunting() {
 
     let src = "_";
     let lexemes = &mut shunt(&prec_table, lex(src));
-    assert_eq!(show_stream(lexemes), "_");
+    assert_eq!(show_stream(src, lexemes), "_");
 
     let src = "_+_";
     let lexemes = &mut shunt(&prec_table, lex(src));
-    assert_eq!(show_stream(lexemes), "_ _ +");
+    assert_eq!(show_stream(src, lexemes), "_ _ +");
 
     let src = "1-2+3*4*5!-~6";
     let lexemes = &mut shunt(&prec_table, lex(src));
-    assert_eq!(show_stream(lexemes), "1 2 - 3 4 5 ! * * + 6 ~ -");
+    assert_eq!(show_stream(src, lexemes), "1 2 - 3 4 5 ! * * + 6 ~ -");
 
     let src = "(~_)";
     let lexemes = &mut shunt(&prec_table, lex(src));
-    assert_eq!(show_stream(lexemes), "_ ~ ) (");
+    assert_eq!(show_stream(src, lexemes), "_ ~ ) (");
 
     let src = "%";
     let lexemes = &mut shunt(&prec_table, lex(src));
-    assert_eq!(show_stream(lexemes), "%");
+    assert_eq!(show_stream(src, lexemes), "%");
 
     let src = "1 + %";
     let lexemes = &mut shunt(&prec_table, lex(src));
-    assert_eq!(show_stream(lexemes), "1 % +");
+    assert_eq!(show_stream(src, lexemes), "1 % +");
 }
