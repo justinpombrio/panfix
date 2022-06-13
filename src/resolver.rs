@@ -1,7 +1,5 @@
-use crate::{Lexeme, Position, Token, TOKEN_BLANK, TOKEN_JUXTAPOSE};
+use crate::{Lexeme, OpToken, Position, Token, TOKEN_BLANK, TOKEN_JUXTAPOSE};
 use std::iter;
-
-type OpToken = Token;
 
 /// Resolve tokens into "operator tokens", and insert a `blank` token when an argument is missing
 /// and a `juxtapose` token when arguments are placed next to each other.
@@ -18,8 +16,9 @@ type OpToken = Token;
 pub fn resolve<'a, 's: 'a, I>(
     prefixy_tokens: &'a Vec<Option<(OpToken, bool)>>,
     suffixy_tokens: &'a Vec<Option<(OpToken, bool)>>,
+    follower_tokens: &'a Vec<Option<(Token, OpToken, bool)>>,
     iter: I,
-) -> impl Iterator<Item = Lexeme> + 'a
+) -> impl Iterator<Item = Result<Lexeme, ResolverError>> + 'a
 where
     I: Iterator<Item = Lexeme> + 'a,
 {
@@ -28,8 +27,17 @@ where
         expr_mode: true,
         prefixy_tokens,
         suffixy_tokens,
+        follower_tokens,
+        stack: vec![],
         iter: iter.peekable(),
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ResolverError {
+    WrongToken { expected: OpToken, found: Lexeme },
+    UnexpectedToken { found: Lexeme },
+    UnexpectedEof { expected: OpToken },
 }
 
 struct Resolver<'a, I>
@@ -40,6 +48,8 @@ where
     expr_mode: bool,
     prefixy_tokens: &'a Vec<Option<(OpToken, bool)>>,
     suffixy_tokens: &'a Vec<Option<(OpToken, bool)>>,
+    follower_tokens: &'a Vec<Option<(Token, OpToken, bool)>>,
+    stack: Vec<(Token, OpToken, bool)>,
     iter: iter::Peekable<I>,
 }
 
@@ -51,10 +61,16 @@ where
         Lexeme::new(token, self.last_pos, self.last_pos)
     }
 
-    fn consume_lexeme(&mut self, token: Token) -> Lexeme {
+    fn consume_lexeme(&mut self, op_token: OpToken) -> Lexeme {
         let lexeme = self.iter.next().unwrap();
         self.last_pos = lexeme.span.end;
-        Lexeme { token, ..lexeme }
+        if let Some(follower) = self.follower_tokens[op_token] {
+            self.stack.push(follower);
+        }
+        Lexeme {
+            token: op_token,
+            ..lexeme
+        }
     }
 }
 
@@ -62,33 +78,64 @@ impl<'a, I> Iterator for Resolver<'a, I>
 where
     I: Iterator<Item = Lexeme>,
 {
-    type Item = Lexeme;
+    type Item = Result<Lexeme, ResolverError>;
 
     #[allow(clippy::collapsible_else_if)]
-    fn next(&mut self) -> Option<Lexeme> {
-        let lexeme = match self.iter.peek() {
+    fn next(&mut self) -> Option<Result<Lexeme, ResolverError>> {
+        let lexeme = match self.iter.peek().copied() {
             Some(lexeme) => lexeme,
             None if self.expr_mode => {
                 self.expr_mode = false;
-                return Some(self.insert_fake_token(TOKEN_BLANK));
+                return Some(Ok(self.insert_fake_token(TOKEN_BLANK)));
             }
-            None => return None,
+            None => {
+                if let Some((_, optok, _)) = self.stack.last().copied() {
+                    self.stack.clear();
+                    return Some(Err(ResolverError::UnexpectedEof { expected: optok }));
+                } else {
+                    return None;
+                }
+            }
         };
+        if let Some((expected_token, replacement_token, has_arg)) = self.stack.last().copied() {
+            if lexeme.token == expected_token {
+                if self.expr_mode {
+                    self.expr_mode = false;
+                    return Some(Ok(self.insert_fake_token(TOKEN_BLANK)));
+                } else {
+                    self.stack.pop();
+                    self.expr_mode = has_arg;
+                    return Some(Ok(self.consume_lexeme(replacement_token)));
+                }
+            }
+        }
         if self.expr_mode {
             if let Some((optok, has_arg)) = self.prefixy_tokens[lexeme.token] {
                 self.expr_mode = has_arg;
-                Some(self.consume_lexeme(optok))
+                Some(Ok(self.consume_lexeme(optok)))
             } else {
                 self.expr_mode = false;
-                Some(self.insert_fake_token(TOKEN_BLANK))
+                Some(Ok(self.insert_fake_token(TOKEN_BLANK)))
             }
         } else {
             if let Some((optok, has_arg)) = self.suffixy_tokens[lexeme.token] {
                 self.expr_mode = has_arg;
-                Some(self.consume_lexeme(optok))
-            } else {
+                Some(Ok(self.consume_lexeme(optok)))
+            } else if self.prefixy_tokens[lexeme.token].is_some() {
                 self.expr_mode = true;
-                Some(self.insert_fake_token(TOKEN_JUXTAPOSE))
+                Some(Ok(self.insert_fake_token(TOKEN_JUXTAPOSE)))
+            } else {
+                if let Some((_, optok, _)) = self.stack.pop() {
+                    self.iter.next();
+                    self.stack.clear();
+                    Some(Err(ResolverError::WrongToken {
+                        expected: optok,
+                        found: lexeme,
+                    }))
+                } else {
+                    self.iter.next();
+                    Some(Err(ResolverError::UnexpectedToken { found: lexeme }))
+                }
             }
         }
     }
@@ -96,10 +143,9 @@ where
 
 #[test]
 fn test_resolver() {
-    use crate::TOKEN_ERROR;
+    use crate::{Position, Span, TOKEN_ERROR};
 
     // SYNTAX:
-    //   _ + _
     //   - _
     //   _ - _
     //   ( _ )
@@ -108,28 +154,27 @@ fn test_resolver() {
     //   _ : _
 
     const TOKEN_ID: Token = 3;
-    const TOKEN_TIMES: Token = 4;
-    const TOKEN_PLUS: Token = 5;
-    const TOKEN_MINUS: Token = 6;
-    const TOKEN_OPEN: Token = 7;
-    const TOKEN_CLOSE: Token = 8;
-    const TOKEN_QMARK: Token = 9;
-    const TOKEN_COLON: Token = 10;
-    const NUM_TOKENS: usize = 11;
+    const TOKEN_MINUS: Token = 4;
+    const TOKEN_OPEN: Token = 5;
+    const TOKEN_CLOSE: Token = 6;
+    const TOKEN_QMARK: Token = 7;
+    const TOKEN_COLON: Token = 8;
+    const NUM_TOKENS: usize = 9;
 
-    const OP_ERROR: Token = TOKEN_ERROR;
-    const OP_BLANK: Token = TOKEN_BLANK;
-    const OP_JUXTAPOSE: Token = TOKEN_JUXTAPOSE;
-    const OP_ID: Token = 3;
-    const OP_TIMES: Token = 4;
-    const OP_PLUS: Token = 5;
-    const OP_NEG: Token = 6;
-    const OP_MINUS: Token = 7;
-    const OP_GROUP: Token = 8;
-    const OP_APPLY: Token = 10;
-    const OP_CLOSE: Token = 9;
-    const OP_TERNARY: Token = 11;
-    const OP_COLON: Token = 12;
+    const OP_ERROR: OpToken = TOKEN_ERROR;
+    const OP_BLANK: OpToken = TOKEN_BLANK;
+    const OP_JUXTAPOSE: OpToken = TOKEN_JUXTAPOSE;
+    const OP_ID: OpToken = 3;
+    const OP_NEG: OpToken = 4;
+    const OP_MINUS: OpToken = 5;
+    const OP_GROUP_1: OpToken = 6;
+    const OP_GROUP_2: OpToken = 7;
+    const OP_APPLY_1: OpToken = 8;
+    const OP_APPLY_2: OpToken = 9;
+    const OP_TERNARY_1: OpToken = 10;
+    const OP_TERNARY_2: OpToken = 11;
+    const OP_HASTYPE: OpToken = 12;
+    const NUM_OP_TOKENS: usize = 13;
 
     fn lex(src: &str) -> impl Iterator<Item = Lexeme> {
         let mut lexemes = vec![];
@@ -142,8 +187,6 @@ fn test_resolver() {
             }
             let token = match ch {
                 'a'..='z' => TOKEN_ID,
-                '*' => TOKEN_TIMES,
-                '+' => TOKEN_PLUS,
                 '-' => TOKEN_MINUS,
                 '(' => TOKEN_OPEN,
                 ')' => TOKEN_CLOSE,
@@ -160,17 +203,30 @@ fn test_resolver() {
     }
 
     #[track_caller]
-    fn assert_lexeme<'s>(
-        src: &'s str,
-        stream: &mut impl Iterator<Item = Lexeme>,
+    fn assert_lexeme(
+        src: &str,
+        stream: &mut impl Iterator<Item = Result<Lexeme, ResolverError>>,
         expected: &str,
         token: Token,
     ) {
-        let lex = stream.next().expect("Token stream ended early");
+        let lex = stream.next().expect("Token stream ended early").unwrap();
         let start = lex.span.start.col as usize;
         let end = lex.span.end.col as usize;
         assert_eq!(&src[start..end], expected);
         assert_eq!(lex.token, token);
+    }
+
+    #[track_caller]
+    fn assert_error(
+        src: &str,
+        stream: &mut impl Iterator<Item = Result<Lexeme, ResolverError>>,
+        expected_error: ResolverError,
+    ) {
+        let err = stream
+            .next()
+            .expect("Token stream ended early")
+            .unwrap_err();
+        assert_eq!(err, expected_error);
     }
 
     let mut prefixy_tokens = Vec::new();
@@ -181,34 +237,39 @@ fn test_resolver() {
     }
     prefixy_tokens[TOKEN_ERROR] = Some((TOKEN_ERROR, false));
     prefixy_tokens[TOKEN_ID] = Some((OP_ID, false));
-    suffixy_tokens[TOKEN_TIMES] = Some((OP_TIMES, true));
-    suffixy_tokens[TOKEN_PLUS] = Some((OP_PLUS, true));
     prefixy_tokens[TOKEN_MINUS] = Some((OP_NEG, true));
     suffixy_tokens[TOKEN_MINUS] = Some((OP_MINUS, true));
-    prefixy_tokens[TOKEN_OPEN] = Some((OP_GROUP, true));
-    suffixy_tokens[TOKEN_OPEN] = Some((OP_APPLY, true));
-    suffixy_tokens[TOKEN_CLOSE] = Some((OP_CLOSE, false));
-    suffixy_tokens[TOKEN_QMARK] = Some((OP_TERNARY, true));
-    suffixy_tokens[TOKEN_COLON] = Some((OP_COLON, true));
+    prefixy_tokens[TOKEN_OPEN] = Some((OP_GROUP_1, true));
+    suffixy_tokens[TOKEN_OPEN] = Some((OP_APPLY_1, true));
+    suffixy_tokens[TOKEN_QMARK] = Some((OP_TERNARY_1, true));
+    suffixy_tokens[TOKEN_COLON] = Some((OP_HASTYPE, true));
+
+    let mut follower_tokens = Vec::new();
+    for _ in 0..NUM_OP_TOKENS {
+        follower_tokens.push(None);
+    }
+    follower_tokens[OP_GROUP_1] = Some((TOKEN_CLOSE, OP_GROUP_2, false));
+    follower_tokens[OP_APPLY_1] = Some((TOKEN_CLOSE, OP_APPLY_2, false));
+    follower_tokens[OP_TERNARY_1] = Some((TOKEN_COLON, OP_TERNARY_2, true));
 
     let src = " a";
-    let lexemes = &mut resolve(&prefixy_tokens, &suffixy_tokens, lex(src));
+    let lexemes = &mut resolve(&prefixy_tokens, &suffixy_tokens, &follower_tokens, lex(src));
     assert_lexeme(src, lexemes, "a", OP_ID);
     assert!(lexemes.next().is_none());
 
     let src = "";
-    let lexemes = &mut resolve(&prefixy_tokens, &suffixy_tokens, lex(src));
+    let lexemes = &mut resolve(&prefixy_tokens, &suffixy_tokens, &follower_tokens, lex(src));
     assert_lexeme(src, lexemes, "", OP_BLANK);
     assert!(lexemes.next().is_none());
 
     let src = "-";
-    let lexemes = &mut resolve(&prefixy_tokens, &suffixy_tokens, lex(src));
+    let lexemes = &mut resolve(&prefixy_tokens, &suffixy_tokens, &follower_tokens, lex(src));
     assert_lexeme(src, lexemes, "-", OP_NEG);
     assert_lexeme(src, lexemes, "", OP_BLANK);
     assert!(lexemes.next().is_none());
 
     let src = "-o o-";
-    let lexemes = &mut resolve(&prefixy_tokens, &suffixy_tokens, lex(src));
+    let lexemes = &mut resolve(&prefixy_tokens, &suffixy_tokens, &follower_tokens, lex(src));
     assert_lexeme(src, lexemes, "-", OP_NEG);
     assert_lexeme(src, lexemes, "o", OP_ID);
     assert_lexeme(src, lexemes, "", OP_JUXTAPOSE);
@@ -218,22 +279,96 @@ fn test_resolver() {
     assert!(lexemes.next().is_none());
 
     let src = "(x)";
-    let lexemes = &mut resolve(&prefixy_tokens, &suffixy_tokens, lex(src));
-    assert_lexeme(src, lexemes, "(", OP_GROUP);
+    let lexemes = &mut resolve(&prefixy_tokens, &suffixy_tokens, &follower_tokens, lex(src));
+    assert_lexeme(src, lexemes, "(", OP_GROUP_1);
     assert_lexeme(src, lexemes, "x", OP_ID);
-    assert_lexeme(src, lexemes, ")", OP_CLOSE);
+    assert_lexeme(src, lexemes, ")", OP_GROUP_2);
     assert!(lexemes.next().is_none());
 
     let src = "f()";
-    let lexemes = &mut resolve(&prefixy_tokens, &suffixy_tokens, lex(src));
+    let lexemes = &mut resolve(&prefixy_tokens, &suffixy_tokens, &follower_tokens, lex(src));
     assert_lexeme(src, lexemes, "f", OP_ID);
-    assert_lexeme(src, lexemes, "(", OP_APPLY);
+    assert_lexeme(src, lexemes, "(", OP_APPLY_1);
     assert_lexeme(src, lexemes, "", OP_BLANK);
-    assert_lexeme(src, lexemes, ")", OP_CLOSE);
+    assert_lexeme(src, lexemes, ")", OP_APPLY_2);
+    assert!(lexemes.next().is_none());
+
+    let src = "(x()?(y):z())";
+    let lexemes = &mut resolve(&prefixy_tokens, &suffixy_tokens, &follower_tokens, lex(src));
+    assert_lexeme(src, lexemes, "(", OP_GROUP_1);
+    assert_lexeme(src, lexemes, "x", OP_ID);
+    assert_lexeme(src, lexemes, "(", OP_APPLY_1);
+    assert_lexeme(src, lexemes, "", OP_BLANK);
+    assert_lexeme(src, lexemes, ")", OP_APPLY_2);
+    assert_lexeme(src, lexemes, "?", OP_TERNARY_1);
+    assert_lexeme(src, lexemes, "(", OP_GROUP_1);
+    assert_lexeme(src, lexemes, "y", OP_ID);
+    assert_lexeme(src, lexemes, ")", OP_GROUP_2);
+    assert_lexeme(src, lexemes, ":", OP_TERNARY_2);
+    assert_lexeme(src, lexemes, "z", OP_ID);
+    assert_lexeme(src, lexemes, "(", OP_APPLY_1);
+    assert_lexeme(src, lexemes, "", OP_BLANK);
+    assert_lexeme(src, lexemes, ")", OP_APPLY_2);
+    assert_lexeme(src, lexemes, ")", OP_GROUP_2);
     assert!(lexemes.next().is_none());
 
     let src = "%";
-    let lexemes = &mut resolve(&prefixy_tokens, &suffixy_tokens, lex(src));
+    let lexemes = &mut resolve(&prefixy_tokens, &suffixy_tokens, &follower_tokens, lex(src));
     assert_lexeme(src, lexemes, "%", OP_ERROR);
+    assert!(lexemes.next().is_none());
+
+    let src = "(?";
+    let lexemes = &mut resolve(&prefixy_tokens, &suffixy_tokens, &follower_tokens, lex(src));
+    assert_lexeme(src, lexemes, "(", OP_GROUP_1);
+    assert_lexeme(src, lexemes, "", OP_BLANK);
+    assert_lexeme(src, lexemes, "?", OP_TERNARY_1);
+    assert_lexeme(src, lexemes, "", OP_BLANK);
+    assert_error(
+        src,
+        lexemes,
+        ResolverError::UnexpectedEof {
+            expected: OP_TERNARY_2,
+        },
+    );
+    assert!(lexemes.next().is_none());
+
+    let src = "(?)";
+    let lexemes = &mut resolve(&prefixy_tokens, &suffixy_tokens, &follower_tokens, lex(src));
+    assert_lexeme(src, lexemes, "(", OP_GROUP_1);
+    assert_lexeme(src, lexemes, "", OP_BLANK);
+    assert_lexeme(src, lexemes, "?", OP_TERNARY_1);
+    assert_lexeme(src, lexemes, "", OP_BLANK);
+    let start = Position {
+        line: 0,
+        col: 2,
+        utf8_col: 2,
+    };
+    let end = Position {
+        line: 0,
+        col: 3,
+        utf8_col: 3,
+    };
+    assert_error(
+        src,
+        lexemes,
+        ResolverError::WrongToken {
+            expected: OP_TERNARY_2,
+            found: Lexeme::new(TOKEN_CLOSE, start, end),
+        },
+    );
+    assert!(lexemes.next().is_none());
+
+    let src = "())";
+    let lexemes = &mut resolve(&prefixy_tokens, &suffixy_tokens, &follower_tokens, lex(src));
+    assert_lexeme(src, lexemes, "(", OP_GROUP_1);
+    assert_lexeme(src, lexemes, "", OP_BLANK);
+    assert_lexeme(src, lexemes, ")", OP_GROUP_2);
+    assert_error(
+        src,
+        lexemes,
+        ResolverError::UnexpectedToken {
+            found: Lexeme::new(TOKEN_CLOSE, start, end),
+        },
+    );
     assert!(lexemes.next().is_none());
 }

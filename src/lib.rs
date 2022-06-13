@@ -7,16 +7,19 @@
 #![allow(unused)]
 #![allow(clippy::diverging_sub_expression)]
 
+mod blank_inserter;
 mod grammar;
 mod lexer;
 mod op;
+mod op_resolver;
 mod parse_error;
 mod parse_tree;
-mod resolver;
 mod shunter;
 mod source;
 mod tree_visitor;
 
+use lexer::Lexer;
+use op::Op;
 use std::fmt;
 
 pub use grammar::{Grammar, GrammarError, Pattern};
@@ -29,6 +32,7 @@ pub use source::Source;
 /// A category of lexeme, such as "INTEGER" or "VARIABLE" or "OPEN_PAREN". The special Token called
 /// [`TOKEN_ERROR`] represents a lexing error.
 pub type Token = usize;
+type OpToken = Token;
 
 /// Represents a lexing error.
 pub const TOKEN_ERROR: Token = 0;
@@ -36,6 +40,10 @@ pub const TOKEN_ERROR: Token = 0;
 pub const TOKEN_BLANK: Token = 1;
 /// Represents a missing operator.
 pub const TOKEN_JUXTAPOSE: Token = 2;
+
+const NAME_ERROR: &str = "LexError";
+const NAME_BLANK: &str = "Blank";
+const NAME_JUXTAPOSE: &str = "Juxtapose";
 
 /// One "word" in the stream returned by the lexer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -64,6 +72,54 @@ pub struct Position {
 pub struct Span {
     pub start: Position,
     pub end: Position,
+}
+
+/// A Panfix grammar, that's ready to parse.
+#[derive(Debug, Clone)]
+pub struct Parser {
+    lexer: Lexer,
+    token_names: Vec<String>,
+    op_token_names: Vec<String>,
+    prefixy_tokens: Vec<Option<(OpToken, bool)>>,
+    suffixy_tokens: Vec<Option<(OpToken, bool)>>,
+    op_table: Vec<Option<OpToken>>,
+    follower_tokens: Vec<Option<(Token, OpToken)>>,
+    prec_table: Vec<(Prec, Prec)>,
+    ops: Vec<Option<Op>>,
+}
+
+impl Parser {
+    /// Parse `source`. Runs in linear time.
+    pub fn parse<'s, 'g>(&'g self, source: &'s Source) -> Result<ParseTree<'s, 'g>, ()> {
+        use blank_inserter::insert_blanks;
+        use op_resolver::resolve;
+        use parse_tree::Item;
+        use std::iter::FromIterator;
+        use tree_visitor::Forest;
+
+        let stream = self.lexer.lex(source.source());
+        let stream = resolve(&self.op_table, &self.follower_tokens, stream);
+        let stream = insert_blanks(&self.prefixy_tokens, &self.suffixy_tokens, stream);
+        let stream = shunt(&self.prec_table, stream);
+        let stream = stream.filter_map(|lexeme| match self.ops[lexeme.token] {
+            None => None,
+            Some(op) => Some(Item {
+                op,
+                span: lexeme.span,
+            }),
+        });
+        let forest = Forest::from_iter(stream);
+        Ok(ParseTree::new(source, forest))
+    }
+
+    fn arity(&self, op_token: OpToken) -> usize {
+        let (lprec, rprec) = self.prec_table[op_token];
+        (lprec != 0) as usize + (rprec != 0) as usize
+    }
+
+    fn name(&self, op_token: OpToken) -> &str {
+        &self.token_names[op_token]
+    }
 }
 
 impl fmt::Display for Position {
@@ -118,47 +174,43 @@ impl Lexeme {
 
 #[macro_export]
 macro_rules! pattern {
-    (_ $token:literal $($followers:tt)*) => {
-        pattern!(@ Y $token [ ] $($followers)*)
+    (_ $($items:tt)*) => {
+        pattern!(@ Y [ ] $($items)*)
     };
 
-    ($token:literal $($followers:tt)*) => {
-        pattern!(@ N $token [ ] $($followers)*)
+    ($tok:literal $($items:tt)*) => {
+        pattern!(@ N [ ] $tok $($items)*)
     };
 
-    (@ $l:ident $token:literal [ $($followers:tt)* ] $tok:literal $($rest:tt)*) => {
-        pattern!(@ $l $token [ $($followers)* $tok.to_string(), ] $($rest)*)
+    (@ $l:ident [ $($tokens:tt)* ] $tok:literal $($rest:tt)*) => {
+        pattern!(@ $l [ $($tokens)* $tok.to_string(), ] $($rest)*)
     };
 
-    (@ Y $token:literal [ $($followers:tt)* ] _) => {
+    (@ Y [ $($tokens:tt)* ] _) => {
         $crate::Pattern {
             fixity: $crate::Fixity::Infix,
-            first_token: $token.to_string(),
-            followers: vec![$($followers)*],
+            tokens: vec![$($tokens)*],
         }
     };
 
-    (@ Y $token:literal [ $($followers:tt)* ]) => {
+    (@ Y [ $($tokens:tt)* ]) => {
         $crate::Pattern {
             fixity: $crate::Fixity::Suffix,
-            first_token: $token.to_string(),
-            followers: vec![$($followers)*],
+            tokens: vec![$($tokens)*],
         }
     };
 
-    (@ N $token:literal [ $($followers:tt)* ] _) => {
+    (@ N [ $($tokens:tt)* ] _) => {
         $crate::Pattern {
             fixity: $crate::Fixity::Prefix,
-            first_token: $token.to_string(),
-            followers: vec![$($followers)*],
+            tokens: vec![$($tokens)*],
         }
     };
 
-    (@ N $token:literal [ $($followers:tt)* ]) => {
+    (@ N [ $($tokens:tt)* ]) => {
         $crate::Pattern {
             fixity: $crate::Fixity::Nilfix,
-            first_token: $token.to_string(),
-            followers: vec![$($followers)*],
+            tokens: vec![$($tokens)*],
         }
     };
 }

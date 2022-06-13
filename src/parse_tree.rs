@@ -1,7 +1,8 @@
 use crate::op::{Fixity, Op, Prec};
 use crate::parse_error::ParseError;
-use crate::tree_visitor::{Arity, Forest, Visitor as RpnVisitor};
-use crate::{Source, Span};
+use crate::source::Source;
+use crate::tree_visitor::{Arity, Forest, Visitor as ForestVisitor};
+use crate::{Lexeme, Parser, Span, NAME_BLANK, NAME_JUXTAPOSE};
 use std::fmt;
 
 /// The result of parsing a source string. Call `.visitor()` to walk it.
@@ -9,24 +10,41 @@ use std::fmt;
 /// To minimize allocations, this contains references into both the source text and the grammar, so
 /// it cannot outlive either.
 #[derive(Debug)]
-pub struct ParseTree<'s, 'g> {
+pub struct ParseTree<'s, 'p> {
     source: &'s Source,
-    stack: Forest<Node<'s, 'g>>,
+    parser: &'p Parser,
+    forest: Forest<Item<'p>>,
 }
 
-impl<'s, 'g> ParseTree<'s, 'g> {
-    pub(crate) fn new(source: &'s Source, stack: Forest<Node<'s, 'g>>) -> ParseTree<'s, 'g> {
-        ParseTree { source, stack }
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Item<'p> {
+    op: &'p Op,
+    span: Span,
+}
+
+impl<'s, 'p> ParseTree<'s, 'p> {
+    pub(crate) fn new(
+        source: &'s Source,
+        parser: &'p Parser,
+        forest: Forest<Item<'p>>,
+    ) -> ParseTree<'s, 'p> {
+        ParseTree {
+            source,
+            parser,
+            forest,
+        }
     }
 
     /// Obtains a "visitor" that can walk the source tree.
     ///
     /// (This is not the visitor pattern: you're not supplying a function to run on each node.
     /// Instead you can navigate the nodes and do whatever you want yourself.)
-    pub fn visitor<'t>(&'t self) -> Visitor<'s, 'g, 't> {
+    pub fn visitor<'t>(&'t self) -> Visitor<'s, 'p, 't> {
         Visitor {
+            source: self.source,
+            parser: self.parser,
             // Parser guarantees there's at least one node
-            node: self.stack.tree(0).unwrap(),
+            node: self.forest.tree(0).unwrap(),
         }
     }
 
@@ -46,51 +64,35 @@ impl<'s, 'g> ParseTree<'s, 'g> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct Node<'s, 'g> {
-    pub(crate) op: &'g Op,
-    pub(crate) op_span: Span,
-    pub(crate) slice: &'s str,
-    pub(crate) span: Span,
-}
-
-impl<'s, 'g> Arity for Node<'s, 'g> {
+impl<'p> Arity for Item<'p> {
     fn arity(&self) -> usize {
-        unimplemented!()
+        self.op.arity
     }
 }
 
 /// One node in the parse tree. Allows you to inspect this node and its children, but not its
 /// parent.
 #[derive(Debug, Clone, Copy)]
-pub struct Visitor<'s, 'g, 't> {
-    node: RpnVisitor<'t, Node<'s, 'g>>,
+pub struct Visitor<'s, 'p, 't> {
+    source: &'s Source,
+    parser: &'p Parser,
+    node: ForestVisitor<'t, Item<'p>>,
 }
 
-impl<'s, 'g, 't> Visitor<'s, 'g, 't> {
-    /// The name of the operator at this node.
-    pub fn op(&self) -> &'g str {
-        &self.node.item().op.name
+impl<'s, 'p, 't> Visitor<'s, 'p, 't> {
+    /// The name of the op at this node.
+    pub fn name(&self) -> &'p str {
+        &self.item().op.name
     }
 
-    /// How many children this node has
-    pub fn num_children(&self) -> usize {
-        unimplemented!()
-    }
-
-    /// The span that includes only the initial lexeme of this operator.
-    pub fn op_span(&self) -> Span {
-        self.node.item().op_span
-    }
-
-    /// The span that includes this operator and all of its arguments.
+    /// The span of this node's first token.
     pub fn span(&self) -> Span {
-        self.node.item().span
+        self.item().span
     }
 
     /// The source text covered by `span()`.
     pub fn source(&self) -> &'s str {
-        self.node.item().slice
+        self.source.substr(self.item().span)
     }
 
     /// The fixity of this node's operator.
@@ -103,11 +105,18 @@ impl<'s, 'g, 't> Visitor<'s, 'g, 't> {
         self.node.item().op.prec
     }
 
+    /// The number of children this node has (which is determined by its operator).
+    pub fn arity(&self) -> usize {
+        self.node.item().op.arity
+    }
+
     /// Get this node's `n`th child.
     ///
     /// # Panics if there aren't at least `n` children.
-    pub fn child(&self, n: usize) -> Visitor<'s, 'g, 't> {
+    pub fn child(&self, n: usize) -> Visitor<'s, 'p, 't> {
         Visitor {
+            source: self.source,
+            parser: self.parser,
             node: self.node.child(n).unwrap_or_else(|| {
                 panic!(
                     "Visitor: child index '{}' out of bound for op '{}'",
@@ -119,8 +128,10 @@ impl<'s, 'g, 't> Visitor<'s, 'g, 't> {
     }
 
     /// Iterate over this node's children.
-    pub fn children(&self) -> impl Iterator<Item = Visitor<'s, 'g, 't>> {
+    pub fn children(&self) -> impl Iterator<Item = Visitor<'s, 'p, 't>> {
         VisitorIter {
+            source: self.source,
+            parser: self.parser,
             node: self.node,
             index: 0,
         }
@@ -132,39 +143,45 @@ impl<'s, 'g, 't> Visitor<'s, 'g, 't> {
     ///
     /// Panics if `N` does not match the number of children. Note that the number of children is
     /// not dynamic: you can tell how many there will be from the grammar. Even if a child is
-    /// "missing", it will actually be represented as $blank.
-    pub fn expect_children<const N: usize>(&self) -> [Visitor<'s, 'g, 't>; N] {
+    /// "missing", it will actually be represented as blank.
+    pub fn expect_children<const N: usize>(&self) -> [Visitor<'s, 'p, 't>; N] {
         let mut array = [*self; N]; // dummy value
-        if N != self.num_children() {
+        if N != self.arity() {
             panic!(
                 "Visitor::expect_children -- expected {} children but found {}",
                 N,
-                self.num_children()
+                self.arity()
             );
         }
         for (i, child) in array.iter_mut().enumerate() {
             *child = Visitor {
+                source: self.source,
+                parser: self.parser,
                 node: self.node.child(i).unwrap(),
             };
         }
         array
     }
+
+    fn item(&self) -> Item<'p> {
+        *self.node.item()
+    }
 }
 
-impl<'s, 'g, 't> fmt::Display for Visitor<'s, 'g, 't> {
+impl<'s, 'p, 't> fmt::Display for Visitor<'s, 'p, 't> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.op() == "$Blank" {
+        if self.name() == NAME_BLANK {
             write!(f, "_")
-        } else if self.num_children() == 0 {
+        } else if self.arity() == 0 {
             write!(f, "{}", self.source())
         } else {
             write!(f, "(")?;
-            if self.op() == "$Juxtapose" {
+            if self.name() == NAME_JUXTAPOSE {
                 write!(f, "_")?;
             } else {
-                write!(f, "{}", self.op())?;
+                write!(f, "{}", self.name())?;
             }
-            for i in 0..self.num_children() {
+            for i in 0..self.arity() {
                 write!(f, " {}", self.child(i))?;
             }
             write!(f, ")")
@@ -173,19 +190,22 @@ impl<'s, 'g, 't> fmt::Display for Visitor<'s, 'g, 't> {
 }
 
 #[derive(Debug)]
-struct VisitorIter<'s, 'g, 't> {
-    node: RpnVisitor<'t, Node<'s, 'g>>,
+struct VisitorIter<'s, 'p, 't> {
+    source: &'s Source,
+    parser: &'p Parser,
+    node: ForestVisitor<'t, Item<'p>>,
     index: usize,
 }
 
-impl<'s, 'g, 't> Iterator for VisitorIter<'s, 'g, 't> {
-    type Item = Visitor<'s, 'g, 't>;
+impl<'s, 'p, 't> Iterator for VisitorIter<'s, 'p, 't> {
+    type Item = Visitor<'s, 'p, 't>;
 
-    fn next(&mut self) -> Option<Visitor<'s, 'g, 't>> {
-        let num_children = unimplemented!();
-        if self.index < num_children {
+    fn next(&mut self) -> Option<Visitor<'s, 'p, 't>> {
+        if self.index < self.node.arity() {
             self.index += 1;
             Some(Visitor {
+                source: self.source,
+                parser: self.parser,
                 node: self.node.child(self.index).unwrap(),
             })
         } else {

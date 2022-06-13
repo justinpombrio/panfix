@@ -8,8 +8,7 @@ fn test_pattern_macro() {
         pattern!("null"),
         Pattern {
             fixity: Nilfix,
-            first_token: "null".to_string(),
-            followers: vec![],
+            tokens: vec!["null".to_string()],
         }
     );
 
@@ -17,8 +16,7 @@ fn test_pattern_macro() {
         pattern!("(" ")"),
         Pattern {
             fixity: Nilfix,
-            first_token: "(".to_string(),
-            followers: vec![")".to_string()],
+            tokens: vec!["(".to_string(), ")".to_string()],
         }
     );
 
@@ -26,8 +24,7 @@ fn test_pattern_macro() {
         pattern!("-" _),
         Pattern {
             fixity: Prefix,
-            first_token: "-".to_string(),
-            followers: vec![],
+            tokens: vec!["-".to_string()],
         }
     );
 
@@ -35,8 +32,7 @@ fn test_pattern_macro() {
         pattern!("if" "then" "else" _),
         Pattern {
             fixity: Prefix,
-            first_token: "if".to_string(),
-            followers: vec!["then".to_string(), "else".to_string()],
+            tokens: vec!["if".to_string(), "then".to_string(), "else".to_string()],
         }
     );
 
@@ -44,8 +40,7 @@ fn test_pattern_macro() {
         pattern!(_ "++"),
         Pattern {
             fixity: Suffix,
-            first_token: "++".to_string(),
-            followers: vec![],
+            tokens: vec!["++".to_string()]
         }
     );
 
@@ -53,8 +48,7 @@ fn test_pattern_macro() {
         pattern!(_ "[" "]"),
         Pattern {
             fixity: Suffix,
-            first_token: "[".to_string(),
-            followers: vec!["]".to_string()],
+            tokens: vec!["[".to_string(), "]".to_string()],
         }
     );
 
@@ -62,8 +56,7 @@ fn test_pattern_macro() {
         pattern!(_ "+" _),
         Pattern {
             fixity: Infix,
-            first_token: "+".to_string(),
-            followers: vec![],
+            tokens: vec!["+".to_string()],
         }
     );
 
@@ -71,8 +64,7 @@ fn test_pattern_macro() {
         pattern!(_ "?" ":" _),
         Pattern {
             fixity: Infix,
-            first_token: "?".to_string(),
-            followers: vec![":".to_string()],
+            tokens: vec!["?".to_string(), ":".to_string()],
         }
     );
 }

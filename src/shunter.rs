@@ -46,13 +46,13 @@ impl<'a, I: Iterator<Item = Lexeme>> Iterator for Shunter<'a, I> {
     fn next(&mut self) -> Option<Lexeme> {
         loop {
             if self.pop_mode {
-                let lexeme = self.stack.pop().unwrap();
-                let lprec = self.prec_table[lexeme.token].0;
+                let top_lexeme = self.stack.pop().unwrap();
+                let lprec = self.prec_table[top_lexeme.token].0;
                 let rprec = self.top_rprec();
                 if rprec > lprec {
                     self.pop_mode = false;
                 }
-                return Some(lexeme);
+                return Some(top_lexeme);
             } else if let Some(lexeme) = self.iter.peek().copied() {
                 let rprec = self.top_rprec();
                 let lprec = self.prec_table[lexeme.token].0;
@@ -81,7 +81,9 @@ fn test_shunting() {
     const TOKEN_BANG: Token = 8;
     const TOKEN_OPEN: Token = 9;
     const TOKEN_CLOSE: Token = 10;
-    const NUM_TOKENS: usize = 11;
+    const TOKEN_QMARK: Token = 11;
+    const TOKEN_COLON: Token = 12;
+    const NUM_TOKENS: usize = 13;
 
     fn lex(src: &str) -> impl Iterator<Item = Lexeme> {
         let mut lexemes = vec![];
@@ -101,6 +103,8 @@ fn test_shunting() {
                 '!' => TOKEN_BANG,
                 '(' => TOKEN_OPEN,
                 ')' => TOKEN_CLOSE,
+                '?' => TOKEN_QMARK,
+                ':' => TOKEN_COLON,
                 _ => TOKEN_ERROR,
             };
             let start = Position {
@@ -139,8 +143,19 @@ fn test_shunting() {
     prec_table[TOKEN_PLUS] = (100, 99);
     prec_table[TOKEN_MINUS] = (100, 99);
     prec_table[TOKEN_NEG] = (0, 80);
-    prec_table[TOKEN_OPEN] = (0, 1000);
-    prec_table[TOKEN_CLOSE] = (1000, 0);
+    prec_table[TOKEN_OPEN] = (0, Prec::MAX);
+    prec_table[TOKEN_CLOSE] = (Prec::MAX, 0);
+    prec_table[TOKEN_QMARK] = (80, Prec::MAX);
+    prec_table[TOKEN_COLON] = (Prec::MAX, 80);
+
+    let mut link_table = Vec::new();
+    for _ in 0..NUM_TOKENS {
+        let mut inner_table = Vec::new();
+        for _ in 0..NUM_TOKENS {
+            inner_table.push(false);
+        }
+        link_table.push(inner_table);
+    }
 
     let src = "_";
     let lexemes = &mut shunt(&prec_table, lex(src));
@@ -165,4 +180,13 @@ fn test_shunting() {
     let src = "1 + %";
     let lexemes = &mut shunt(&prec_table, lex(src));
     assert_eq!(show_stream(src, lexemes), "1 % +");
+
+    let src = "1 ? 2 : 3";
+    let lexemes = &mut shunt(&prec_table, lex(src));
+    assert_eq!(show_stream(src, lexemes), "1 2 3 : ?");
+
+    // TODO: This is not great behavior
+    let src = "( 2 : 3";
+    let lexemes = &mut shunt(&prec_table, lex(src));
+    assert_eq!(show_stream(src, lexemes), "2 3 : (");
 }

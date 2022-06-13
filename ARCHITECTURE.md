@@ -15,5 +15,6 @@ They allow parsing a source file by chunk in parallel!
    `-`.
 4. `shunt` takes an iterator of lexems and produces an iterator of lexemes,
    re-ordered by the algorithm on Wikipedia to be in RPN order.
-5. `TreeVisitor` takes the RPN sequence and converts it into a navigable tree
+5. We map tokens to Ops, tossing out any token that isn't the start of an op.
+6. `TreeVisitor` takes the RPN sequence and converts it into a navigable tree
    (while only allocating two vectors).

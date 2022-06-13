@@ -1,4 +1,4 @@
-use crate::{Token, TOKEN_BLANK, TOKEN_JUXTAPOSE};
+use crate::{Token, NAME_BLANK, NAME_JUXTAPOSE, TOKEN_BLANK, TOKEN_JUXTAPOSE};
 use std::fmt;
 
 /// Precedence level. Smaller is tighter / wins.
@@ -43,7 +43,8 @@ pub(crate) struct Op {
     pub(crate) fixity: Fixity,
     pub(crate) assoc: Assoc,
     pub(crate) prec: Prec,
-    pub(crate) first_token: Token,
+    // computed
+    pub(crate) arity: usize,
     pub(crate) left_prec: Option<Prec>,
     pub(crate) right_prec: Option<Prec>,
 }
@@ -54,23 +55,23 @@ impl Op {
         fixity: Fixity,
         assoc: Assoc,
         prec: Prec,
-        first_token: Token,
+        num_tokens: usize,
     ) -> Op {
-        assert_ne!(name, "$Blank");
-        assert_ne!(name, "$Juxtapose");
-        Op::new_unchecked(name, fixity, assoc, prec, first_token)
+        assert_ne!(name, NAME_BLANK);
+        assert_ne!(name, NAME_JUXTAPOSE);
+        Op::new_unchecked(name, fixity, assoc, prec, num_tokens)
     }
 
-    pub(crate) fn new_atom(name: &str, token: Token) -> Op {
-        Op::new_unchecked(name, Fixity::Nilfix, Assoc::Left, 0, token)
+    pub(crate) fn new_atom(name: &str, _token: Token) -> Op {
+        Op::new_unchecked(name, Fixity::Nilfix, Assoc::Left, 0, 1)
     }
 
     pub(crate) fn new_blank() -> Op {
-        Op::new_unchecked("$Blank", Fixity::Nilfix, Assoc::Left, 0, TOKEN_BLANK)
+        Op::new_unchecked(NAME_BLANK, Fixity::Nilfix, Assoc::Left, 0, 1)
     }
 
     pub(crate) fn new_juxtapose(assoc: Assoc, prec: Prec) -> Op {
-        Op::new_unchecked("$Juxtapose", Fixity::Infix, assoc, prec, TOKEN_JUXTAPOSE)
+        Op::new_unchecked(NAME_JUXTAPOSE, Fixity::Infix, assoc, prec, 1)
     }
 
     fn new_unchecked(
@@ -78,29 +79,44 @@ impl Op {
         fixity: Fixity,
         assoc: Assoc,
         prec: Prec,
-        first_token: Token,
+        num_tokens: usize,
     ) -> Op {
-        use Assoc::{Left, Right};
         use Fixity::{Infix, Nilfix, Prefix, Suffix};
 
-        let (left_prec, right_prec) = match (fixity, assoc) {
-            (Nilfix, _) => (None, None),
-            (Prefix, Left) => (None, Some(prec - 1)),
-            (Prefix, Right) => (None, Some(prec)),
-            (Suffix, Left) => (Some(prec), None),
-            (Suffix, Right) => (Some(prec - 1), None),
-            (Infix, Left) => (Some(prec), Some(prec - 1)),
-            (Infix, Right) => (Some(prec - 1), Some(prec)),
+        let (left_prec, right_prec) = compute_prec(prec, fixity, assoc);
+        let arity = match fixity {
+            Nilfix => num_tokens - 1,
+            Prefix | Suffix => num_tokens,
+            Infix => num_tokens + 1,
         };
         Op {
             name: name.to_owned(),
             fixity,
             assoc,
             prec,
-            first_token,
+            arity,
             left_prec,
             right_prec,
         }
+    }
+}
+
+pub(crate) fn compute_prec(
+    prec: Prec,
+    fixity: Fixity,
+    assoc: Assoc,
+) -> (Option<Prec>, Option<Prec>) {
+    use Assoc::{Left, Right};
+    use Fixity::{Infix, Nilfix, Prefix, Suffix};
+
+    match (fixity, assoc) {
+        (Nilfix, _) => (None, None),
+        (Prefix, Left) => (None, Some(prec - 1)),
+        (Prefix, Right) => (None, Some(prec)),
+        (Suffix, Left) => (Some(prec), None),
+        (Suffix, Right) => (Some(prec - 1), None),
+        (Infix, Left) => (Some(prec), Some(prec - 1)),
+        (Infix, Right) => (Some(prec - 1), Some(prec)),
     }
 }
 
