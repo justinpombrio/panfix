@@ -98,4 +98,16 @@ impl Source {
         };
         (start, end)
     }
+
+    /// Get the position at the end of the file.
+    pub fn end_of_file(&self) -> Position {
+        let line = (self.newline_positions.len() - 1) as Line;
+        let col = self.line_contents_inclusive(line).len() as Col;
+        let utf8_col = self.line_contents_inclusive(line).chars().count() as Col;
+        Position {
+            line,
+            col,
+            utf8_col,
+        }
+    }
 }

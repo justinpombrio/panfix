@@ -18,8 +18,8 @@ pub struct ParseTree<'s, 'p> {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Item<'p> {
-    op: &'p Op,
-    span: Span,
+    pub(crate) op: &'p Op,
+    pub(crate) span: Span,
 }
 
 impl<'s, 'p> ParseTree<'s, 'p> {

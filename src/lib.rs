@@ -99,9 +99,11 @@ impl Parser {
 
         let stream = self.lexer.lex(source.source());
         let stream = resolve(&self.op_table, &self.follower_tokens, stream);
+        // TODO!
+        let stream = stream.collect::<Result<Vec<_>, _>>().unwrap().into_iter();
         let stream = insert_blanks(&self.prefixy_tokens, &self.suffixy_tokens, stream);
         let stream = shunt(&self.prec_table, stream);
-        let stream = stream.filter_map(|lexeme| match self.ops[lexeme.token] {
+        let stream = stream.filter_map(|lexeme| match &self.ops[lexeme.token] {
             None => None,
             Some(op) => Some(Item {
                 op,
@@ -109,7 +111,7 @@ impl Parser {
             }),
         });
         let forest = Forest::from_iter(stream);
-        Ok(ParseTree::new(source, forest))
+        Ok(ParseTree::new(source, self, forest))
     }
 
     fn arity(&self, op_token: OpToken) -> usize {
