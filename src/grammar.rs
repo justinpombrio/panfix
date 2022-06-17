@@ -4,6 +4,7 @@ use crate::{
     OpToken, Parser, Token, NAME_BLANK, NAME_ERROR, NAME_JUXTAPOSE, TOKEN_BLANK, TOKEN_ERROR,
     TOKEN_JUXTAPOSE,
 };
+use std::fmt;
 use thiserror::Error;
 
 const PREC_DELTA: Prec = 10;
@@ -24,7 +25,7 @@ pub struct Grammar {
     op_table: Vec<Option<OpToken>>,
     // OpToken -> Option<(next token, next optoken)>
     follower_tokens: Vec<Option<(Token, OpToken)>>,
-    // OpToken -> user-facing name
+    // OpToken -> user-facing name for the op owning that token
     op_token_names: Vec<String>,
     // OpToken -> (prec, prec)
     prec_table: Vec<(Prec, Prec)>,
@@ -37,8 +38,6 @@ pub struct Grammar {
 /// An error while constructing a grammar.
 #[derive(Error, Debug)]
 pub enum GrammarError {
-    #[error("Duplicate operators. Operators in a must start with distinct tokens, unless one is Prefix or Nilfix and the other is Suffix or Infix. This rule was broken by the oeprators {op_1:?} and {op_2:?}.")]
-    DuplicateOp { op_1: String, op_2: String },
     #[error(
         "Duplicate token usage. Each token can be used at most once with a left argument and at
         most once without a right argument. However the token {token} was used without a left
@@ -215,24 +214,24 @@ impl Grammar {
         let maxprec = Some(Prec::MAX);
 
         let token = self.add_string_token(&pattern.tokens[0])?;
-        let op = Op::new(name, pattern.fixity, assoc, prec, pattern.tokens.len());
+        let op = Op::new(name, pattern.fixity, assoc, prec, pattern.tokens.clone());
         let (lprec, rprec) = (op.left_prec, op.right_prec);
         if pattern.tokens.len() == 1 {
             self.add_op_token(Some(op), name, token, lprec, rprec, None)?;
         } else {
             let patt = pattern.tokens.last().unwrap();
             let token = self.add_string_token(patt)?;
-            let optok = self.add_op_token(None, patt, token, Some(Prec::MAX), rprec, None)?;
+            let optok = self.add_op_token(None, name, token, Some(Prec::MAX), rprec, None)?;
             let mut follower: (Token, OpToken) = (token, optok);
             for patt in pattern.tokens.iter().skip(1).rev().skip(1) {
                 let token = self.add_string_token(patt)?;
                 let optok =
-                    self.add_op_token(None, patt, token, maxprec, maxprec, Some(follower))?;
+                    self.add_op_token(None, name, token, maxprec, maxprec, Some(follower))?;
                 follower = (token, optok);
             }
             let patt = pattern.tokens.first().unwrap();
             let token = self.add_string_token(patt)?;
-            self.add_op_token(Some(op), patt, token, lprec, maxprec, Some(follower))?;
+            self.add_op_token(Some(op), name, token, lprec, maxprec, Some(follower))?;
         }
         Ok(())
     }

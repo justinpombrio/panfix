@@ -90,27 +90,32 @@ pub struct Parser {
 
 impl Parser {
     /// Parse `source`. Runs in linear time.
-    pub fn parse<'s, 'g>(&'g self, source: &'s Source) -> Result<ParseTree<'s, 'g>, ()> {
+    pub fn parse<'s, 'g>(
+        &'g self,
+        source: &'s Source,
+    ) -> Result<ParseTree<'s, 'g>, ParseError<'s>> {
         use blank_inserter::insert_blanks;
         use op_resolver::resolve;
         use parse_tree::Item;
         use std::iter::FromIterator;
         use tree_visitor::Forest;
 
-        let stream = self.lexer.lex(source.source());
-        let stream = resolve(&self.op_table, &self.follower_tokens, stream);
-        // TODO!
-        let stream = stream.collect::<Result<Vec<_>, _>>().unwrap().into_iter();
-        let stream = insert_blanks(&self.prefixy_tokens, &self.suffixy_tokens, stream);
-        let stream = shunt(&self.prec_table, stream);
-        let stream = stream.filter_map(|lexeme| match &self.ops[lexeme.token] {
-            None => None,
-            Some(op) => Some(Item {
-                op,
-                span: lexeme.span,
-            }),
-        });
-        let forest = Forest::from_iter(stream);
+        let lexemes = self.lexer.lex(source.source()).collect::<Vec<_>>();
+        let lexemes = resolve(&self.op_table, &self.follower_tokens, lexemes).map_err(|err| {
+            ParseError::from_resolver_error(source, &self.token_names, &self.op_token_names, err)
+        })?;
+        let lexemes = insert_blanks(&self.prefixy_tokens, &self.suffixy_tokens, lexemes);
+        let lexemes = shunt(&self.prec_table, lexemes);
+        let lexemes = lexemes
+            .into_iter()
+            .filter_map(|lexeme| match &self.ops[lexeme.token] {
+                None => None,
+                Some(op) => Some(Item {
+                    op,
+                    span: lexeme.span,
+                }),
+            });
+        let forest = Forest::from_iter(lexemes);
         Ok(ParseTree::new(source, self, forest))
     }
 
@@ -121,6 +126,64 @@ impl Parser {
 
     fn name(&self, op_token: OpToken) -> &str {
         &self.token_names[op_token]
+    }
+}
+
+impl fmt::Display for Parser {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fn head(s: &str) -> &str {
+            // here's to hoping we land on character boundaries!
+            if s.len() <= 7 {
+                s
+            } else {
+                &s[0..7]
+            }
+        }
+
+        writeln!(f, "OPERATORS")?;
+        for opt in &self.ops {
+            if let Some(op) = opt {
+                writeln!(f, "\t{:?}", op);
+            }
+        }
+        writeln!(f);
+        writeln!(f, "TOKENS")?;
+        writeln!(f, "\tName\tOpToken\tPrefixy\tRArg\tSuffixy\tRArg")?;
+        writeln!(f, "\t-------\t-------\t-------\t-------\t-------\t-------")?;
+        for token in 0..self.token_names.len() {
+            write!(f, "{}", token)?;
+            write!(f, "\t{}", head(&self.token_names[token]))?;
+            if let Some(optok) = self.op_table[token] {
+                write!(f, "\t{}", optok)?;
+            } else {
+                write!(f, "\t-")?;
+            }
+            if let Some((optok, rarg)) = self.prefixy_tokens[token] {
+                write!(f, "\t{}\t{}", optok, rarg)?;
+            } else {
+                write!(f, "\t-\t-")?;
+            }
+            if let Some((optok, rarg)) = self.suffixy_tokens[token] {
+                writeln!(f, "\t{}\t{}", optok, rarg)?;
+            } else {
+                writeln!(f, "\t-\t-")?;
+            }
+        }
+        writeln!(f);
+        writeln!(f, "OP TOKENS")?;
+        writeln!(f, "\tName\tOp?\tLPrec\tRPrec\tNextT\tNextOT")?;
+        writeln!(f, "\t-------\t-------\t-------\t-------\t-------\t-------")?;
+        for optok in 0..self.ops.len() {
+            write!(f, "{}", optok)?;
+            write!(f, "\t{}\t{}", head(&self.op_token_names[optok]), self.ops[optok].is_some())?;
+            write!(f, "\t{}\t{}", self.prec_table[optok].0, self.prec_table[optok].1)?;
+            if let Some((next_tok, next_optok)) = self.follower_tokens[optok] {
+                writeln!(f, "\t{}\t{}", next_tok, next_optok)?;
+            } else {
+                writeln!(f, "\t-\t-")?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -174,6 +237,19 @@ impl Lexeme {
     }
 }
 
+impl Span {
+    pub fn new(start: Position, end: Position) -> Span {
+        Span { start, end }
+    }
+
+    pub fn new_at(pos: Position) -> Span {
+        Span {
+            start: pos,
+            end: pos,
+        }
+    }
+}
+
 #[macro_export]
 macro_rules! pattern {
     (_ $($items:tt)*) => {
@@ -217,9 +293,22 @@ macro_rules! pattern {
     };
 }
 
-// TODO: private?
-pub mod lexing {
-    pub use super::lexer::*;
+pub mod implementation {
+    pub mod lexer {
+        pub use crate::lexer::*;
+    }
+    pub mod blank_inserter {
+        pub use crate::blank_inserter::*;
+    }
+    pub mod op_resolver {
+        pub use crate::op_resolver::*;
+    }
+    pub mod shunter {
+        pub use crate::shunter::*;
+    }
+    pub mod tree_visitor {
+        pub use crate::tree_visitor::*;
+    }
 }
 
 /*

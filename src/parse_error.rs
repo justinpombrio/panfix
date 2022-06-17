@@ -1,5 +1,5 @@
-use crate::source::Source;
-use crate::{Lexeme, Span};
+use crate::op_resolver::OpResolverError;
+use crate::{Lexeme, Source, Span};
 use std::error;
 use std::fmt;
 use thiserror::Error;
@@ -11,6 +11,31 @@ pub struct ParseError<'s> {
     span: Option<Span>,
 }
 
+#[derive(Debug, Error)]
+enum ParseErrorCause {
+    #[error("{0}")]
+    Custom(String),
+    #[error("Unexpected token '{0}'.")]
+    UnexpectedLexeme(String),
+    #[error(
+        "While parsing '{}', expected '{}' but found '{}'.",
+        op_name,
+        expected,
+        found
+    )]
+    MissingSep {
+        op_name: String,
+        expected: String,
+        found: String,
+    },
+    #[error(
+        "While parsing '{}', expected '{}' but found end of file.",
+        op_name,
+        expected
+    )]
+    MissingSepEof { op_name: String, expected: String },
+}
+
 impl<'s> ParseError<'s> {
     pub fn custom_error(source: &'s Source, message: &str, span: Span) -> ParseError<'s> {
         ParseError {
@@ -20,14 +45,45 @@ impl<'s> ParseError<'s> {
         }
     }
 
-    pub(crate) fn no_such_sort(source: &'s Source, sort: &str) -> ParseError<'s> {
-        ParseError {
-            source,
-            cause: ParseErrorCause::NoSuchSort(sort.to_owned()),
-            span: None,
+    pub(crate) fn from_resolver_error(
+        source: &'s Source,
+        token_names: &[String],
+        op_token_names: &[String],
+        error: OpResolverError,
+    ) -> ParseError<'s> {
+        use OpResolverError::{UnexpectedEof, UnexpectedToken, WrongToken};
+
+        match error {
+            UnexpectedEof { op, expected } => ParseError {
+                source,
+                cause: ParseErrorCause::MissingSepEof {
+                    op_name: op_token_names[op].to_owned(),
+                    expected: token_names[expected].to_owned(),
+                },
+                span: Some(Span::new_at(source.end_of_file())),
+            },
+            WrongToken {
+                op,
+                expected,
+                found,
+            } => ParseError {
+                source,
+                cause: ParseErrorCause::MissingSep {
+                    op_name: op_token_names[op].to_owned(),
+                    expected: token_names[expected].to_owned(),
+                    found: source.substr(found.span).to_owned(),
+                },
+                span: Some(found.span),
+            },
+            UnexpectedToken { found } => ParseError {
+                source,
+                cause: ParseErrorCause::UnexpectedLexeme(source.substr(found.span).to_owned()),
+                span: Some(found.span),
+            },
         }
     }
 
+    /*
     pub(crate) fn unexpected_lexeme(source: &'s Source, lexeme: Lexeme) -> ParseError<'s> {
         ParseError {
             source,
@@ -35,39 +91,7 @@ impl<'s> ParseError<'s> {
             span: Some(lexeme.span),
         }
     }
-
-    pub(crate) fn missing_sep(
-        source: &'s Source,
-        op_name: &str,
-        expected: &str,
-        found: Lexeme,
-    ) -> ParseError<'s> {
-        ParseError {
-            source,
-            cause: ParseErrorCause::MissingSep {
-                op_name: op_name.to_owned(),
-                expected: expected.to_owned(),
-                found: source.substr(found.span).to_owned(),
-            },
-            span: Some(found.span),
-        }
-    }
-
-    pub(crate) fn missing_sep_eof(
-        source: &'s Source,
-        op_name: &str,
-        expected: &str,
-        span: Span,
-    ) -> ParseError<'s> {
-        ParseError {
-            source,
-            cause: ParseErrorCause::MissingSepEof {
-                op_name: op_name.to_owned(),
-                expected: expected.to_owned(),
-            },
-            span: Some(span),
-        }
-    }
+    */
 }
 
 impl<'s> fmt::Display for ParseError<'s> {
@@ -116,30 +140,3 @@ impl<'s> fmt::Display for ParseError<'s> {
     }
 }
 impl<'s> error::Error for ParseError<'s> {}
-
-#[derive(Debug, Error)]
-enum ParseErrorCause {
-    #[error("{0}")]
-    Custom(String),
-    #[error("Unexpected token '{0}'.")]
-    UnexpectedLexeme(String),
-    #[error(
-        "While parsing '{}', expected '{}' but found '{}'.",
-        op_name,
-        expected,
-        found
-    )]
-    MissingSep {
-        op_name: String,
-        expected: String,
-        found: String,
-    },
-    #[error(
-        "While parsing '{}', expected '{}' but found end of file.",
-        op_name,
-        expected
-    )]
-    MissingSepEof { op_name: String, expected: String },
-    #[error("Sort '{0}' is not defined in the grammar.")]
-    NoSuchSort(String),
-}

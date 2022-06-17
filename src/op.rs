@@ -37,12 +37,13 @@ pub enum Assoc {
     Right,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct Op {
     pub(crate) name: String,
     pub(crate) fixity: Fixity,
     pub(crate) assoc: Assoc,
     pub(crate) prec: Prec,
+    pub(crate) tokens: Vec<String>,
     // computed
     pub(crate) arity: usize,
     pub(crate) left_prec: Option<Prec>,
@@ -55,23 +56,23 @@ impl Op {
         fixity: Fixity,
         assoc: Assoc,
         prec: Prec,
-        num_tokens: usize,
+        tokens: Vec<String>,
     ) -> Op {
         assert_ne!(name, NAME_BLANK);
         assert_ne!(name, NAME_JUXTAPOSE);
-        Op::new_unchecked(name, fixity, assoc, prec, num_tokens)
+        Op::new_unchecked(name, fixity, assoc, prec, tokens)
     }
 
     pub(crate) fn new_atom(name: &str, _token: Token) -> Op {
-        Op::new_unchecked(name, Fixity::Nilfix, Assoc::Left, 0, 1)
+        Op::new_unchecked(name, Fixity::Nilfix, Assoc::Left, 0, vec![name.to_owned()])
     }
 
     pub(crate) fn new_blank() -> Op {
-        Op::new_unchecked(NAME_BLANK, Fixity::Nilfix, Assoc::Left, 0, 1)
+        Op::new_unchecked(NAME_BLANK, Fixity::Nilfix, Assoc::Left, 0, vec![NAME_BLANK.to_owned()])
     }
 
     pub(crate) fn new_juxtapose(assoc: Assoc, prec: Prec) -> Op {
-        Op::new_unchecked(NAME_JUXTAPOSE, Fixity::Infix, assoc, prec, 1)
+        Op::new_unchecked(NAME_JUXTAPOSE, Fixity::Infix, assoc, prec, vec![NAME_JUXTAPOSE.to_owned()])
     }
 
     fn new_unchecked(
@@ -79,21 +80,31 @@ impl Op {
         fixity: Fixity,
         assoc: Assoc,
         prec: Prec,
-        num_tokens: usize,
+        tokens: Vec<String>,
     ) -> Op {
+        use Assoc::{Left, Right};
         use Fixity::{Infix, Nilfix, Prefix, Suffix};
 
-        let (left_prec, right_prec) = compute_prec(prec, fixity, assoc);
+        let (left_prec, right_prec) = match (fixity, assoc) {
+            (Nilfix, _) => (None, None),
+            (Prefix, Left) => (None, Some(prec - 1)),
+            (Prefix, Right) => (None, Some(prec)),
+            (Suffix, Left) => (Some(prec), None),
+            (Suffix, Right) => (Some(prec - 1), None),
+            (Infix, Left) => (Some(prec), Some(prec - 1)),
+            (Infix, Right) => (Some(prec - 1), Some(prec)),
+        };
         let arity = match fixity {
-            Nilfix => num_tokens - 1,
-            Prefix | Suffix => num_tokens,
-            Infix => num_tokens + 1,
+            Nilfix => tokens.len() - 1,
+            Prefix | Suffix => tokens.len(),
+            Infix => tokens.len() + 1,
         };
         Op {
             name: name.to_owned(),
             fixity,
             assoc,
             prec,
+            tokens,
             arity,
             left_prec,
             right_prec,
@@ -101,28 +112,19 @@ impl Op {
     }
 }
 
-pub(crate) fn compute_prec(
-    prec: Prec,
-    fixity: Fixity,
-    assoc: Assoc,
-) -> (Option<Prec>, Option<Prec>) {
-    use Assoc::{Left, Right};
-    use Fixity::{Infix, Nilfix, Prefix, Suffix};
-
-    match (fixity, assoc) {
-        (Nilfix, _) => (None, None),
-        (Prefix, Left) => (None, Some(prec - 1)),
-        (Prefix, Right) => (None, Some(prec)),
-        (Suffix, Left) => (Some(prec), None),
-        (Suffix, Right) => (Some(prec - 1), None),
-        (Infix, Left) => (Some(prec), Some(prec - 1)),
-        (Infix, Right) => (Some(prec - 1), Some(prec)),
-    }
-}
-
 impl fmt::Display for Op {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.name)
+    }
+}
+
+impl fmt::Debug for Op {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}:\t{}\t{}\t{}", self.name, self.fixity, self.assoc, self.prec)?;
+        for token in &self.tokens {
+            write!(f, "\t{}", token)?;
+        }
+        Ok(())
     }
 }
 
