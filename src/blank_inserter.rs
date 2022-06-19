@@ -7,7 +7,7 @@ pub fn insert_blanks(
     lexemes: Vec<Lexeme>,
 ) -> Vec<Lexeme> {
     let mut arg_mode = true;
-    let mut last_pos = Position::start();
+    let mut last_pos = Position::start_of_file();
     let mut output = vec![];
     for lexeme in lexemes {
         let (preferred_table, unpreferred_table, fake_token) = if arg_mode {

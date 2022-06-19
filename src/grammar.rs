@@ -1,36 +1,24 @@
 use crate::lexer::{LexerBuilder, RegexError, UNICODE_WHITESPACE_REGEX};
 use crate::op::{Assoc, Fixity, Op, Prec};
 use crate::{
-    OpToken, Parser, Token, NAME_BLANK, NAME_ERROR, NAME_JUXTAPOSE, TOKEN_BLANK, TOKEN_ERROR,
-    TOKEN_JUXTAPOSE,
+    OpToken, OpTokenInfo, Parser, Token, TokenInfo, NAME_BLANK, NAME_ERROR, NAME_JUXTAPOSE,
+    TOKEN_BLANK, TOKEN_ERROR, TOKEN_JUXTAPOSE,
 };
 use std::fmt;
 use thiserror::Error;
 
 const PREC_DELTA: Prec = 10;
-const JUXTAPOSE_PREC: Prec = 10;
+const JUXTAPOSE_PREC: Prec = 5;
 
 /// A grammar for a language. Add operators until the grammar is complete, then call `.finish()` to
 /// construct a `Parser` you can use to parse.
 #[derive(Debug, Clone)]
 pub struct Grammar {
     lexer_builder: LexerBuilder,
-    // Token -> user-facing name
-    token_names: Vec<String>,
-    // Token -> Option<(OpToken, has_right_arg)>
-    prefixy_tokens: Vec<Option<(OpToken, bool)>>,
-    // Token -> Option<(OpToken, has_right_arg)>
-    suffixy_tokens: Vec<Option<(OpToken, bool)>>,
-    // Token -> Option<OpToken that starts with that token>
-    op_table: Vec<Option<OpToken>>,
-    // OpToken -> Option<(next token, next optoken)>
-    follower_tokens: Vec<Option<(Token, OpToken)>>,
-    // OpToken -> user-facing name for the op owning that token
-    op_token_names: Vec<String>,
-    // OpToken -> (prec, prec)
-    prec_table: Vec<(Prec, Prec)>,
-    // OpToken -> Op that starts with that token
-    ops: Vec<Option<Op>>,
+    // Token -> info about that token
+    token_table: Vec<TokenInfo>,
+    // OpToken -> info about that optoken
+    op_token_table: Vec<OpTokenInfo>,
     current_prec: Prec,
     current_assoc: Assoc,
 }
@@ -74,25 +62,50 @@ impl Grammar {
         use GrammarError::RegexError;
 
         let lexer_builder = LexerBuilder::new(whitespace_regex).map_err(RegexError)?;
+        let juxt_op = Op::new_juxtapose(Assoc::Left, JUXTAPOSE_PREC);
         Ok(Grammar {
             // First three tokens: ERROR, BLANK, JUXTAPOSE
             lexer_builder,
-            token_names: vec![
-                NAME_ERROR.to_owned(),
-                NAME_BLANK.to_owned(),
-                NAME_JUXTAPOSE.to_owned(),
+            token_table: vec![
+                TokenInfo {
+                    name: NAME_ERROR.to_owned(),
+                    as_prefix: Some((TOKEN_ERROR, false)),
+                    as_suffix: None,
+                },
+                TokenInfo {
+                    name: NAME_BLANK.to_owned(),
+                    as_prefix: None,
+                    as_suffix: None,
+                },
+                TokenInfo {
+                    name: NAME_JUXTAPOSE.to_owned(),
+                    as_prefix: None,
+                    as_suffix: None,
+                },
             ],
-            op_token_names: vec![
-                NAME_ERROR.to_owned(),
-                NAME_BLANK.to_owned(),
-                NAME_JUXTAPOSE.to_owned(),
+            op_token_table: vec![
+                OpTokenInfo {
+                    name: NAME_ERROR.to_owned(),
+                    op: None,
+                    lprec: 0,
+                    rprec: 0,
+                    follower: None,
+                },
+                OpTokenInfo {
+                    name: NAME_BLANK.to_owned(),
+                    op: Some(Op::new_blank()),
+                    lprec: 0,
+                    rprec: 0,
+                    follower: None,
+                },
+                OpTokenInfo {
+                    name: NAME_JUXTAPOSE.to_owned(),
+                    lprec: juxt_op.left_prec.unwrap_or(0),
+                    rprec: juxt_op.right_prec.unwrap_or(0),
+                    op: Some(juxt_op),
+                    follower: None,
+                },
             ],
-            prefixy_tokens: vec![Some((TOKEN_ERROR, false)), None, None],
-            suffixy_tokens: vec![None, None, None],
-            op_table: vec![Some(TOKEN_ERROR), Some(TOKEN_BLANK), Some(TOKEN_JUXTAPOSE)],
-            follower_tokens: vec![None, None, None],
-            prec_table: vec![(0, 0), (0, 0), (JUXTAPOSE_PREC, JUXTAPOSE_PREC)],
-            ops: vec![None, None, None],
             current_prec: 0,
             current_assoc: Assoc::Left,
         })
@@ -142,14 +155,11 @@ impl Grammar {
         let (prec, assoc) = self.get_prec_and_assoc()?;
         let op = Op::new_juxtapose(assoc, prec);
         let (lprec, rprec) = (op.left_prec, op.right_prec);
-        self.add_op_token(
-            Some(op),
-            NAME_JUXTAPOSE,
-            TOKEN_JUXTAPOSE,
-            lprec,
-            rprec,
-            None,
-        );
+        println!("?? {:?}/{:?}", lprec, rprec);
+        let mut row = &mut self.op_token_table[TOKEN_JUXTAPOSE];
+        row.op = Some(op);
+        row.lprec = lprec.unwrap_or(0);
+        row.rprec = rprec.unwrap_or(0);
         Ok(())
     }
 
@@ -193,14 +203,13 @@ impl Grammar {
                 .lexer_builder
                 .finish()
                 .map_err(GrammarError::RegexError)?,
-            token_names: self.token_names,
-            op_token_names: self.op_token_names,
-            prefixy_tokens: self.prefixy_tokens,
-            suffixy_tokens: self.suffixy_tokens,
-            op_table: self.op_table,
-            follower_tokens: self.follower_tokens,
-            prec_table: self.prec_table,
-            ops: self.ops,
+            token_table: self.token_table,
+            prec_table: self
+                .op_token_table
+                .iter()
+                .map(|row| (row.lprec, row.rprec))
+                .collect(),
+            op_token_table: self.op_token_table,
         })
     }
 
@@ -222,12 +231,12 @@ impl Grammar {
             let patt = pattern.tokens.last().unwrap();
             let token = self.add_string_token(patt)?;
             let optok = self.add_op_token(None, name, token, Some(Prec::MAX), rprec, None)?;
-            let mut follower: (Token, OpToken) = (token, optok);
+            let mut follower = (token, optok, rprec.is_some());
             for patt in pattern.tokens.iter().skip(1).rev().skip(1) {
                 let token = self.add_string_token(patt)?;
                 let optok =
                     self.add_op_token(None, name, token, maxprec, maxprec, Some(follower))?;
-                follower = (token, optok);
+                follower = (token, optok, true);
             }
             let patt = pattern.tokens.first().unwrap();
             let token = self.add_string_token(patt)?;
@@ -255,11 +264,16 @@ impl Grammar {
     }
 
     fn insert_token(&mut self, token: Token, name: &str) {
-        self.token_names.push(name.to_owned());
-        self.prefixy_tokens.push(None);
-        self.suffixy_tokens.push(None);
-        self.op_table.push(None);
-        self.follower_tokens.push(None);
+        if token == self.token_table.len() {
+            self.token_table.push(TokenInfo {
+                name: name.to_owned(),
+                as_prefix: None,
+                as_suffix: None,
+            });
+        } else {
+            let row = &self.token_table[token];
+            assert_eq!(&row.name, name, "Duplicate token {}", name);
+        }
     }
 
     fn add_op_token(
@@ -269,33 +283,36 @@ impl Grammar {
         token: Token,
         lprec: Option<Prec>,
         rprec: Option<Prec>,
-        follower: Option<(Token, OpToken)>,
+        follower: Option<(Token, OpToken, bool)>,
     ) -> Result<OpToken, GrammarError> {
         use Assoc::{Left, Right};
         use Fixity::{Infix, Nilfix, Prefix, Suffix};
 
-        let op_token = self.ops.len();
-        self.op_table[token] = Some(op_token);
-        self.ops.push(op);
-        self.op_token_names.push(name.to_owned());
-        if lprec.is_none() {
-            if self.prefixy_tokens[token].is_some() {
-                return Err(GrammarError::PrefixyConflict {
-                    token: self.token_names[token].clone(),
-                });
+        let op_token = self.op_token_table.len();
+        if op.is_some() {
+            if lprec.is_none() {
+                if self.token_table[token].as_prefix.is_some() {
+                    return Err(GrammarError::PrefixyConflict {
+                        token: self.token_table[token].name.clone(),
+                    });
+                }
+                self.token_table[token].as_prefix = Some((op_token, rprec.is_some()));
+            } else {
+                if self.token_table[token].as_suffix.is_some() {
+                    return Err(GrammarError::SuffixyConflict {
+                        token: self.token_table[token].name.clone(),
+                    });
+                }
+                self.token_table[token].as_suffix = Some((op_token, rprec.is_some()));
             }
-            self.prefixy_tokens[token] = Some((op_token, rprec.is_some()));
-        } else {
-            if self.suffixy_tokens[token].is_some() {
-                return Err(GrammarError::SuffixyConflict {
-                    token: self.token_names[token].clone(),
-                });
-            }
-            self.suffixy_tokens[token] = Some((op_token, rprec.is_some()));
         }
-        self.follower_tokens.push(follower);
-        self.prec_table
-            .push((lprec.unwrap_or(0), rprec.unwrap_or(0)));
+        self.op_token_table.push(OpTokenInfo {
+            name: name.to_owned(),
+            op,
+            lprec: lprec.unwrap_or(0),
+            rprec: rprec.unwrap_or(0),
+            follower,
+        });
         Ok(op_token)
     }
 

@@ -86,8 +86,18 @@ impl<'s, 'p, 't> Visitor<'s, 'p, 't> {
     }
 
     /// The span of this node's first token.
-    pub fn span(&self) -> Span {
+    pub fn token_span(&self) -> Span {
         self.item().span
+    }
+
+    /// The span of this node and it's children.
+    pub fn span(&self) -> Span {
+        let mut span = self.item().span;
+        if self.arity() > 0 {
+            span.start = span.start.min(self.child(0).item().span.start);
+            span.end = span.end.max(self.child(self.arity() - 1).item().span.end);
+        }
+        span
     }
 
     /// The source text covered by `span()`.

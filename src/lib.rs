@@ -7,13 +7,12 @@
 #![allow(unused)]
 #![allow(clippy::diverging_sub_expression)]
 
-mod blank_inserter;
 mod grammar;
 mod lexer;
 mod op;
-mod op_resolver;
 mod parse_error;
 mod parse_tree;
+mod resolver;
 mod shunter;
 mod source;
 mod tree_visitor;
@@ -78,14 +77,28 @@ pub struct Span {
 #[derive(Debug, Clone)]
 pub struct Parser {
     lexer: Lexer,
-    token_names: Vec<String>,
-    op_token_names: Vec<String>,
-    prefixy_tokens: Vec<Option<(OpToken, bool)>>,
-    suffixy_tokens: Vec<Option<(OpToken, bool)>>,
-    op_table: Vec<Option<OpToken>>,
-    follower_tokens: Vec<Option<(Token, OpToken)>>,
+    // Token -> info about that token
+    token_table: Vec<TokenInfo>,
+    // OpToken -> info about that optoken
+    op_token_table: Vec<OpTokenInfo>,
+    // A subset of op_token_table
     prec_table: Vec<(Prec, Prec)>,
-    ops: Vec<Option<Op>>,
+}
+
+#[derive(Debug, Clone)]
+struct TokenInfo {
+    name: String,
+    as_prefix: Option<(OpToken, bool)>,
+    as_suffix: Option<(OpToken, bool)>,
+}
+
+#[derive(Debug, Clone)]
+struct OpTokenInfo {
+    name: String,
+    op: Option<Op>,
+    lprec: Prec,
+    rprec: Prec,
+    follower: Option<(Token, OpToken, bool)>,
 }
 
 impl Parser {
@@ -94,38 +107,65 @@ impl Parser {
         &'g self,
         source: &'s Source,
     ) -> Result<ParseTree<'s, 'g>, ParseError<'s>> {
-        use blank_inserter::insert_blanks;
-        use op_resolver::resolve;
         use parse_tree::Item;
+        use resolver::resolve;
         use std::iter::FromIterator;
         use tree_visitor::Forest;
 
+        #[cfg(feature = "debug_mode")]
+        fn print_lexemes(message: &str, source: &Source, lexemes: &[Lexeme]) {
+            print!("{}", message);
+            for lexeme in lexemes {
+                if lexeme.span.is_empty() {
+                    print!("_ ");
+                } else {
+                    print!("{} ", source.substr(lexeme.span));
+                }
+            }
+            println!();
+        }
         let lexemes = self.lexer.lex(source.source()).collect::<Vec<_>>();
-        let lexemes = resolve(&self.op_table, &self.follower_tokens, lexemes).map_err(|err| {
-            ParseError::from_resolver_error(source, &self.token_names, &self.op_token_names, err)
+        #[cfg(feature = "debug_mode")]
+        print_lexemes("Lexed:    ", source, &lexemes);
+        let lexemes = resolve(&self.token_table, &self.op_token_table, lexemes).map_err(|err| {
+            ParseError::from_resolver_error(source, &self.token_table, &self.op_token_table, err)
         })?;
-        let lexemes = insert_blanks(&self.prefixy_tokens, &self.suffixy_tokens, lexemes);
+        #[cfg(feature = "debug_mode")]
+        print_lexemes("Resolved: ", source, &lexemes);
         let lexemes = shunt(&self.prec_table, lexemes);
-        let lexemes = lexemes
-            .into_iter()
-            .filter_map(|lexeme| match &self.ops[lexeme.token] {
-                None => None,
-                Some(op) => Some(Item {
-                    op,
-                    span: lexeme.span,
-                }),
-            });
+        #[cfg(feature = "debug_mode")]
+        print_lexemes("Shunted:  ", source, &lexemes);
+        #[cfg(feature = "debug_mode")]
+        print_lexemes(
+            "Filtered: ",
+            source,
+            &lexemes
+                .iter()
+                .copied()
+                .filter(|lexeme| self.op_token_table[lexeme.token].op.is_some())
+                .collect::<Vec<_>>(),
+        );
+        let lexemes =
+            lexemes
+                .into_iter()
+                .filter_map(|lexeme| match &self.op_token_table[lexeme.token].op {
+                    None => None,
+                    Some(op) => Some(Item {
+                        op,
+                        span: lexeme.span,
+                    }),
+                });
         let forest = Forest::from_iter(lexemes);
         Ok(ParseTree::new(source, self, forest))
     }
 
     fn arity(&self, op_token: OpToken) -> usize {
-        let (lprec, rprec) = self.prec_table[op_token];
-        (lprec != 0) as usize + (rprec != 0) as usize
+        let row = &self.op_token_table[op_token];
+        (row.lprec != 0) as usize + (row.rprec != 0) as usize
     }
 
     fn name(&self, op_token: OpToken) -> &str {
-        &self.token_names[op_token]
+        &self.op_token_table[op_token].name
     }
 }
 
@@ -141,29 +181,24 @@ impl fmt::Display for Parser {
         }
 
         writeln!(f, "OPERATORS")?;
-        for opt in &self.ops {
-            if let Some(op) = opt {
+        for row in &self.op_token_table {
+            if let Some(op) = &row.op {
                 writeln!(f, "\t{:?}", op);
             }
         }
         writeln!(f);
         writeln!(f, "TOKENS")?;
-        writeln!(f, "\tName\tOpToken\tPrefixy\tRArg\tSuffixy\tRArg")?;
-        writeln!(f, "\t-------\t-------\t-------\t-------\t-------\t-------")?;
-        for token in 0..self.token_names.len() {
-            write!(f, "{}", token)?;
-            write!(f, "\t{}", head(&self.token_names[token]))?;
-            if let Some(optok) = self.op_table[token] {
-                write!(f, "\t{}", optok)?;
-            } else {
-                write!(f, "\t-")?;
-            }
-            if let Some((optok, rarg)) = self.prefixy_tokens[token] {
+        writeln!(f, "\tName\tPrefixy\tRArg\tSuffixy\tRArg")?;
+        writeln!(f, "\t-------\t-------\t-------\t-------\t-------")?;
+        for (i, row) in self.token_table.iter().enumerate() {
+            write!(f, "{}", i)?;
+            write!(f, "\t{}", head(&row.name));
+            if let Some((optok, rarg)) = row.as_prefix {
                 write!(f, "\t{}\t{}", optok, rarg)?;
             } else {
                 write!(f, "\t-\t-")?;
             }
-            if let Some((optok, rarg)) = self.suffixy_tokens[token] {
+            if let Some((optok, rarg)) = row.as_suffix {
                 writeln!(f, "\t{}\t{}", optok, rarg)?;
             } else {
                 writeln!(f, "\t-\t-")?;
@@ -171,16 +206,16 @@ impl fmt::Display for Parser {
         }
         writeln!(f);
         writeln!(f, "OP TOKENS")?;
-        writeln!(f, "\tName\tOp?\tLPrec\tRPrec\tNextT\tNextOT")?;
+        writeln!(f, "\tOp\tStart?\tLPrec\tRPrec\tNextT\tNextOT\tRArg")?;
         writeln!(f, "\t-------\t-------\t-------\t-------\t-------\t-------")?;
-        for optok in 0..self.ops.len() {
-            write!(f, "{}", optok)?;
-            write!(f, "\t{}\t{}", head(&self.op_token_names[optok]), self.ops[optok].is_some())?;
-            write!(f, "\t{}\t{}", self.prec_table[optok].0, self.prec_table[optok].1)?;
-            if let Some((next_tok, next_optok)) = self.follower_tokens[optok] {
-                writeln!(f, "\t{}\t{}", next_tok, next_optok)?;
+        for (i, row) in self.op_token_table.iter().enumerate() {
+            write!(f, "{}", i)?;
+            write!(f, "\t{}\t{}", head(&row.name), row.op.is_some())?;
+            write!(f, "\t{}\t{}", row.lprec, row.rprec)?;
+            if let Some((next_tok, next_optok, rarg)) = row.follower {
+                writeln!(f, "\t{}\t{}\t{}", next_tok, next_optok, rarg)?;
             } else {
-                writeln!(f, "\t-\t-")?;
+                writeln!(f, "\t-\t-\t-")?;
             }
         }
         Ok(())
@@ -201,7 +236,7 @@ impl fmt::Display for Span {
 
 impl Position {
     /// The position at the start of any document.
-    pub fn start() -> Position {
+    pub fn start_of_file() -> Position {
         Position {
             line: 0,
             col: 0,
@@ -242,11 +277,15 @@ impl Span {
         Span { start, end }
     }
 
-    pub fn new_at(pos: Position) -> Span {
+    pub fn new_at_pos(pos: Position) -> Span {
         Span {
             start: pos,
             end: pos,
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.start == self.end
     }
 }
 
@@ -297,11 +336,8 @@ pub mod implementation {
     pub mod lexer {
         pub use crate::lexer::*;
     }
-    pub mod blank_inserter {
-        pub use crate::blank_inserter::*;
-    }
-    pub mod op_resolver {
-        pub use crate::op_resolver::*;
+    pub mod resolver {
+        pub use crate::resolver::*;
     }
     pub mod shunter {
         pub use crate::shunter::*;

@@ -44,7 +44,6 @@ fn test_parsing_minus() {
     assert_parse(&parser, "1 - -2 - 3", "(minus (minus 1 (neg 2)) 3)");
 }
 
-#[ignore]
 #[test]
 fn test_parsing_blank() {
     fn make_parser() -> Result<Parser, GrammarError> {
@@ -67,7 +66,6 @@ fn test_parsing_blank() {
     assert_parse(&parser, "+--+", "(plus (plus _ (neg (neg _))) _)");
 }
 
-#[ignore]
 #[test]
 fn test_parsing_juxtapose() {
     fn make_parser_1() -> Result<Parser, GrammarError> {

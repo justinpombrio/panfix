@@ -68,11 +68,23 @@ impl Op {
     }
 
     pub(crate) fn new_blank() -> Op {
-        Op::new_unchecked(NAME_BLANK, Fixity::Nilfix, Assoc::Left, 0, vec![NAME_BLANK.to_owned()])
+        Op::new_unchecked(
+            NAME_BLANK,
+            Fixity::Nilfix,
+            Assoc::Left,
+            0,
+            vec![NAME_BLANK.to_owned()],
+        )
     }
 
     pub(crate) fn new_juxtapose(assoc: Assoc, prec: Prec) -> Op {
-        Op::new_unchecked(NAME_JUXTAPOSE, Fixity::Infix, assoc, prec, vec![NAME_JUXTAPOSE.to_owned()])
+        Op::new_unchecked(
+            NAME_JUXTAPOSE,
+            Fixity::Infix,
+            assoc,
+            prec,
+            vec![NAME_JUXTAPOSE.to_owned()],
+        )
     }
 
     fn new_unchecked(
@@ -120,7 +132,11 @@ impl fmt::Display for Op {
 
 impl fmt::Debug for Op {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}:\t{}\t{}\t{}", self.name, self.fixity, self.assoc, self.prec)?;
+        write!(
+            f,
+            "{}:\t{}\t{}\t{}",
+            self.name, self.fixity, self.assoc, self.prec
+        )?;
         for token in &self.tokens {
             write!(f, "\t{}", token)?;
         }

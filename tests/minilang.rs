@@ -1,13 +1,11 @@
-use panfix::{pattern, Grammar, GrammarError, ParseError, ParseTree, Parser, Source, Visitor};
+use panfix::{
+    pattern, Grammar, GrammarError, ParseError, ParseTree, Parser, Source, Span, Visitor,
+};
 use std::fmt;
 use std::mem;
 
 fn make_parser() -> Result<Parser, GrammarError> {
     let mut grammar = Grammar::new_with_unicode_whitespace()?;
-    grammar.sort("Empty");
-    grammar.sort("Id");
-    grammar.regex("id", "[a-zA-Z]+")?;
-    grammar.sort("Expr");
     grammar.regex("id", "[a-zA-Z]+")?;
     grammar.regex("num", "[+-]?[0-9]+")?;
     grammar.op("block", pattern!("{" "}"))?;
@@ -102,21 +100,27 @@ impl<'a, 's, 'g> Traverser<'a, 's, 'g> {
     }
 
     fn parse_id(&mut self, visitor: Visitor<'s, '_, '_>) -> Result<String, ()> {
-        match visitor.op() {
-            // TODO: blank / juxt
+        match visitor.name() {
             "id" => Ok(visitor.source().to_owned()),
-            _ => unreachable!(),
+            _ => self.error(visitor.span(), "Expected an identifier."),
         }
     }
 
     fn parse_expr(&mut self, visitor: Visitor<'s, '_, '_>) -> Result<Expr, ()> {
-        match visitor.op() {
-            // TODO: blank / juxt
+        match visitor.name() {
             // TODO: num error
+            "Blank" => self.error(
+                visitor.span(),
+                "Expected an expression, but found nothing."
+            ),
+            "Juxtapose" => self.error(
+                visitor.span(),
+                "Found two expressions with nothing to join them."
+            ),
             "id" => Ok(Expr::Id(visitor.source().to_owned())),
             "num" => Ok(Expr::Num(visitor.source().parse::<i32>().unwrap())),
             "lt" | "gt" | "eq" | "plus" => {
-                let comparison = match visitor.op() {
+                let comparison = match visitor.name() {
                     "lt" => Binop::Lt,
                     "gt" => Binop::Gt,
                     "eq" => Binop::Eq,
@@ -147,14 +151,13 @@ impl<'a, 's, 'g> Traverser<'a, 's, 'g> {
             "else" => {
                 let mut clauses = visitor;
                 let mut chain = vec![];
-                while clauses.op() == "else" {
+                while clauses.name() == "else" {
                     let [ifclause, else_clauses] = clauses.expect_children();
-                    if ifclause.op() != "if" {
-                        self.errors.push(self.parse_tree.error(
-                            clauses.op_span(),
+                    if ifclause.name() != "if" {
+                        return self.error(
+                            clauses.token_span(),
                             "An 'else' may only come after an 'if', but this 'else' is on its own.",
-                        ));
-                        return Err(());
+                        );
                     }
                     clauses = else_clauses;
                     let [cond, consq] = ifclause.expect_children();
@@ -162,12 +165,11 @@ impl<'a, 's, 'g> Traverser<'a, 's, 'g> {
                     let consq = self.parse_expr(consq);
                     chain.push((cond?, consq?));
                 }
-                if clauses.op() != "block" {
-                    self.errors.push(self.parse_tree.error(
+                if clauses.name() != "block" {
+                    return self.error(
                         clauses.span(),
                         "An 'else' must be followed by braces '{...}', but this 'else' was not.",
-                    ));
-                    return Err(());
+                    );
                 }
                 let [final_else] = clauses.expect_children();
                 let final_else = self.parse_expr(final_else);
@@ -184,6 +186,11 @@ impl<'a, 's, 'g> Traverser<'a, 's, 'g> {
             op => panic!("missing op case {}", op),
         }
     }
+
+    fn error<T>(&mut self, span: Span, message: &str) -> Result<T, ()> {
+        self.errors.push(self.parse_tree.error(span, message));
+        Err(())
+    }
 }
 
 #[track_caller]
@@ -191,7 +198,7 @@ fn parse_to_string(parser: &Parser, src: &str) -> String {
     use std::fmt::Write;
 
     let source = Source::new("testcase", src.to_owned());
-    match parser.parse(&source, "Expr") {
+    match parser.parse(&source) {
         Ok(tree) => {
             let traverser = Traverser::new(&tree);
             match traverser.parse() {
@@ -217,6 +224,7 @@ fn test(parser: &Parser, src: &str, expected: &str) {
     if actual != expected {
         println!("ACTUAL:\n{}", actual);
         println!("EXPECTED:\n{}", expected);
+        println!("END");
         panic!("test case failed");
     }
 }
@@ -254,11 +262,11 @@ fn test_parsing_let() {
     test(
         &parser,
         "let x + 1 = 5 in x",
-        r#"Parse Error: While parsing 'let', expected '=' but found '+'.
+        r#"Parse Error: Expected an identifier.
 At 'testcase' line 0.
 
 let x + 1 = 5 in x
-      ^"#,
+    ^^^^^"#,
     );
 }
 
@@ -281,4 +289,24 @@ At 'testcase' line 0.
 (1 else { A }) + (if x > 5 { A } else B + C)
                                       ^^^^^"#,
     );
+}
+
+#[test]
+fn test_blank_and_juxtapose_errors() {
+    let parser = make_parser().unwrap();
+
+    test(
+        &parser,
+        "1 2 +",
+        r#"Parse Error: Found two expressions with nothing to join them.
+At 'testcase' line 0.
+
+1 2 +
+^^^
+
+Parse Error: Expected an expression, but found nothing.
+At 'testcase' line 0.
+
+1 2 +
+     ^"#);
 }

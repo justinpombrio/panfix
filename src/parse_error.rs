@@ -1,5 +1,5 @@
-use crate::op_resolver::OpResolverError;
-use crate::{Lexeme, Source, Span};
+use crate::resolver::ResolverError;
+use crate::{Lexeme, OpTokenInfo, Source, Span, TokenInfo};
 use std::error;
 use std::fmt;
 use thiserror::Error;
@@ -47,20 +47,20 @@ impl<'s> ParseError<'s> {
 
     pub(crate) fn from_resolver_error(
         source: &'s Source,
-        token_names: &[String],
-        op_token_names: &[String],
-        error: OpResolverError,
+        token_table: &[TokenInfo],
+        op_token_table: &[OpTokenInfo],
+        error: ResolverError,
     ) -> ParseError<'s> {
-        use OpResolverError::{UnexpectedEof, UnexpectedToken, WrongToken};
+        use ResolverError::{UnexpectedEof, UnexpectedToken, WrongToken};
 
         match error {
             UnexpectedEof { op, expected } => ParseError {
                 source,
                 cause: ParseErrorCause::MissingSepEof {
-                    op_name: op_token_names[op].to_owned(),
-                    expected: token_names[expected].to_owned(),
+                    op_name: op_token_table[op].name.clone(),
+                    expected: token_table[expected].name.clone(),
                 },
-                span: Some(Span::new_at(source.end_of_file())),
+                span: Some(Span::new_at_pos(source.end_of_file())),
             },
             WrongToken {
                 op,
@@ -69,8 +69,8 @@ impl<'s> ParseError<'s> {
             } => ParseError {
                 source,
                 cause: ParseErrorCause::MissingSep {
-                    op_name: op_token_names[op].to_owned(),
-                    expected: token_names[expected].to_owned(),
+                    op_name: op_token_table[op].name.clone(),
+                    expected: token_table[expected].name.clone(),
                     found: source.substr(found.span).to_owned(),
                 },
                 span: Some(found.span),

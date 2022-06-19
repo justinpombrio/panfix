@@ -9,3 +9,6 @@ edition = "2018"
 [dependencies]
 regex = "1"
 thiserror = "1"
+
+[features]
+debug_mode = []
