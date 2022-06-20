@@ -1,28 +1,16 @@
-use crate::{Token, NAME_BLANK, NAME_JUXTAPOSE, TOKEN_BLANK, TOKEN_JUXTAPOSE};
+use crate::{Token, NAME_BLANK, NAME_ERROR, NAME_JUXTAPOSE};
 use std::fmt;
 
 /// Precedence level. Smaller is tighter / wins.
 pub type Prec = u16;
 
-/// Whether the operator takes an argument on the left, on the right, both, or neither. And
-/// furthermore, if the operator takes an argument on both sides, whether
-/// For
-/// example:
+/// Whether an operator takes an argument on the left and/or on the right. For example:
 ///
 /// - `3` takes no arguments, so it is a `Nilfix` operator.
 /// - `_ [ _ ]` (indexing) takes an argument only on the left, so it is a `Suffix` operator. (The
 /// "internal argument" between the brackets does not count towards the fixity.)
 /// - `! _` (not) takes an argument only on the right, so it is a `Prefix` oeprator.
-/// - `_ - _` takes an argument on both sides, so it is an infix operator. This leaves the question
-/// of whether it is `InfixL` ("left-associative") or `InfixR` ("right-associative"). Subtraction
-/// is left-associative (`InfixL`) because `0 - 10 - 1` is equal to `(0 - 10) - 1 = -11` rather
-/// than `0 - (10 - 1) = -9`.
-/// - `_ . _` (field access) is also `InfixL` (left-associative) because `person.birthdate.year` is
-/// equal to `(person.birthdate).year` and not `person.(birthdate.year)`.
-/// - Right-associativity is less common, but in languages that allow chained variable declarations,
-/// `x = y = 3` is right-associative. If it were left-associative, it would be equal to `(x = y) =
-/// 3`, which would attempt to set `x` equal to `y` before `y` had been defined.  Instead it is
-/// right-associative (`InfixR`) and thus equal to `x = (y = 3)`.
+/// - `_ - _` takes an argument on both sides, so it is an infix operator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Fixity {
     Nilfix,
@@ -31,13 +19,23 @@ pub enum Fixity {
     Infix,
 }
 
+/// Whether an operator is left or right associative. For example:
+///
+/// - Subtraction is left associative because `0 - 10 - 1` is equal to `(0 - 10) - 1 = -11` rather
+///   than `0 - (10 - 1) = -9`.
+/// - `_ . _` (field access) is also left associative because `person.birthdate.year` is
+///   equal to `(person.birthdate).year` and not `person.(birthdate.year)`.
+/// - Right associativity is less common, but in languages that allow chained variable declarations,
+///   `x = y = 3` is right-associative. If it were left-associative, it would be equal to `(x = y) =
+///   3`, which would attempt to set `x` equal to `y` before `y` had been defined.  Instead it is
+///   right-associative (`InfixR`) and thus equal to `x = (y = 3)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Assoc {
     Left,
     Right,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct Op {
     pub(crate) name: String,
     pub(crate) fixity: Fixity,
@@ -67,13 +65,23 @@ impl Op {
         Op::new_unchecked(name, Fixity::Nilfix, Assoc::Left, 0, vec![name.to_owned()])
     }
 
+    pub(crate) fn new_error() -> Op {
+        Op::new_unchecked(
+            NAME_ERROR,
+            Fixity::Nilfix,
+            Assoc::Left,
+            0,
+            vec!["".to_owned()],
+        )
+    }
+
     pub(crate) fn new_blank() -> Op {
         Op::new_unchecked(
             NAME_BLANK,
             Fixity::Nilfix,
             Assoc::Left,
             0,
-            vec![NAME_BLANK.to_owned()],
+            vec!["".to_owned()],
         )
     }
 
@@ -83,7 +91,7 @@ impl Op {
             Fixity::Infix,
             assoc,
             prec,
-            vec![NAME_JUXTAPOSE.to_owned()],
+            vec!["".to_owned()],
         )
     }
 
@@ -127,39 +135,5 @@ impl Op {
 impl fmt::Display for Op {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.name)
-    }
-}
-
-impl fmt::Debug for Op {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}:\t{}\t{}\t{}",
-            self.name, self.fixity, self.assoc, self.prec
-        )?;
-        for token in &self.tokens {
-            write!(f, "\t{}", token)?;
-        }
-        Ok(())
-    }
-}
-
-impl fmt::Display for Fixity {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Fixity::Nilfix => write!(f, "nilfix"),
-            Fixity::Prefix => write!(f, "prefix"),
-            Fixity::Suffix => write!(f, "suffix"),
-            Fixity::Infix => write!(f, "infix"),
-        }
-    }
-}
-
-impl fmt::Display for Assoc {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Assoc::Left => write!(f, "left"),
-            Assoc::Right => write!(f, "right"),
-        }
     }
 }

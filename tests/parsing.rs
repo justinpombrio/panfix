@@ -2,10 +2,50 @@ use panfix::{pattern, Grammar, GrammarError, Parser, Source};
 
 #[track_caller]
 fn assert_parse(parser: &Parser, src: &str, expected: &str) {
-    println!("{}", parser);
     let source = Source::new("testcase", src.to_owned());
     let tree = parser.parse(&source).unwrap();
     assert_eq!(format!("{}", tree.visitor()), expected);
+}
+
+#[track_caller]
+fn assert_error(parser: &Parser, src: &str, expected: &str) {
+    let source = Source::new("testcase", src.to_owned());
+    let err = parser.parse(&source).unwrap_err();
+    assert_eq!(format!("{}", err), expected);
+}
+
+#[test]
+fn test_lexing_error() {
+    fn make_parser() -> Result<Parser, GrammarError> {
+        let mut grammar = Grammar::new_with_unicode_whitespace()?;
+        grammar.regex("num", "[0-9]+")?;
+        grammar.lgroup();
+        grammar.op("plus", pattern!(_ "+" _))?;
+        grammar.finish()
+    }
+    let parser = make_parser().unwrap();
+
+    assert_error(
+        &parser,
+        "%!",
+        r#"Parse Error: Unrecognized token.
+At 'testcase' line 0.
+
+%!
+^^
+"#,
+    );
+
+    assert_error(
+        &parser,
+        "5 + %! + 8",
+        r#"Parse Error: Unrecognized token.
+At 'testcase' line 0.
+
+5 + %! + 8
+    ^^
+"#,
+    );
 }
 
 #[test]
@@ -49,6 +89,7 @@ fn test_parsing_blank() {
     fn make_parser() -> Result<Parser, GrammarError> {
         let mut grammar = Grammar::new_with_unicode_whitespace()?;
         grammar.regex("num", "[0-9]+")?;
+        grammar.op("parens", pattern!("(" ")"))?;
         grammar.lgroup();
         grammar.op("neg", pattern!("-" _))?;
         grammar.lgroup();
@@ -64,6 +105,7 @@ fn test_parsing_blank() {
     assert_parse(&parser, "-", "(neg _)");
     assert_parse(&parser, "+--+", "(plus (plus _ (neg (neg _))) _)");
     assert_parse(&parser, "+--+", "(plus (plus _ (neg (neg _))) _)");
+    assert_parse(&parser, "()", "(parens _)");
 }
 
 #[test]

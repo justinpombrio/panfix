@@ -1,11 +1,66 @@
-// TODO:
-// - Thorough testing
-// - Method to display the grammar as a pretty table, given a way to display a token
-// - Think about what happens if a starting token is also a follower token in the same subgrammar.
+/*
+//! # Panfix
+//!
+//! Panfix is a new approach to parsing, using a modified version of [operator precedence
+//! grammars](https://en.wikipedia.org/wiki/Operator-precedence_grammar):
+//!
+//! - It is not a CFG parser or a PEG parser, it's something new.
+//! - It runs in linear time. `O(N)`, to be precise, not `O(NG)` like PEG packrat parsing.
+//! - It has clear error messages around constructing grammars, and makes it very natural to
+//!   construct clear parse error messages.
+//! - It's pretty simple to implement.
+//!
+//! The main question is how expressive it is. You'll find examples of things you might want to
+//! parse, and how to parse them, in the [Examples](#examples) section below. If you encounter
+//! something that you have difficulty parsing with this approach, please open an issue to let me
+//! know!
+//!
+//! ## Overview
+//!
+//!
+//!
+//! [FILL]
+//!
+//! ## Examples
+//!
+//! ### Unary vs. Binary Minus
+//!
+//! Two operators are allowed to start with the same token, as long as one of them takes a left
+//! argument and the other does not. This let's us parse both unary and binary minus:
+//!
+//! [TODO]
+//! ```
+//! use panfix::{Grammar, Visitor, pattern};
+//!
+//! fn to_sexpr(visitor: Visitor) -> String {
+//!     if visitor.num_children() == 0 {
+//!         visitor.source().to_string()
+//!     } else {
+//!         let mut sexpr = "(".to_string();
+//!         sexpr.push_str(visitor.op());
+//!         for child in visitor.children() {
+//!             sexpr.push_str(" ");
+//!             sexpr.push_str(&to_sexpr(child));
+//!         }
+//!         sexpr
+//!     }
+//! }
+//!
+//! let mut grammar = Grammar::new_with_unicode_whitespace().unwrap();
+//! ```
+//!
+//! ## Spec
+//!
+//! ## Independent Modules
+//!
+//! This crate has two modules used by the parser, that could be used indepdendently of parsing:
+//!
+//! - [`lexing`] is the lexer used by the parser.
+//! - [`rpn`] is used by the parser to store the parse tree with only a single allocation.
+*/
 
-// TODO: temporary
-#![allow(unused)]
-#![allow(clippy::diverging_sub_expression)]
+// TODO:
+// - Think about what happens if a starting token is also a follower token in the same subgrammar.
 
 mod grammar;
 mod lexer;
@@ -25,11 +80,9 @@ pub use grammar::{Grammar, GrammarError, Pattern};
 pub use op::{Fixity, Prec};
 pub use parse_error::ParseError;
 pub use parse_tree::{ParseTree, Visitor};
-pub use shunter::shunt;
 pub use source::Source;
 
-/// A category of lexeme, such as "INTEGER" or "VARIABLE" or "OPEN_PAREN". The special Token called
-/// [`TOKEN_ERROR`] represents a lexing error.
+/// A category of lexeme, such as "INTEGER" or "VARIABLE" or "OPEN_PAREN".
 pub type Token = usize;
 type OpToken = Token;
 
@@ -44,15 +97,11 @@ const NAME_ERROR: &str = "LexError";
 const NAME_BLANK: &str = "Blank";
 const NAME_JUXTAPOSE: &str = "Juxtapose";
 
-/// One "word" in the stream returned by the lexer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Lexeme {
-    pub token: Token,
-    pub span: Span,
-}
-
+/// A byte offset into the source file.
 pub type Offset = usize;
+/// A line number of a source file. Zero indexed.
 pub type Line = u32;
+/// A column number of a source file. Zero indexed.
 pub type Col = u32;
 
 /// A position in the source text. Positions are _between_ characters.
@@ -73,32 +122,24 @@ pub struct Span {
     pub end: Position,
 }
 
+/// One "word" in the stream returned by the lexer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Lexeme {
+    pub token: Token,
+    pub span: Span,
+}
+
 /// A Panfix grammar, that's ready to parse.
 #[derive(Debug, Clone)]
 pub struct Parser {
     lexer: Lexer,
-    // Token -> info about that token
-    token_table: Vec<TokenInfo>,
-    // OpToken -> info about that optoken
-    op_token_table: Vec<OpTokenInfo>,
-    // A subset of op_token_table
-    prec_table: Vec<(Prec, Prec)>,
-}
-
-#[derive(Debug, Clone)]
-struct TokenInfo {
-    name: String,
-    as_prefix: Option<(OpToken, bool)>,
-    as_suffix: Option<(OpToken, bool)>,
-}
-
-#[derive(Debug, Clone)]
-struct OpTokenInfo {
-    name: String,
-    op: Option<Op>,
-    lprec: Prec,
-    rprec: Prec,
-    follower: Option<(Token, OpToken, bool)>,
+    tok_to_name: Vec<String>,
+    tok_to_prefix: Vec<Option<(OpToken, bool)>>,
+    tok_to_suffix: Vec<Option<(OpToken, bool)>>,
+    optok_to_follower: Vec<Option<(Token, OpToken, bool)>>,
+    optok_to_name: Vec<String>,
+    optok_to_op: Vec<Option<Op>>,
+    optok_to_prec: Vec<(Prec, Prec)>,
 }
 
 impl Parser {
@@ -109,116 +150,69 @@ impl Parser {
     ) -> Result<ParseTree<'s, 'g>, ParseError<'s>> {
         use parse_tree::Item;
         use resolver::resolve;
+        use shunter::shunt;
         use std::iter::FromIterator;
         use tree_visitor::Forest;
 
-        #[cfg(feature = "debug_mode")]
-        fn print_lexemes(message: &str, source: &Source, lexemes: &[Lexeme]) {
-            print!("{}", message);
-            for lexeme in lexemes {
-                if lexeme.span.is_empty() {
-                    print!("_ ");
-                } else {
-                    print!("{} ", source.substr(lexeme.span));
-                }
-            }
-            println!();
-        }
+        // 1. Lex
         let lexemes = self.lexer.lex(source.source()).collect::<Vec<_>>();
         #[cfg(feature = "debug_mode")]
-        print_lexemes("Lexed:    ", source, &lexemes);
-        let lexemes = resolve(&self.token_table, &self.op_token_table, lexemes).map_err(|err| {
-            ParseError::from_resolver_error(source, &self.token_table, &self.op_token_table, err)
+        let lexemes = self.print_lexemes(source, "Lexed:    ", lexemes);
+
+        // 2. Resolve
+        let lexemes = resolve(
+            &self.tok_to_prefix,
+            &self.tok_to_suffix,
+            &self.optok_to_follower,
+            lexemes,
+        )
+        .map_err(|err| {
+            ParseError::from_resolver_error(source, &self.tok_to_name, &self.optok_to_name, err)
         })?;
         #[cfg(feature = "debug_mode")]
-        print_lexemes("Resolved: ", source, &lexemes);
-        let lexemes = shunt(&self.prec_table, lexemes);
+        let lexemes = self.print_lexemes(source, "Resolved: ", lexemes);
+
+        // 3. Shunt
+        let lexemes = shunt(&self.optok_to_prec, lexemes.into_iter());
         #[cfg(feature = "debug_mode")]
-        print_lexemes("Shunted:  ", source, &lexemes);
+        let lexemes = self.print_lexemes(source, "Shunted:  ", lexemes);
+
+        // 4. Filter
+        let lexemes = lexemes
+            .into_iter()
+            .filter(|lex| self.optok_to_op[lex.token].is_some());
         #[cfg(feature = "debug_mode")]
-        print_lexemes(
-            "Filtered: ",
-            source,
-            &lexemes
-                .iter()
-                .copied()
-                .filter(|lexeme| self.op_token_table[lexeme.token].op.is_some())
-                .collect::<Vec<_>>(),
-        );
-        let lexemes =
-            lexemes
-                .into_iter()
-                .filter_map(|lexeme| match &self.op_token_table[lexeme.token].op {
-                    None => None,
-                    Some(op) => Some(Item {
-                        op,
-                        span: lexeme.span,
-                    }),
-                });
+        let lexemes = self.print_lexemes(source, "Filtered: ", lexemes);
+
+        // 5. Map to Op
+        let lexemes = lexemes.into_iter().map(|lex| Item {
+            op: self.optok_to_op[lex.token].as_ref().unwrap(),
+            span: lex.span,
+        });
+
+        // 6. Construct forest
         let forest = Forest::from_iter(lexemes);
         Ok(ParseTree::new(source, self, forest))
     }
 
-    fn arity(&self, op_token: OpToken) -> usize {
-        let row = &self.op_token_table[op_token];
-        (row.lprec != 0) as usize + (row.rprec != 0) as usize
-    }
-
-    fn name(&self, op_token: OpToken) -> &str {
-        &self.op_token_table[op_token].name
-    }
-}
-
-impl fmt::Display for Parser {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fn head(s: &str) -> &str {
-            // here's to hoping we land on character boundaries!
-            if s.len() <= 7 {
-                s
+    #[cfg(feature = "debug_mode")]
+    fn print_lexemes(
+        &self,
+        source: &Source,
+        message: &str,
+        lexemes: impl IntoIterator<Item = Lexeme>,
+    ) -> impl IntoIterator<Item = Lexeme> {
+        print!("{}", message);
+        let lexemes = lexemes.into_iter().collect::<Vec<_>>();
+        for lexeme in &lexemes {
+            if lexeme.span.is_empty() {
+                print!("_ ");
             } else {
-                &s[0..7]
+                print!("{} ", source.substr(lexeme.span));
             }
         }
-
-        writeln!(f, "OPERATORS")?;
-        for row in &self.op_token_table {
-            if let Some(op) = &row.op {
-                writeln!(f, "\t{:?}", op);
-            }
-        }
-        writeln!(f);
-        writeln!(f, "TOKENS")?;
-        writeln!(f, "\tName\tPrefixy\tRArg\tSuffixy\tRArg")?;
-        writeln!(f, "\t-------\t-------\t-------\t-------\t-------")?;
-        for (i, row) in self.token_table.iter().enumerate() {
-            write!(f, "{}", i)?;
-            write!(f, "\t{}", head(&row.name));
-            if let Some((optok, rarg)) = row.as_prefix {
-                write!(f, "\t{}\t{}", optok, rarg)?;
-            } else {
-                write!(f, "\t-\t-")?;
-            }
-            if let Some((optok, rarg)) = row.as_suffix {
-                writeln!(f, "\t{}\t{}", optok, rarg)?;
-            } else {
-                writeln!(f, "\t-\t-")?;
-            }
-        }
-        writeln!(f);
-        writeln!(f, "OP TOKENS")?;
-        writeln!(f, "\tOp\tStart?\tLPrec\tRPrec\tNextT\tNextOT\tRArg")?;
-        writeln!(f, "\t-------\t-------\t-------\t-------\t-------\t-------")?;
-        for (i, row) in self.op_token_table.iter().enumerate() {
-            write!(f, "{}", i)?;
-            write!(f, "\t{}\t{}", head(&row.name), row.op.is_some())?;
-            write!(f, "\t{}\t{}", row.lprec, row.rprec)?;
-            if let Some((next_tok, next_optok, rarg)) = row.follower {
-                writeln!(f, "\t{}\t{}\t{}", next_tok, next_optok, rarg)?;
-            } else {
-                writeln!(f, "\t-\t-\t-")?;
-            }
-        }
-        Ok(())
+        println!();
+        lexemes
     }
 }
 
@@ -289,6 +283,18 @@ impl Span {
     }
 }
 
+/// Describe the syntax of an operator.
+///
+/// Consists of a sequence of tokens as string literals, with an optional underscore at the
+/// beginning and/or end, to indicate whether the operator takes a left argument and/or a right
+/// argument. In actual source code there will typically be arguments between the tokens, but this
+/// is not shown in the pattern. For example:
+///
+///     use panfix::{pattern, Fixity};
+///
+///     pattern!(_ "+" _);
+///     pattern!("if" "(" ")" _);  // C-like if
+///     pattern!("if" "{" "}");    // Rust-like if
 #[macro_export]
 macro_rules! pattern {
     (_ $($items:tt)*) => {
@@ -332,6 +338,7 @@ macro_rules! pattern {
     };
 }
 
+/// If you want to peek under the hood, and use the components that make up the parser separately.
 pub mod implementation {
     pub mod lexer {
         pub use crate::lexer::*;
@@ -346,63 +353,3 @@ pub mod implementation {
         pub use crate::tree_visitor::*;
     }
 }
-
-/*
-//! # Panfix
-//!
-//! Panfix is a new approach to parsing, using a modified version of [operator precedence
-//! grammars](https://en.wikipedia.org/wiki/Operator-precedence_grammar):
-//!
-//! - It is not a CFG parser nor a PEG parser, it's something new.
-//! - It runs in linear time. (O(N), to be precise, not O(NG) like PEG packrat parsing.)
-//! - It has *very* clear error cases both around constructing grammars and parsing.
-//! - It's quite simple to implement.
-//!
-//! The main question is how expressive it is. You'll find examples of things you might want to
-//! parse, and how to parse them, in the [Examples](#examples) section below. If you encounter
-//! something that you have difficulty parsing with this approach, please open an issue to let me
-//! know!
-//!
-//! ## Overview
-//!
-//!
-//!
-//! [FILL]
-//!
-//! ## Examples
-//!
-//! ### Unary vs. Binary Minus
-//!
-//! Two operators are allowed to start with the same token, as long as one of them takes a left
-//! argument and the other does not. This let's us parse both unary and binary minus:
-//!
-//! [TODO]
-//! ```
-//! use panfix::{Grammar, Visitor, pattern};
-//!
-//! fn to_sexpr(visitor: Visitor) -> String {
-//!     if visitor.num_children() == 0 {
-//!         visitor.source().to_string()
-//!     } else {
-//!         let mut sexpr = "(".to_string();
-//!         sexpr.push_str(visitor.op());
-//!         for child in visitor.children() {
-//!             sexpr.push_str(" ");
-//!             sexpr.push_str(&to_sexpr(child));
-//!         }
-//!         sexpr
-//!     }
-//! }
-//!
-//! let mut grammar = Grammar::new_with_unicode_whitespace().unwrap();
-//! ```
-//!
-//! ## Spec
-//!
-//! ## Independent Modules
-//!
-//! This crate has two modules used by the parser, that could be used indepdendently of parsing:
-//!
-//! - [`lexing`] is the lexer used by the parser.
-//! - [`rpn`] is used by the parser to store the parse tree with only a single allocation.
-*/

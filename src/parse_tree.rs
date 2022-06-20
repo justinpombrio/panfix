@@ -1,8 +1,8 @@
-use crate::op::{Fixity, Op, Prec};
+use crate::op::{Assoc, Fixity, Op, Prec};
 use crate::parse_error::ParseError;
 use crate::source::Source;
 use crate::tree_visitor::{Arity, Forest, Visitor as ForestVisitor};
-use crate::{Lexeme, Parser, Span, NAME_BLANK, NAME_JUXTAPOSE};
+use crate::{Parser, Position, Span, NAME_BLANK, NAME_JUXTAPOSE};
 use std::fmt;
 
 /// The result of parsing a source string. Call `.visitor()` to walk it.
@@ -48,19 +48,8 @@ impl<'s, 'p> ParseTree<'s, 'p> {
         }
     }
 
-    /// The filename of the source text.
-    pub fn filename(&self) -> &'s str {
-        self.source.filename()
-    }
-
-    /// The entire source text.
-    pub fn source(&self) -> &'s str {
-        self.source.source()
-    }
-
-    /// Create a custom parse error at the given location.
-    pub fn error(&self, span: Span, message: &str) -> ParseError<'s> {
-        ParseError::custom_error(self.source, message, span)
+    pub fn source(&self) -> &'s Source {
+        self.source
     }
 }
 
@@ -70,8 +59,7 @@ impl<'p> Arity for Item<'p> {
     }
 }
 
-/// One node in the parse tree. Allows you to inspect this node and its children, but not its
-/// parent.
+/// One node in a parse tree. Allows you to inspect the node and its children, but not its parent.
 #[derive(Debug, Clone, Copy)]
 pub struct Visitor<'s, 'p, 't> {
     source: &'s Source,
@@ -82,27 +70,44 @@ pub struct Visitor<'s, 'p, 't> {
 impl<'s, 'p, 't> Visitor<'s, 'p, 't> {
     /// The name of the op at this node.
     pub fn name(&self) -> &'p str {
-        &self.item().op.name
-    }
-
-    /// The span of this node's first token.
-    pub fn token_span(&self) -> Span {
-        self.item().span
+        &self.node.item().op.name
     }
 
     /// The span of this node and it's children.
     pub fn span(&self) -> Span {
-        let mut span = self.item().span;
-        if self.arity() > 0 {
-            span.start = span.start.min(self.child(0).item().span.start);
-            span.end = span.end.max(self.child(self.arity() - 1).item().span.end);
+        Span {
+            start: self.start(),
+            end: self.end(),
         }
-        span
     }
 
-    /// The source text covered by `span()`.
+    fn start(&self) -> Position {
+        match self.fixity() {
+            Fixity::Infix | Fixity::Suffix => self.child(0).start(),
+            Fixity::Nilfix | Fixity::Prefix => self.node.item().span.start,
+        }
+    }
+
+    fn end(&self) -> Position {
+        match self.fixity() {
+            Fixity::Infix | Fixity::Prefix => self.child(self.num_children() - 1).end(),
+            Fixity::Nilfix | Fixity::Suffix => self.node.item().span.end,
+        }
+    }
+
+    /// The span of this node's first token.
+    pub fn token_span(&self) -> Span {
+        self.node.item().span
+    }
+
+    /// The source text covered by `.token_span()`.
+    pub fn token_source(&self) -> &'s str {
+        self.source.substr(self.span())
+    }
+
+    /// The source text covered by `.span()`.
     pub fn source(&self) -> &'s str {
-        self.source.substr(self.item().span)
+        self.source.substr(self.span())
     }
 
     /// The fixity of this node's operator.
@@ -115,8 +120,18 @@ impl<'s, 'p, 't> Visitor<'s, 'p, 't> {
         self.node.item().op.prec
     }
 
+    /// The associativity of this node's operator.
+    pub fn assoc(&self) -> Assoc {
+        self.node.item().op.assoc
+    }
+
+    /// The tokens of this node's operator.
+    pub fn tokens(&self) -> &[String] {
+        &self.node.item().op.tokens
+    }
+
     /// The number of children this node has (which is determined by its operator).
-    pub fn arity(&self) -> usize {
+    pub fn num_children(&self) -> usize {
         self.node.item().op.arity
     }
 
@@ -137,16 +152,6 @@ impl<'s, 'p, 't> Visitor<'s, 'p, 't> {
         }
     }
 
-    /// Iterate over this node's children.
-    pub fn children(&self) -> impl Iterator<Item = Visitor<'s, 'p, 't>> {
-        VisitorIter {
-            source: self.source,
-            parser: self.parser,
-            node: self.node,
-            index: 0,
-        }
-    }
-
     /// Extract this visitor's children into an array.
     ///
     /// # Panics
@@ -154,13 +159,13 @@ impl<'s, 'p, 't> Visitor<'s, 'p, 't> {
     /// Panics if `N` does not match the number of children. Note that the number of children is
     /// not dynamic: you can tell how many there will be from the grammar. Even if a child is
     /// "missing", it will actually be represented as blank.
-    pub fn expect_children<const N: usize>(&self) -> [Visitor<'s, 'p, 't>; N] {
+    pub fn children<const N: usize>(&self) -> [Visitor<'s, 'p, 't>; N] {
         let mut array = [*self; N]; // dummy value
-        if N != self.arity() {
+        if N != self.num_children() {
             panic!(
                 "Visitor::expect_children -- expected {} children but found {}",
                 N,
-                self.arity()
+                self.num_children()
             );
         }
         for (i, child) in array.iter_mut().enumerate() {
@@ -173,16 +178,23 @@ impl<'s, 'p, 't> Visitor<'s, 'p, 't> {
         array
     }
 
-    fn item(&self) -> Item<'p> {
-        *self.node.item()
+    /// Create a custom parsing error with the given message at the location `self.span()`.
+    pub fn error(&self, message: &str) -> ParseError<'s> {
+        ParseError::custom_error(self.source, message, self.span())
+    }
+
+    /// Create a custom parsing error with the given message at the location `self.token_span()`.
+    pub fn error_at_token(&self, message: &str) -> ParseError<'s> {
+        ParseError::custom_error(self.source, message, self.token_span())
     }
 }
 
 impl<'s, 'p, 't> fmt::Display for Visitor<'s, 'p, 't> {
+    /// Display this node as an s-expression.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.name() == NAME_BLANK {
             write!(f, "_")
-        } else if self.arity() == 0 {
+        } else if self.num_children() == 0 {
             write!(f, "{}", self.source())
         } else {
             write!(f, "(")?;
@@ -191,35 +203,10 @@ impl<'s, 'p, 't> fmt::Display for Visitor<'s, 'p, 't> {
             } else {
                 write!(f, "{}", self.name())?;
             }
-            for i in 0..self.arity() {
+            for i in 0..self.num_children() {
                 write!(f, " {}", self.child(i))?;
             }
             write!(f, ")")
-        }
-    }
-}
-
-#[derive(Debug)]
-struct VisitorIter<'s, 'p, 't> {
-    source: &'s Source,
-    parser: &'p Parser,
-    node: ForestVisitor<'t, Item<'p>>,
-    index: usize,
-}
-
-impl<'s, 'p, 't> Iterator for VisitorIter<'s, 'p, 't> {
-    type Item = Visitor<'s, 'p, 't>;
-
-    fn next(&mut self) -> Option<Visitor<'s, 'p, 't>> {
-        if self.index < self.node.arity() {
-            self.index += 1;
-            Some(Visitor {
-                source: self.source,
-                parser: self.parser,
-                node: self.node.child(self.index).unwrap(),
-            })
-        } else {
-            None
         }
     }
 }

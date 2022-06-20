@@ -1,4 +1,5 @@
 use crate::{Col, Line, Offset, Position, Span};
+use std::fmt;
 
 /// A store of newline locations within a source text, for the purpose of quickly computing line
 /// and column positions.
@@ -109,5 +110,47 @@ impl Source {
             col,
             utf8_col,
         }
+    }
+
+    /// Display a highlighted span of the source. For example:
+    ///
+    /// ```text
+    ///     x += n + 1;
+    ///          ^^^^^
+    pub fn show_span(&self, f: &mut fmt::Formatter, span: Span) -> fmt::Result {
+        if span.start.line == span.end.line {
+            self.show_line(
+                f,
+                span.start.line,
+                Some(span.start.utf8_col),
+                Some(span.end.utf8_col),
+            )
+        } else {
+            self.show_line(f, span.start.line, Some(span.start.utf8_col), None)?;
+            for line_num in span.start.line + 1..span.end.line {
+                self.show_line(f, line_num, None, None)?;
+            }
+            self.show_line(f, span.end.line, None, Some(span.end.utf8_col))
+        }
+    }
+
+    fn show_line(
+        &self,
+        f: &mut fmt::Formatter,
+        line_num: Line,
+        start: Option<Col>,
+        end: Option<Col>,
+    ) -> fmt::Result {
+        let line = self.line_contents(line_num);
+        let start = start.unwrap_or(0);
+        let end = end.unwrap_or_else(|| line.chars().count() as Col);
+        writeln!(f, "{}", line)?;
+        for _ in 0..start {
+            write!(f, " ")?;
+        }
+        for _ in 0..(end - start).max(1) {
+            write!(f, "^")?;
+        }
+        writeln!(f)
     }
 }

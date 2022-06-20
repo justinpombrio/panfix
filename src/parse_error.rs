@@ -1,66 +1,45 @@
 use crate::resolver::ResolverError;
-use crate::{Lexeme, OpTokenInfo, Source, Span, TokenInfo};
+use crate::{Source, Span};
 use std::error;
 use std::fmt;
-use thiserror::Error;
 
+/// An error while parsing. When Displayed, shows the message and the portion of the source it
+/// occurred in.
 #[derive(Debug)]
 pub struct ParseError<'s> {
     source: &'s Source,
-    cause: ParseErrorCause,
-    span: Option<Span>,
-}
-
-#[derive(Debug, Error)]
-enum ParseErrorCause {
-    #[error("{0}")]
-    Custom(String),
-    #[error("Unexpected token '{0}'.")]
-    UnexpectedLexeme(String),
-    #[error(
-        "While parsing '{}', expected '{}' but found '{}'.",
-        op_name,
-        expected,
-        found
-    )]
-    MissingSep {
-        op_name: String,
-        expected: String,
-        found: String,
-    },
-    #[error(
-        "While parsing '{}', expected '{}' but found end of file.",
-        op_name,
-        expected
-    )]
-    MissingSepEof { op_name: String, expected: String },
+    message: String,
+    span: Span,
 }
 
 impl<'s> ParseError<'s> {
+    /// Construct a custom parsing error message. (This is useful so that you can re-use the
+    /// existing parsing error message printing, and because it will have the same type as other
+    /// parse errors.
     pub fn custom_error(source: &'s Source, message: &str, span: Span) -> ParseError<'s> {
         ParseError {
             source,
-            cause: ParseErrorCause::Custom(message.to_owned()),
-            span: Some(span),
+            message: message.to_owned(),
+            span,
         }
     }
 
     pub(crate) fn from_resolver_error(
         source: &'s Source,
-        token_table: &[TokenInfo],
-        op_token_table: &[OpTokenInfo],
+        tok_to_name: &[String],
+        optok_to_name: &[String],
         error: ResolverError,
     ) -> ParseError<'s> {
-        use ResolverError::{UnexpectedEof, UnexpectedToken, WrongToken};
+        use ResolverError::{LexError, UnexpectedEof, UnexpectedToken, WrongToken};
 
         match error {
             UnexpectedEof { op, expected } => ParseError {
                 source,
-                cause: ParseErrorCause::MissingSepEof {
-                    op_name: op_token_table[op].name.clone(),
-                    expected: token_table[expected].name.clone(),
-                },
-                span: Some(Span::new_at_pos(source.end_of_file())),
+                message: format!(
+                    "While parsing '{}', expected '{}' but found end of file.",
+                    &optok_to_name[op], &tok_to_name[expected]
+                ),
+                span: Span::new_at_pos(source.end_of_file()),
             },
             WrongToken {
                 op,
@@ -68,75 +47,50 @@ impl<'s> ParseError<'s> {
                 found,
             } => ParseError {
                 source,
-                cause: ParseErrorCause::MissingSep {
-                    op_name: op_token_table[op].name.clone(),
-                    expected: token_table[expected].name.clone(),
-                    found: source.substr(found.span).to_owned(),
-                },
-                span: Some(found.span),
+                message: format!(
+                    "While parsing '{}', expected '{}' but found '{}'.",
+                    &optok_to_name[op],
+                    &tok_to_name[expected],
+                    source.substr(found.span)
+                ),
+                span: found.span,
             },
-            UnexpectedToken { found } => ParseError {
+            UnexpectedToken(found) => ParseError {
                 source,
-                cause: ParseErrorCause::UnexpectedLexeme(source.substr(found.span).to_owned()),
-                span: Some(found.span),
+                message: format!("Unexpected token '{}'", source.substr(found.span)),
+                span: found.span,
+            },
+            LexError(lexeme) => ParseError {
+                source,
+                message: "Unrecognized token.".to_owned(),
+                span: lexeme.span,
             },
         }
     }
-
-    /*
-    pub(crate) fn unexpected_lexeme(source: &'s Source, lexeme: Lexeme) -> ParseError<'s> {
-        ParseError {
-            source,
-            cause: ParseErrorCause::UnexpectedLexeme(source.substr(lexeme.span).to_owned()),
-            span: Some(lexeme.span),
-        }
-    }
-    */
 }
 
 impl<'s> fmt::Display for ParseError<'s> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "Parse Error: {}", self.cause)?;
-        if let Some(span) = self.span {
-            if span.start.line == span.end.line {
-                writeln!(
-                    f,
-                    "At '{}' line {}.",
-                    self.source.filename(),
-                    span.start.line
-                )?;
-                writeln!(f)?;
-                let line = self.source.line_contents(span.start.line);
-                writeln!(f, "{}", line)?;
-                for _ in 0..span.start.utf8_col {
-                    write!(f, " ")?;
-                }
-                let len = (span.end.utf8_col - span.start.utf8_col).max(1);
-                for _ in 0..len {
-                    write!(f, "^")?;
-                }
-            } else {
-                writeln!(
-                    f,
-                    "At '{}' lines {}-{}.",
-                    self.source.filename(),
-                    span.start.line,
-                    span.end.line
-                )?;
-                writeln!(f)?;
-                let line = self.source.line_contents(span.start.line);
-                writeln!(f, "{}", line)?;
-                for _ in 0..span.start.utf8_col {
-                    write!(f, " ")?;
-                }
-                for _ in 0..(line.chars().count() - span.start.utf8_col as usize) {
-                    write!(f, "^")?;
-                }
-            }
+        writeln!(f, "Parse Error: {}", self.message)?;
+        if self.span.start.line == self.span.end.line {
+            writeln!(
+                f,
+                "At '{}' line {}.",
+                self.source.filename(),
+                self.span.start.line
+            )?;
+            writeln!(f)?;
+            self.source.show_span(f, self.span)
         } else {
-            writeln!(f, "{}:", self.source.filename())?;
+            writeln!(
+                f,
+                "At '{}' lines {}-{}.",
+                self.source.filename(),
+                self.span.start.line,
+                self.span.end.line
+            )?;
+            self.source.show_span(f, self.span)
         }
-        Ok(())
     }
 }
 impl<'s> error::Error for ParseError<'s> {}

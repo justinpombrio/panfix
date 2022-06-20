@@ -1,19 +1,41 @@
-use crate::{
-    Lexeme, OpToken, OpTokenInfo, Position, Span, Token, TokenInfo, TOKEN_BLANK, TOKEN_JUXTAPOSE,
-};
-use std::iter;
+use crate::{Lexeme, OpToken, Position, Span, Token, TOKEN_BLANK, TOKEN_ERROR, TOKEN_JUXTAPOSE};
 
-pub(crate) fn resolve(
-    token_table: &[TokenInfo],
-    op_token_table: &[OpTokenInfo],
-    input: Vec<Lexeme>,
+/// Resolve "tokens" into "op tokens". Both have type `Token` but are in different spaces (i.e. the
+/// token `4` and the op token `4` are likely unrelated). This resolution achieves two tasks:
+///
+/// 1. If the same token is used in multiple operators, disambiguate them. For example, unary minus
+///    and binary minus would have the same _token_ but different _op tokens_.
+/// 2. Insert a `TOKEN_BLANK` for every missing argument and a `TOKEN_JUXTAPOSE` for every missing
+///    binary operator.
+pub fn resolve(
+    tok_to_prefix: &[Option<(OpToken, bool)>],
+    tok_to_suffix: &[Option<(OpToken, bool)>],
+    optok_to_follower: &[Option<(Token, OpToken, bool)>],
+    input: impl IntoIterator<Item = Lexeme>,
 ) -> Result<Vec<Lexeme>, ResolverError> {
-    Resolver::new(token_table, op_token_table).resolve(input)
+    Resolver::new(tok_to_prefix, tok_to_suffix, optok_to_follower).resolve(input.into_iter())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ResolverError {
+    /// While parsing `op`, expected token `expected` but found token `found.token`.
+    WrongToken {
+        op: OpToken,
+        expected: Token,
+        found: Lexeme,
+    },
+    /// Error while lexing.
+    LexError(Lexeme),
+    /// Did not expect token; it does not start an oeprator.
+    UnexpectedToken(Lexeme),
+    /// While parsing `op`, expected token `expected` but found end-of-file.
+    UnexpectedEof { op: OpToken, expected: Token },
 }
 
 struct Resolver<'a> {
-    token_table: &'a [TokenInfo],
-    op_token_table: &'a [OpTokenInfo],
+    tok_to_prefix: &'a [Option<(OpToken, bool)>],
+    tok_to_suffix: &'a [Option<(OpToken, bool)>],
+    optok_to_follower: &'a [Option<(Token, OpToken, bool)>],
     arg_mode: bool,
     last_pos: Position,
     stack: Vec<(Token, OpToken, bool)>,
@@ -21,10 +43,15 @@ struct Resolver<'a> {
 }
 
 impl<'a> Resolver<'a> {
-    fn new(token_table: &'a [TokenInfo], op_token_table: &'a [OpTokenInfo]) -> Resolver<'a> {
+    fn new(
+        tok_to_prefix: &'a [Option<(OpToken, bool)>],
+        tok_to_suffix: &'a [Option<(OpToken, bool)>],
+        optok_to_follower: &'a [Option<(Token, OpToken, bool)>],
+    ) -> Resolver<'a> {
         Resolver {
-            token_table,
-            op_token_table,
+            tok_to_prefix,
+            tok_to_suffix,
+            optok_to_follower,
             arg_mode: true,
             last_pos: Position::start_of_file(),
             stack: vec![],
@@ -33,7 +60,7 @@ impl<'a> Resolver<'a> {
     }
 
     fn produce(&mut self, optok: OpToken, span: Span) {
-        if let Some(follower) = self.op_token_table[optok].follower {
+        if let Some(follower) = self.optok_to_follower[optok] {
             self.stack.push(follower);
         }
         self.output.push(Lexeme { token: optok, span });
@@ -61,25 +88,34 @@ impl<'a> Resolver<'a> {
                 found: lexeme,
             }
         } else {
-            ResolverError::UnexpectedToken { found: lexeme }
+            ResolverError::UnexpectedToken(lexeme)
         }
     }
 
-    fn resolve(mut self, input: Vec<Lexeme>) -> Result<Vec<Lexeme>, ResolverError> {
+    #[allow(clippy::collapsible_else_if)]
+    fn resolve(
+        mut self,
+        input: impl Iterator<Item = Lexeme>,
+    ) -> Result<Vec<Lexeme>, ResolverError> {
         for lexeme in input {
+            if lexeme.token == TOKEN_ERROR {
+                return Err(ResolverError::LexError(lexeme));
+            }
             match self.stack.last().copied() {
                 Some((tok, optok, has_arg)) if lexeme.token == tok => {
+                    if self.arg_mode {
+                        self.produce_blank();
+                    }
                     self.arg_mode = has_arg;
                     self.stack.pop();
                     self.produce(optok, lexeme.span);
                 }
                 top => {
-                    let row = &self.token_table[lexeme.token];
                     if self.arg_mode {
-                        if let Some((optok, has_arg)) = row.as_prefix {
+                        if let Some((optok, has_arg)) = self.tok_to_prefix[lexeme.token] {
                             self.arg_mode = has_arg;
                             self.produce(optok, lexeme.span);
-                        } else if let Some((optok, has_arg)) = row.as_suffix {
+                        } else if let Some((optok, has_arg)) = self.tok_to_suffix[lexeme.token] {
                             self.arg_mode = has_arg;
                             self.produce_blank();
                             self.produce(optok, lexeme.span);
@@ -87,10 +123,10 @@ impl<'a> Resolver<'a> {
                             return Err(self.error(top, lexeme));
                         }
                     } else {
-                        if let Some((optok, has_arg)) = row.as_suffix {
+                        if let Some((optok, has_arg)) = self.tok_to_suffix[lexeme.token] {
                             self.arg_mode = has_arg;
                             self.produce(optok, lexeme.span);
-                        } else if let Some((optok, has_arg)) = row.as_prefix {
+                        } else if let Some((optok, has_arg)) = self.tok_to_prefix[lexeme.token] {
                             self.arg_mode = has_arg;
                             self.produce_juxtapose();
                             self.produce(optok, lexeme.span);
@@ -113,20 +149,4 @@ impl<'a> Resolver<'a> {
         }
         Ok(self.output)
     }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum ResolverError {
-    WrongToken {
-        op: OpToken,
-        expected: Token,
-        found: Lexeme,
-    },
-    UnexpectedToken {
-        found: Lexeme,
-    },
-    UnexpectedEof {
-        op: OpToken,
-        expected: Token,
-    },
 }

@@ -15,7 +15,7 @@ fn test_shunting() {
     const TOKEN_COLON: Token = 12;
     const NUM_TOKENS: usize = 13;
 
-    fn lex(src: &str) -> Vec<Lexeme> {
+    fn lex(src: &str) -> impl Iterator<Item = Lexeme> {
         let mut lexemes = vec![];
         for i in 0..src.len() {
             let ch = src[i..i + 1].chars().next().unwrap();
@@ -49,12 +49,11 @@ fn test_shunting() {
             };
             lexemes.push(Lexeme::new(token, start, end));
         }
-        lexemes
+        lexemes.into_iter()
     }
 
-    fn show_stream<'s>(src: &str, stream: Vec<Lexeme>) -> String {
+    fn show_stream<'s>(src: &str, stream: impl Iterator<Item = Lexeme>) -> String {
         stream
-            .into_iter()
             .map(|lex| &src[lex.span.start.col as usize..lex.span.end.col as usize])
             .map(|lex| if lex == "" { "_" } else { lex })
             .collect::<Vec<_>>()

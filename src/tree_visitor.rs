@@ -32,14 +32,17 @@ pub struct Visitor<'f, I: Arity> {
 }
 
 impl<'f, I: Arity> Visitor<'f, I> {
+    /// The data stored at this node.
     pub fn item(&self) -> &I {
         &self.node.item
     }
 
-    pub fn arity(&self) -> usize {
+    /// The number of children this node has.
+    pub fn num_children(&self) -> usize {
         self.node.item.arity()
     }
 
+    /// Access the `index`th child of this node.
     pub fn child(&self, index: usize) -> Option<Visitor<'f, I>> {
         if index < self.node.item.arity() {
             Some(Visitor {
@@ -91,7 +94,7 @@ impl<I: Arity> Forest<I> {
             first_child_ptr: 0,
         };
         if arity > 0 {
-            let mut tail = self.roots.split_off(self.roots.len() - arity);
+            let tail = self.roots.split_off(self.roots.len() - arity);
             node.first_child_ptr = self.nodes.len();
             self.nodes.extend_from_slice(&tail);
         }
@@ -141,7 +144,7 @@ fn test_tree_visitor() {
             n => {
                 out.push('(');
                 out.push_str(&format!("{}", n));
-                for i in 0..visitor.arity() {
+                for i in 0..visitor.num_children() {
                     out.push(' ');
                     show_tree(visitor.child(i).unwrap(), out);
                 }

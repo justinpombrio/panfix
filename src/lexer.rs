@@ -36,7 +36,6 @@
 
 use crate::{Lexeme, Offset, Position, Span, Token, TOKEN_ERROR};
 use regex::{escape, Regex, RegexSet};
-use std::fmt;
 
 pub use regex::Error as RegexError;
 
@@ -171,10 +170,8 @@ impl Lexer {
 struct LexemeIter<'l, 's> {
     lexer: &'l Lexer,
     source: &'s str,
-    remaining_source: &'s str,
     position: Position,
     offset: Offset,
-    newline_offsets: Vec<Offset>,
 }
 
 impl<'l, 's> LexemeIter<'l, 's> {
@@ -182,14 +179,12 @@ impl<'l, 's> LexemeIter<'l, 's> {
         LexemeIter {
             lexer,
             source,
-            remaining_source: source,
             position: Position {
                 line: 0,
                 col: 0,
                 utf8_col: 0,
             },
             offset: 0,
-            newline_offsets: vec![0],
         }
     }
 

@@ -1,10 +1,8 @@
 use crate::lexer::{LexerBuilder, RegexError, UNICODE_WHITESPACE_REGEX};
 use crate::op::{Assoc, Fixity, Op, Prec};
 use crate::{
-    OpToken, OpTokenInfo, Parser, Token, TokenInfo, NAME_BLANK, NAME_ERROR, NAME_JUXTAPOSE,
-    TOKEN_BLANK, TOKEN_ERROR, TOKEN_JUXTAPOSE,
+    OpToken, Parser, Token, NAME_BLANK, NAME_ERROR, NAME_JUXTAPOSE, TOKEN_ERROR, TOKEN_JUXTAPOSE,
 };
-use std::fmt;
 use thiserror::Error;
 
 const PREC_DELTA: Prec = 10;
@@ -23,27 +21,50 @@ pub struct Grammar {
     current_assoc: Assoc,
 }
 
+#[derive(Debug, Clone)]
+struct TokenInfo {
+    name: String,
+    as_prefix: Option<(OpToken, bool)>,
+    as_suffix: Option<(OpToken, bool)>,
+}
+
+#[derive(Debug, Clone)]
+struct OpTokenInfo {
+    name: String,
+    op: Option<Op>,
+    lprec: Prec,
+    rprec: Prec,
+    follower: Option<(Token, OpToken, bool)>,
+}
+
 /// An error while constructing a grammar.
 #[derive(Error, Debug)]
 pub enum GrammarError {
+    /// Ambiguity: two operators were defined with the same starting token, and both are
+    /// "prefixy": have no left argument.
     #[error(
         "Duplicate token usage. Each token can be used at most once with a left argument and at
-        most once without a right argument. However the token {token} was used without a left
+        most once without a right argument. However the token {0} was used without a left
         argument."
     )]
-    PrefixyConflict { token: String },
+    PrefixyConflict(String),
+    /// Ambiguity: two operators were defined with the same starting token, and both are
+    /// "suffixy": have a left argument.
     #[error(
         "Duplicate token usage. Each token can be used at most once with a left argument and at
-        most once without a right argument. However the token {token} was used with a left
-        argument."
+        most once without a right argument. However the token {0} was used with a left argument."
     )]
-    SuffixyConflict { token: String },
+    SuffixyConflict(String),
     #[error("Regex error in grammar. {0}")]
+    /// Bad regex.
     RegexError(RegexError),
+    /// You need to call `group()` before adding operators with arguments.
     #[error("Grammar error: you must call `group()` before adding operators.")]
     PrecNotSet,
 }
 
+/// Describe the syntax of an operator. You typically want to construct this with the `pattern!`
+/// macro.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pattern {
     pub fixity: Fixity,
@@ -86,7 +107,7 @@ impl Grammar {
             op_token_table: vec![
                 OpTokenInfo {
                     name: NAME_ERROR.to_owned(),
-                    op: None,
+                    op: Some(Op::new_error()),
                     lprec: 0,
                     rprec: 0,
                     follower: None,
@@ -134,7 +155,7 @@ impl Grammar {
     pub fn string(&mut self, name: &str, string_pattern: &str) -> Result<(), GrammarError> {
         let token = self.add_string_token(string_pattern)?;
         let op = Op::new_atom(name, token);
-        self.add_op_token(Some(op), name, token, None, None, None);
+        self.add_op_token(Some(op), name, token, None, None, None)?;
         Ok(())
     }
 
@@ -146,16 +167,22 @@ impl Grammar {
     pub fn regex(&mut self, name: &str, regex_pattern: &str) -> Result<(), GrammarError> {
         let token = self.add_regex_token(regex_pattern, name)?;
         let op = Op::new_atom(name, token);
-        self.add_op_token(Some(op), name, token, None, None, None);
+        self.add_op_token(Some(op), name, token, None, None, None)?;
         Ok(())
     }
 
-    // TODO: docs
+    /// Extend the grammar with a "juxtapose" operator that is applied whenever two expressions are
+    /// found next to each other with nothing to join them. For example, `myFunc 15` would be
+    /// parsed as `myFunc JUXTAPOSE 15`. This is useful, for example, in languages where
+    /// `myFunc 15` denotes function application.
+    ///
+    /// By default, every grammar has an implicit juxtapose operator with minimum precedence and
+    /// left associativity. Every time you call this function, you overwrite the precedence the
+    /// associativity of the juxtaposition operator (so the last call wins).
     pub fn juxtapose(&mut self) -> Result<(), GrammarError> {
         let (prec, assoc) = self.get_prec_and_assoc()?;
         let op = Op::new_juxtapose(assoc, prec);
         let (lprec, rprec) = (op.left_prec, op.right_prec);
-        println!("?? {:?}/{:?}", lprec, rprec);
         let mut row = &mut self.op_token_table[TOKEN_JUXTAPOSE];
         row.op = Some(op);
         row.lprec = lprec.unwrap_or(0);
@@ -198,18 +225,37 @@ impl Grammar {
     }
 
     pub fn finish(self) -> Result<Parser, GrammarError> {
+        let lexer = self
+            .lexer_builder
+            .finish()
+            .map_err(GrammarError::RegexError)?;
+        let mut tok_to_name = vec![];
+        let mut tok_to_prefix = vec![];
+        let mut tok_to_suffix = vec![];
+        let mut optok_to_name = vec![];
+        let mut optok_to_follower = vec![];
+        let mut optok_to_op = vec![];
+        let mut optok_to_prec = vec![];
+        for row in self.token_table {
+            tok_to_name.push(row.name);
+            tok_to_prefix.push(row.as_prefix);
+            tok_to_suffix.push(row.as_suffix);
+        }
+        for row in self.op_token_table {
+            optok_to_name.push(row.name);
+            optok_to_follower.push(row.follower);
+            optok_to_op.push(row.op);
+            optok_to_prec.push((row.lprec, row.rprec));
+        }
         Ok(Parser {
-            lexer: self
-                .lexer_builder
-                .finish()
-                .map_err(GrammarError::RegexError)?,
-            token_table: self.token_table,
-            prec_table: self
-                .op_token_table
-                .iter()
-                .map(|row| (row.lprec, row.rprec))
-                .collect(),
-            op_token_table: self.op_token_table,
+            lexer,
+            tok_to_name,
+            tok_to_prefix,
+            tok_to_suffix,
+            optok_to_name,
+            optok_to_follower,
+            optok_to_op,
+            optok_to_prec,
         })
     }
 
@@ -285,23 +331,20 @@ impl Grammar {
         rprec: Option<Prec>,
         follower: Option<(Token, OpToken, bool)>,
     ) -> Result<OpToken, GrammarError> {
-        use Assoc::{Left, Right};
-        use Fixity::{Infix, Nilfix, Prefix, Suffix};
-
         let op_token = self.op_token_table.len();
         if op.is_some() {
             if lprec.is_none() {
                 if self.token_table[token].as_prefix.is_some() {
-                    return Err(GrammarError::PrefixyConflict {
-                        token: self.token_table[token].name.clone(),
-                    });
+                    return Err(GrammarError::PrefixyConflict(
+                        self.token_table[token].name.clone(),
+                    ));
                 }
                 self.token_table[token].as_prefix = Some((op_token, rprec.is_some()));
             } else {
                 if self.token_table[token].as_suffix.is_some() {
-                    return Err(GrammarError::SuffixyConflict {
-                        token: self.token_table[token].name.clone(),
-                    });
+                    return Err(GrammarError::SuffixyConflict(
+                        self.token_table[token].name.clone(),
+                    ));
                 }
                 self.token_table[token].as_suffix = Some((op_token, rprec.is_some()));
             }
