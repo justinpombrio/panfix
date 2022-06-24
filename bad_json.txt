@@ -1,0 +1,15 @@
+{
+    "id": 999,
+    "object_class:" "safe",
+    "weight_kg": 54.5
+    "disposition": "friendly",
+    "diet": [
+        "M&Ms",
+        "Necco wafers",
+        "other sweets",
+    ],
+    "interactions": {
+        "target_id": 682,
+        "effect": mixed,
+    }
+}
