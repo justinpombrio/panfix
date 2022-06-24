@@ -8,20 +8,20 @@ fn make_parser() -> Result<Parser, GrammarError> {
     grammar.regex("num", "[+-]?[0-9]+")?;
     grammar.op("block", pattern!("{" "}"))?;
     grammar.op("group", pattern!("(" ")"))?;
-    grammar.lgroup();
+    grammar.left_assoc();
     grammar.op("call", pattern!(_ "(" ")"))?;
-    grammar.lgroup();
+    grammar.left_assoc();
     grammar.op("plus", pattern!(_ "+" _))?;
-    grammar.lgroup();
+    grammar.left_assoc();
     grammar.op("lt", pattern!(_ "<" _))?;
     grammar.op("gt", pattern!(_ ">" _))?;
     grammar.op("eq", pattern!(_ "==" _))?;
-    grammar.rgroup();
+    grammar.right_assoc();
     grammar.op("if", pattern!("if" "{" "}"))?;
     grammar.op("else", pattern!(_ "else" _))?;
-    grammar.lgroup();
+    grammar.left_assoc();
     grammar.op("args", pattern!(_ "," _))?;
-    grammar.lgroup();
+    grammar.left_assoc();
     grammar.op("let", pattern!("let" "=" "in" _))?;
     grammar.op("func", pattern!("fn" "(" ")" "{" "}" ";" _))?;
     grammar.finish()

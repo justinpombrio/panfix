@@ -19,7 +19,7 @@ fn test_lexing_error() {
     fn make_parser() -> Result<Parser, GrammarError> {
         let mut grammar = Grammar::new_with_unicode_whitespace()?;
         grammar.regex("num", "[0-9]+")?;
-        grammar.lgroup();
+        grammar.left_assoc();
         grammar.op("plus", pattern!(_ "+" _))?;
         grammar.finish()
     }
@@ -53,9 +53,9 @@ fn test_parsing_assoc() {
     fn make_parser() -> Result<Parser, GrammarError> {
         let mut grammar = Grammar::new_with_unicode_whitespace()?;
         grammar.regex("num", "[0-9]+")?;
-        grammar.rgroup();
+        grammar.right_assoc();
         grammar.op("exp", pattern!(_ "^" _))?;
-        grammar.lgroup();
+        grammar.left_assoc();
         grammar.op("plus", pattern!(_ "+" _))?;
         grammar.finish()
     }
@@ -70,9 +70,9 @@ fn test_parsing_minus() {
     fn make_parser() -> Result<Parser, GrammarError> {
         let mut grammar = Grammar::new_with_unicode_whitespace()?;
         grammar.regex("num", "[0-9]+")?;
-        grammar.lgroup();
+        grammar.left_assoc();
         grammar.op("neg", pattern!("-" _))?;
-        grammar.lgroup();
+        grammar.left_assoc();
         grammar.op("minus", pattern!(_ "-" _))?;
         grammar.finish()
     }
@@ -90,9 +90,9 @@ fn test_parsing_blank() {
         let mut grammar = Grammar::new_with_unicode_whitespace()?;
         grammar.regex("num", "[0-9]+")?;
         grammar.op("parens", pattern!("(" ")"))?;
-        grammar.lgroup();
+        grammar.left_assoc();
         grammar.op("neg", pattern!("-" _))?;
-        grammar.lgroup();
+        grammar.left_assoc();
         grammar.op("minus", pattern!(_ "-" _))?;
         grammar.op("plus", pattern!(_ "+" _))?;
         grammar.finish()
@@ -113,7 +113,7 @@ fn test_parsing_juxtapose() {
     fn make_parser_1() -> Result<Parser, GrammarError> {
         let mut grammar = Grammar::new_with_unicode_whitespace()?;
         grammar.regex("num", "[0-9]+")?;
-        grammar.lgroup();
+        grammar.left_assoc();
         grammar.op("plus", pattern!(_ "+" _))?;
         grammar.finish()
     }
@@ -126,9 +126,9 @@ fn test_parsing_juxtapose() {
     fn make_parser_2() -> Result<Parser, GrammarError> {
         let mut grammar = Grammar::new_with_unicode_whitespace()?;
         grammar.regex("num", "[0-9]+")?;
-        grammar.lgroup();
+        grammar.left_assoc();
         grammar.op("plus", pattern!(_ "+" _))?;
-        grammar.rgroup();
+        grammar.right_assoc();
         grammar.juxtapose()?;
         grammar.finish()
     }

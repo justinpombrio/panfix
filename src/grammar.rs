@@ -135,7 +135,7 @@ impl Grammar {
     /// Add a new group of operators. They will have higher precedence (i.e.  bind _looser_) than
     /// any of the groups added so far. Any infix operators in this group will be _left
     /// associative_.
-    pub fn lgroup(&mut self) {
+    pub fn left_assoc(&mut self) {
         self.current_prec += PREC_DELTA;
         self.current_assoc = Assoc::Left;
     }
@@ -143,7 +143,7 @@ impl Grammar {
     /// Add a new group of operators. They will have higher precedence (i.e.  bind _looser_) than
     /// any of the groups added so far. Any infix operators in this group will be _left
     /// associative_.
-    pub fn rgroup(&mut self) {
+    pub fn right_assoc(&mut self) {
         self.current_prec += PREC_DELTA;
         self.current_assoc = Assoc::Right;
     }
@@ -198,9 +198,9 @@ impl Grammar {
     /// ```no_run
     /// # use panfix::{Grammar, Fixity, pattern};
     /// # let mut grammar = Grammar::new("").unwrap();
-    /// grammar.lgroup();
+    /// grammar.left_assoc();
     /// grammar.op("comma", pattern!(_ "," _));
-    /// grammar.lgroup();
+    /// grammar.left_assoc();
     /// grammar.op("colon", pattern!(_ ":" _));
     /// ```
     pub fn op(&mut self, name: &str, pattern: Pattern) -> Result<(), GrammarError> {

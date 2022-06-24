@@ -13,9 +13,9 @@ fn make_json_parser() -> Result<Parser, GrammarError> {
     grammar.string("False", "false")?;
     grammar.op("Array", pattern!("[" "]"))?;
     grammar.op("Object", pattern!("{" "}"))?;
-    grammar.rgroup();
+    grammar.right_assoc();
     grammar.op("Keyval", pattern!(_ ":" _))?;
-    grammar.rgroup();
+    grammar.right_assoc();
     grammar.op("Comma", pattern!(_ "," _))?;
     grammar.finish()
 }
