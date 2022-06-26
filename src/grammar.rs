@@ -205,10 +205,10 @@ impl Grammar {
     /// ```
     pub fn op(&mut self, name: &str, pattern: Pattern) -> Result<(), GrammarError> {
         if pattern.fixity == Fixity::Nilfix {
-            self.add_op(name, Assoc::Left, 0, pattern)
+            self.add_op(name, Assoc::Left, 0, pattern.fixity, pattern.tokens)
         } else {
             let (prec, assoc) = self.get_prec_and_assoc()?;
-            self.add_op(name, assoc, prec, pattern)
+            self.add_op(name, assoc, prec, pattern.fixity, pattern.tokens)
         }
     }
 
@@ -217,11 +217,12 @@ impl Grammar {
     pub fn add_raw_op(
         &mut self,
         name: &str,
-        assoc: Assoc,
         prec: Prec,
-        pattern: Pattern,
+        assoc: Assoc,
+        fixity: Fixity,
+        tokens: Vec<String>,
     ) -> Result<(), GrammarError> {
-        self.add_op(name, assoc, prec, pattern)
+        self.add_op(name, assoc, prec, fixity, tokens)
     }
 
     pub fn finish(self) -> Result<Parser, GrammarError> {
@@ -264,27 +265,28 @@ impl Grammar {
         name: &str,
         assoc: Assoc,
         prec: Prec,
-        pattern: Pattern,
+        fixity: Fixity,
+        tokens: Vec<String>,
     ) -> Result<(), GrammarError> {
         let maxprec = Some(Prec::MAX);
 
-        let token = self.add_string_token(&pattern.tokens[0])?;
-        let op = Op::new(name, pattern.fixity, assoc, prec, pattern.tokens.clone());
+        let token = self.add_string_token(&tokens[0])?;
+        let op = Op::new(name, fixity, assoc, prec, tokens.clone());
         let (lprec, rprec) = (op.left_prec, op.right_prec);
-        if pattern.tokens.len() == 1 {
+        if tokens.len() == 1 {
             self.add_op_token(Some(op), name, token, lprec, rprec, None)?;
         } else {
-            let patt = pattern.tokens.last().unwrap();
+            let patt = tokens.last().unwrap();
             let token = self.add_string_token(patt)?;
             let optok = self.add_op_token(None, name, token, Some(Prec::MAX), rprec, None)?;
             let mut follower = (token, optok, rprec.is_some());
-            for patt in pattern.tokens.iter().skip(1).rev().skip(1) {
+            for patt in tokens.iter().skip(1).rev().skip(1) {
                 let token = self.add_string_token(patt)?;
                 let optok =
                     self.add_op_token(None, name, token, maxprec, maxprec, Some(follower))?;
                 follower = (token, optok, true);
             }
-            let patt = pattern.tokens.first().unwrap();
+            let patt = tokens.first().unwrap();
             let token = self.add_string_token(patt)?;
             self.add_op_token(Some(op), name, token, lprec, maxprec, Some(follower))?;
         }

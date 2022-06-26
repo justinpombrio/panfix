@@ -1,23 +1,4 @@
 /*
-//! # Panfix
-//!
-//! Panfix is a new approach to parsing, using a modified version of [operator precedence
-//! grammars](https://en.wikipedia.org/wiki/Operator-precedence_grammar):
-//!
-//! - It is not a CFG parser or a PEG parser, it's something new.
-//! - It runs in linear time. `O(N)`, to be precise, not `O(NG)` like PEG packrat parsing.
-//! - It has clear error messages around constructing grammars, and makes it very natural to
-//!   construct clear parse error messages.
-//! - It's pretty simple to implement.
-//!
-//! The main question is how expressive it is. You'll find examples of things you might want to
-//! parse, and how to parse them, in the [Examples](#examples) section below. If you encounter
-//! something that you have difficulty parsing with this approach, please open an issue to let me
-//! know!
-//!
-//! ## Overview
-//!
-//!
 //!
 //! [FILL]
 //!

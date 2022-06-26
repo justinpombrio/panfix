@@ -18,18 +18,17 @@ pub fn resolve(
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ResolverError {
-    /// While parsing `op`, expected token `expected` but found token `found.token`.
-    WrongToken {
-        op: OpToken,
-        expected: Token,
-        found: Lexeme,
-    },
     /// Error while lexing.
     LexError(Lexeme),
-    /// Did not expect token; it does not start an oeprator.
+    /// Did not expect token; it does not start an operator.
     UnexpectedToken(Lexeme),
-    /// While parsing `op`, expected token `expected` but found end-of-file.
-    UnexpectedEof { op: OpToken, expected: Token },
+    /// While parsing `op`, expected token `expected` but found token `found.token` (or found
+    /// end-of-file if None).
+    IncompleteOp {
+        op: OpToken,
+        expected: Token,
+        found: Option<Lexeme>,
+    },
 }
 
 struct Resolver<'a> {
@@ -82,10 +81,10 @@ impl<'a> Resolver<'a> {
 
     fn error(&mut self, top: Option<(Token, OpToken, bool)>, lexeme: Lexeme) -> ResolverError {
         if let Some((tok, optok, _)) = top {
-            ResolverError::WrongToken {
+            ResolverError::IncompleteOp {
                 op: optok,
                 expected: tok,
-                found: lexeme,
+                found: Some(lexeme),
             }
         } else {
             ResolverError::UnexpectedToken(lexeme)
@@ -139,9 +138,10 @@ impl<'a> Resolver<'a> {
             self.last_pos = lexeme.span.end;
         }
         if let Some((tok, optok, _)) = self.stack.pop() {
-            return Err(ResolverError::UnexpectedEof {
+            return Err(ResolverError::IncompleteOp {
                 op: optok,
                 expected: tok,
+                found: None,
             });
         }
         if self.arg_mode {

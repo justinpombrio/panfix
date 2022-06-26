@@ -160,6 +160,7 @@ fn main() {
     let source = Source::new("stdin", input);
     match parser.parse(&source) {
         Ok(tree) => {
+            println!("{}", tree.visitor());
             let traverser = Traverser::new();
             match traverser.parse(tree.visitor()) {
                 Ok(expr) => println!("{:#?}", expr),

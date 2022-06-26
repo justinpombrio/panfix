@@ -107,12 +107,12 @@ impl Op {
 
         let (left_prec, right_prec) = match (fixity, assoc) {
             (Nilfix, _) => (None, None),
-            (Prefix, Left) => (None, Some(prec - 1)),
-            (Prefix, Right) => (None, Some(prec)),
-            (Suffix, Left) => (Some(prec), None),
-            (Suffix, Right) => (Some(prec - 1), None),
-            (Infix, Left) => (Some(prec), Some(prec - 1)),
-            (Infix, Right) => (Some(prec - 1), Some(prec)),
+            (Prefix, Left) => (None, Some(prec)),
+            (Prefix, Right) => (None, Some(prec + 1)),
+            (Suffix, Left) => (Some(prec + 1), None),
+            (Suffix, Right) => (Some(prec), None),
+            (Infix, Left) => (Some(prec + 1), Some(prec)),
+            (Infix, Right) => (Some(prec), Some(prec + 1)),
         };
         let arity = match fixity {
             Nilfix => tokens.len() - 1,

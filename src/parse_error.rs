@@ -30,10 +30,24 @@ impl<'s> ParseError<'s> {
         optok_to_name: &[String],
         error: ResolverError,
     ) -> ParseError<'s> {
-        use ResolverError::{LexError, UnexpectedEof, UnexpectedToken, WrongToken};
+        use ResolverError::{IncompleteOp, LexError, UnexpectedToken};
 
         match error {
-            UnexpectedEof { op, expected } => ParseError {
+            LexError(lexeme) => ParseError {
+                source,
+                message: "Unrecognized token.".to_owned(),
+                span: lexeme.span,
+            },
+            UnexpectedToken(found) => ParseError {
+                source,
+                message: format!("Unexpected token '{}'", source.substr(found.span)),
+                span: found.span,
+            },
+            IncompleteOp {
+                op,
+                expected,
+                found: None,
+            } => ParseError {
                 source,
                 message: format!(
                     "While parsing '{}', expected '{}' but found end of file.",
@@ -41,10 +55,10 @@ impl<'s> ParseError<'s> {
                 ),
                 span: Span::new_at_pos(source.end_of_file()),
             },
-            WrongToken {
+            IncompleteOp {
                 op,
                 expected,
-                found,
+                found: Some(found),
             } => ParseError {
                 source,
                 message: format!(
@@ -54,16 +68,6 @@ impl<'s> ParseError<'s> {
                     source.substr(found.span)
                 ),
                 span: found.span,
-            },
-            UnexpectedToken(found) => ParseError {
-                source,
-                message: format!("Unexpected token '{}'", source.substr(found.span)),
-                span: found.span,
-            },
-            LexError(lexeme) => ParseError {
-                source,
-                message: "Unrecognized token.".to_owned(),
-                span: lexeme.span,
             },
         }
     }

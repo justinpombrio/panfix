@@ -210,3 +210,10 @@ impl<'s, 'p, 't> fmt::Display for Visitor<'s, 'p, 't> {
         }
     }
 }
+
+impl<'s, 'p> fmt::Display for ParseTree<'s, 'p> {
+    /// Display this tree as an s-expression.
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.visitor())
+    }
+}
