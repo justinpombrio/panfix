@@ -44,7 +44,7 @@ pub enum GrammarError {
     /// "prefixy": have no left argument.
     #[error(
         "Duplicate token usage. Each token can be used at most once with a left argument and at
-        most once without a right argument. However the token {0} was used without a left
+        most once without a right argument. However the token {0} was used twice without a left
         argument."
     )]
     PrefixyConflict(String),
@@ -52,13 +52,14 @@ pub enum GrammarError {
     /// "suffixy": have a left argument.
     #[error(
         "Duplicate token usage. Each token can be used at most once with a left argument and at
-        most once without a right argument. However the token {0} was used with a left argument."
+        most once without a right argument. However the token {0} was used twice with a left
+        argument."
     )]
     SuffixyConflict(String),
-    #[error("Regex error in grammar. {0}")]
     /// Bad regex.
+    #[error("Regex error in grammar. {0}")]
     RegexError(RegexError),
-    /// You need to call `group()` before adding operators with arguments.
+    /// You need to call `left_assoc()` or `right_assoc()` before adding operators with arguments.
     #[error("Grammar error: you must call `group()` before adding operators.")]
     PrecNotSet,
 }
@@ -183,7 +184,7 @@ impl Grammar {
         let (prec, assoc) = self.get_prec_and_assoc()?;
         let op = Op::new_juxtapose(assoc, prec);
         let (lprec, rprec) = (op.left_prec, op.right_prec);
-        let mut row = &mut self.op_token_table[TOKEN_JUXTAPOSE];
+        let row = &mut self.op_token_table[TOKEN_JUXTAPOSE];
         row.op = Some(op);
         row.lprec = lprec.unwrap_or(0);
         row.rprec = rprec.unwrap_or(0);

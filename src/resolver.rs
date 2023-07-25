@@ -26,6 +26,7 @@ pub enum ResolverError {
     /// end-of-file if None).
     IncompleteOp {
         op: OpToken,
+        op_span: Span,
         expected: Token,
         found: Option<Lexeme>,
     },
@@ -37,7 +38,7 @@ struct Resolver<'a> {
     optok_to_follower: &'a [Option<(Token, OpToken, bool)>],
     arg_mode: bool,
     last_pos: Position,
-    stack: Vec<(Token, OpToken, bool)>,
+    stack: Vec<(Token, OpToken, bool, Span)>,
     output: Vec<Lexeme>,
 }
 
@@ -59,30 +60,28 @@ impl<'a> Resolver<'a> {
     }
 
     fn produce(&mut self, optok: OpToken, span: Span) {
-        if let Some(follower) = self.optok_to_follower[optok] {
-            self.stack.push(follower);
+        if let Some((tok, optok, has_arg)) = self.optok_to_follower[optok] {
+            self.stack.push((tok, optok, has_arg, span));
         }
         self.output.push(Lexeme { token: optok, span });
     }
 
-    fn produce_blank(&mut self) {
+    fn produce_at_last_pos(&mut self, optok: OpToken) {
         self.output.push(Lexeme {
-            token: TOKEN_BLANK,
+            token: optok,
             span: Span::new_at_pos(self.last_pos),
         });
     }
 
-    fn produce_juxtapose(&mut self) {
-        self.output.push(Lexeme {
-            token: TOKEN_JUXTAPOSE,
-            span: Span::new_at_pos(self.last_pos),
-        });
-    }
-
-    fn error(&mut self, top: Option<(Token, OpToken, bool)>, lexeme: Lexeme) -> ResolverError {
-        if let Some((tok, optok, _)) = top {
+    fn error(
+        &mut self,
+        top: Option<(Token, OpToken, bool, Span)>,
+        lexeme: Lexeme,
+    ) -> ResolverError {
+        if let Some((tok, optok, _, span)) = top {
             ResolverError::IncompleteOp {
                 op: optok,
+                op_span: span,
                 expected: tok,
                 found: Some(lexeme),
             }
@@ -101,51 +100,44 @@ impl<'a> Resolver<'a> {
                 return Err(ResolverError::LexError(lexeme));
             }
             match self.stack.last().copied() {
-                Some((tok, optok, has_arg)) if lexeme.token == tok => {
+                Some((tok, optok, has_arg, _)) if lexeme.token == tok => {
                     if self.arg_mode {
-                        self.produce_blank();
+                        self.produce_at_last_pos(TOKEN_BLANK);
                     }
                     self.arg_mode = has_arg;
                     self.stack.pop();
                     self.produce(optok, lexeme.span);
                 }
                 top => {
-                    if self.arg_mode {
-                        if let Some((optok, has_arg)) = self.tok_to_prefix[lexeme.token] {
-                            self.arg_mode = has_arg;
-                            self.produce(optok, lexeme.span);
-                        } else if let Some((optok, has_arg)) = self.tok_to_suffix[lexeme.token] {
-                            self.arg_mode = has_arg;
-                            self.produce_blank();
-                            self.produce(optok, lexeme.span);
-                        } else {
-                            return Err(self.error(top, lexeme));
-                        }
+                    let (tok_to_op, fallback_tok_to_op, missing) = if self.arg_mode {
+                        (&self.tok_to_prefix, &self.tok_to_suffix, TOKEN_BLANK)
                     } else {
-                        if let Some((optok, has_arg)) = self.tok_to_suffix[lexeme.token] {
-                            self.arg_mode = has_arg;
-                            self.produce(optok, lexeme.span);
-                        } else if let Some((optok, has_arg)) = self.tok_to_prefix[lexeme.token] {
-                            self.arg_mode = has_arg;
-                            self.produce_juxtapose();
-                            self.produce(optok, lexeme.span);
-                        } else {
-                            return Err(self.error(top, lexeme));
-                        }
+                        (&self.tok_to_suffix, &self.tok_to_prefix, TOKEN_JUXTAPOSE)
+                    };
+                    if let Some((optok, has_arg)) = tok_to_op[lexeme.token] {
+                        self.arg_mode = has_arg;
+                        self.produce(optok, lexeme.span);
+                    } else if let Some((optok, has_arg)) = fallback_tok_to_op[lexeme.token] {
+                        self.arg_mode = has_arg;
+                        self.produce_at_last_pos(missing);
+                        self.produce(optok, lexeme.span);
+                    } else {
+                        return Err(self.error(top, lexeme));
                     }
                 }
             }
             self.last_pos = lexeme.span.end;
         }
-        if let Some((tok, optok, _)) = self.stack.pop() {
+        if let Some((tok, optok, _, span)) = self.stack.pop() {
             return Err(ResolverError::IncompleteOp {
                 op: optok,
+                op_span: span,
                 expected: tok,
                 found: None,
             });
         }
         if self.arg_mode {
-            self.produce_blank();
+            self.produce_at_last_pos(TOKEN_BLANK);
         }
         Ok(self.output)
     }

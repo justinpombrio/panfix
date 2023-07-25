@@ -57,7 +57,10 @@ impl<'s> Traverser<'s> {
             "Null" => Json::Null,
             "True" => Json::Boolean(true),
             "False" => Json::Boolean(false),
-            "String" => Json::String(visitor.source().to_owned()),
+            "String" => {
+                let src = visitor.source();
+                Json::String(src[1..src.len() - 1].to_owned())
+            }
             "Number" => match visitor.source().parse::<f64>() {
                 Ok(n) => Json::Number(n),
                 Err(err) => self.error_json(visitor, &format!("Invalid number '{}'", err)),
@@ -134,7 +137,8 @@ impl<'s> Traverser<'s> {
 
     fn parse_key(&mut self, visitor: Visitor<'s, '_, '_>) -> String {
         if let "String" = visitor.name() {
-            visitor.source().to_owned()
+            let src = visitor.source();
+            src[1..src.len() - 1].to_owned()
         } else {
             self.error(visitor, "Expected a key (in double quotes).");
             "".to_owned()

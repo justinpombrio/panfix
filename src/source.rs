@@ -8,6 +8,7 @@ pub struct Source {
     filename: String,
     source: String,
     newline_positions: Vec<Offset>,
+    ends_in_newline: bool,
 }
 
 impl Source {
@@ -21,10 +22,12 @@ impl Source {
                 newline_positions.push(pos);
             }
         }
+        let ends_in_newline = source.chars().rev().next() == Some('\n');
         Source {
             filename: filename.to_owned(),
             source,
             newline_positions,
+            ends_in_newline,
         }
     }
 
@@ -100,9 +103,13 @@ impl Source {
         (start, end)
     }
 
-    /// Get the position at the end of the file.
+    /// Get the position at the end of the file. If the file ends with a newline, returns the
+    /// position _just before_ the newline.
     pub fn end_of_file(&self) -> Position {
-        let line = (self.newline_positions.len() - 1) as Line;
+        let mut line = (self.newline_positions.len() - 1) as Line;
+        if self.ends_in_newline {
+            line -= 1;
+        }
         let col = self.line_contents_inclusive(line).len() as Col;
         let utf8_col = self.line_contents_inclusive(line).chars().count() as Col;
         Position {

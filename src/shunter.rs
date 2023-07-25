@@ -6,13 +6,10 @@ use std::iter;
 ///
 /// The precedence table is indexed by `Token`, and says what that token's left and right
 /// precedence is. Smaller precedence binds tighter.
-pub fn shunt<'a, 's: 'a, I>(
+pub fn shunt<'a, 's: 'a>(
     prec_table: &'a [(Prec, Prec)],
-    iter: I,
-) -> impl Iterator<Item = Lexeme> + 'a
-where
-    I: Iterator<Item = Lexeme> + 'a,
-{
+    iter: impl Iterator<Item = Lexeme> + 'a,
+) -> impl Iterator<Item = Lexeme> + 'a {
     Shunter {
         prec_table,
         stack: vec![],

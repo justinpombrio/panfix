@@ -47,18 +47,20 @@ impl<'s> ParseError<'s> {
                 op,
                 expected,
                 found: None,
+                op_span,
             } => ParseError {
                 source,
                 message: format!(
                     "While parsing '{}', expected '{}' but found end of file.",
                     &optok_to_name[op], &tok_to_name[expected]
                 ),
-                span: Span::new_at_pos(source.end_of_file()),
+                span: op_span,
             },
             IncompleteOp {
                 op,
                 expected,
                 found: Some(found),
+                op_span: _,
             } => ParseError {
                 source,
                 message: format!(
