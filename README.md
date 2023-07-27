@@ -1,21 +1,28 @@
 # Panfix Parsing
 
-Panfix is a new approach to parsing, using a modified version of [operator
-precedence grammars](https://en.wikipedia.org/wiki/Operator-precedence_grammar).
+Panfix parsing is a new approach to parsing based on (but more expressive than)
+[operator precedence grammars](https://en.wikipedia.org/wiki/Operator-precedence_grammar).
 
-- It has its own grammar, that is not a CFG nor a PEG. There are very simple
-  rules for what constitutes a legal grammar.
-- It runs in linear time. Not `O(NG)` like PEG packrat parsing, but `O(N)`.
-- It is a very _lax_ parser, and will happily generate a parse tree in the
-  presense of a variety of errors. On one hand, this increases the number of
-  cases you need to deal with when processing a parse tree. On the other hand,
-  these extra cases are error cases and this is a good time to produce
-  custom error messages for them.
+It is not based on Context Free Grammars (CFGs), nor on Parsing Expression
+Grammars (PEGs). It's has a **different style of grammar**, roughly given as a
+list of multifix operators. The rules for what constitute a valid grammar are
+extremely simple (unlike, say, LR or LALR parsing).
 
-## Example
+Panfix parsing always runs in **linear time**, with no dependence on the size of
+the grammar. That is, if `N` is the size of the text to be parsed and `G` is the
+size of the grammar, then a panfix parser runs in `O(N)` (not `O(NG)` like
+Packrat PEG parsing).
 
-Let's look at what it takes to parse JSON with panfix parsing. Here's a panfix
-grammar for JSON:
+It gives very **lax** parsers, which will happily generate a parse tree in the
+presense of a variety of errors. On one hand, this increases the number of cases
+you need to deal with when processing a parse tree. On the other hand, these
+extra cases are error cases and this is a good time to produce custom error
+messages for them.
+
+## Example: JSON
+
+The best introduction might be a worked example.  Let's look at what it takes to
+parse JSON with panfix parsing. Here's a panfix grammar for JSON:
 
 ```rust
 use panfix::{Parser, Grammar, GrammarError};
@@ -40,8 +47,8 @@ fn make_json_parser() -> Result<Parser, GrammarError> {
 
 The `regex` and `string` lines are defining how to parse constants like strings
 and booleans. `regex` means "match this regex pattern` and `string` means "match
-this exact string". The "Array" line says that if we encounter `[`, that's the
-start of an "Array", and `]` is the end. The "Object" line is similar.
+this exact string". The "Array" line says that `[` starts an array and `]` ends
+it. The "Object" line is similar.
 
 Next up is:
 
@@ -52,7 +59,7 @@ Next up is:
     grammar.op("Comma", pattern!(_ "," _))?;
 ```
 
-The two `right_assoc()` calls begin two _precedence groups_, each with one
+The two `right\_assoc()` calls begin two _precedence groups_, each with one
 operator. Precedence groups have two effects.
 
 First, operators in groups defined earlier bind tighter than operators defined
@@ -77,12 +84,11 @@ Notice some things that this grammar does _not_ say. Nowhere does it say that
 `:` is only allowed inside object `{...}`, nor that object keys have to be
 Strings. Panfix parsing is quite unusual in this regard. You don't define the
 exact grammar you want, you instead define a _superset_ of the grammar, and
-construct context-specific parsing error messages later, as you process the
-parse tree.
+construct context-specific error messages later, as you process the parse tree.
 
 ### Parsing some (badly formed) JSON
 
-Let's see what happens when we parse this "JSON":
+Let's see what happens when we parse this badly formed "JSON":
 
 ```
 {
@@ -105,16 +111,17 @@ Let's see what happens when we parse this "JSON":
 as so:
 
 ```
-let parser = make_json_parser().unwrap();
+let parser = make\_json\_parser().unwrap();
 let input = ...read that JSON file...;
-let source = Source::new("bad_json", input);
+let source = Source::new("bad\_json", input);
 match parser.parse(&source) { ... }
 ```
 
 The call to `parse` will actually return `Ok` instead of `Err`! This is because
 panfix parsing is purposefully very lax. The only thing it cares about is that
-the operators are complete, and in this example `[` is always matched by `]` and
-likewise for `{` and `}`. Thus `parse` return `Ok(tree)` for this parse tree:
+the operators are complete, and in this example `[` is always matched with `]` and
+`{` is always matched with `}`. Thus `parse` returns `Ok(tree)`. When you `Display`
+this tree, you get:
 
 ```
 (Object
@@ -135,14 +142,13 @@ likewise for `{` and `}`. Thus `parse` return `Ok(tree)` for this parse tree:
                 (Comma (Keyval "effect" mixed) _)))))))))
 ```
 
-(Note: this is what the `Display` implementation for `ParseTree` outputs.)
-
-Panfix inserts two implicit kinds of nodes.
+The mechanism for this laxness in parsing is that two kinds of nodes were
+implicitly inserted, displayed as `_` above.
 
 #### Blank nodes
 
 _Blank_ nodes are inserted where an argument is missing. Consider, for example,
-this array:
+the "diet" portion of the JSON:
 
     "diet": [
         "M&Ms",
@@ -158,11 +164,14 @@ is missing. Thus in the parse tree a Blank, written `_`, is inserted:
         (Comma "Necco wafers"
           (Comma "other sweets" _)))))
 
+In JSON this is an error, though in languages that allow a trailing comma it
+wouldn't be.
+
 #### Juxtapose nodes
 
 _Juxtapose_ nodes are the complement of Blank nodes: they are inserted where
 there are two expressions in a row with nothing to join them. For example, this
-fragment of JSON:
+fragment of the JSON:
 
     "weight_kg": 54.5
     "disposition": "friendly",
@@ -175,9 +184,9 @@ turns into this fragment of the parse tree:
 where the `_` is a Juxtapose node, saying that `54.5` and `"disposition"` were
 juxtaposed (i.e., adjacent).
 
-Note that while Blank and Juxtapose are errors in these examples, they're not
-always indicative of a problem. Even just in JSON, the empty list `[]` would
-parse as `(Array _)`.
+Just like the Blank case isn't always an error, the Juxtapose case might be
+expected. For example, even in JSON the empty list `[]` would parse as
+`(Array _)`.
 
 The combination of Blank and Juxtapose nodes makes panfix parsing very lax. This
 is beneficial in a way, as we'll see next.
@@ -217,24 +226,30 @@ fn parse_list(&mut self, mut visitor: Visitor<'s, '_, '_>, elems: &mut Vec<Json>
 }
 ```
 
+This may feel like busywork, but it's not. Good error messages are extremely
+context dependent; `panfix` does not know enough to produce quality error
+messages on its own. Notice, for example, the message above: "JSON does not
+allow trailing commas". That can only be hand written.
+
 `visitor` is a reference to a node in the tree. You can call `.children()` to
 get its children, and `.error(message)` to construct an error message at that
 source location.
 
 The fact that panfix parsing is so lax comes out to shine: our JSON example
-produces a whole set of helpful error messages:
+produces a whole set of helpful error messages for the bad JSON we've been
+looking at:
 
 ```
-Parse Error: Expected a key:value pair.                                                                                                                        
-At 'stdin' line 2.                                                                                                                                             
-                                                                                                                                                               
-    "object_class:" "safe",                                                                                                                                    
-    ^^^^^^^^^^^^^^^^^^^^^^                                                                                                                                     
-                                                                                                                                                               
-Parse Error: Expected a JSON value here, not a key:value pair.                                                                                                 
-At 'stdin' lines 3-4.                                                                                                                                          
-    "weight_kg": 54.5                                                                                                                                          
-                 ^^^^                                                                                                                                          
+Parse Error: Expected a key:value pair.
+At 'stdin' line 2.
+
+    "object_class:" "safe",
+    ^^^^^^^^^^^^^^^^^^^^^^
+
+Parse Error: Expected a JSON value here, not a key:value pair.
+At 'stdin' lines 3-4.
+    "weight_kg": 54.5
+                 ^^^^
     "disposition": "friendly",
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -257,13 +272,17 @@ At 'stdin' line 12.
                         ^
 ```
 
+For the full example of JSON parsing, see <examples/json.rs>. For another
+example, see <examples/calc.rs>.
+
 ## Specification
 
-Here I give a specification of panfix grammars and parsing.
+Now that you have the lay of the land, let's switch to focus on the details,
+requirements, and guarantees.
 
 ### Panfix Grammars
 
-A panfix grammar consists of a whitespace regex, and a set of _operators_.
+A panfix `Grammar` consists of a whitespace regex, and a set of _operators_.
 Everything is an operator, from numbers to identifiers to binary operators to
 function definitions. Each operator has the following properties:
 
@@ -301,7 +320,8 @@ easier:
   group_. Operators defined after them belong to that operator group. Operators
   in an operator group all have the same associativity, and all have the same
   precedence as each other. Operators defined in earlier groups have tighter
-  precedence than operators defined in later groups.
+  precedence than operators defined in later groups. (If neither of these
+  methods is called, the default is left-associativity.)
 - `grammar.op(name: &str, pattern: Pattern)` defines an operator. It inherits
   the precedence and associativity of its group, and `pattern` says what it's
   _fixity_ and _tokens_ are. In the `pattern!` macro, fixity is declared by
@@ -310,49 +330,33 @@ easier:
   `pattern!(_ "[" "]")` has two tokens, and its fixity is that is has a left
   argument but no right argument.
 
-For example, here is the definition of a grammar for parsing JSON:
+A grammar must obey three simple rules:
 
-```rust
-use panfix::{Parser, Grammar, GrammarError};
-
-fn make_json_parser() -> Result<Parser, GrammarError> {
-    let mut grammar = Grammar::new("[ \n\r\t]+")?;
-    grammar.regex("String", r#""([^\\"]|(\\.))*""#)?;
-    grammar.regex("Number", r#"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?"#)?;
-    grammar.regex("Invalid", r#"[a-zA-Z_][a-zA-Z0-9_]*"#)?; // for catching missing qutoes
-    grammar.string("Null", "null")?;
-    grammar.string("True", "true")?;
-    grammar.string("False", "false")?;
-    grammar.op("Array", pattern!("[" "]"))?;
-    grammar.op("Object", pattern!("{" "}"))?;
-    grammar.right_assoc();
-    grammar.op("Keyval", pattern!(_ ":" _))?;
-    grammar.right_assoc();
-    grammar.op("Comma", pattern!(_ "," _))?;
-    grammar.finish()
-}
-```
-
-A grammar is _well formed_ if it obeys these two rules:
-
-1. At most two operators may start with the same token: one that has a left
-   argument, and one that does not.
-2. Operators with the same precedence must have the same associativity.  (This
+1. Its regexs must be well formed.
+2. At most two operators may start with the same token: one that has a left
+   argument, and one that does not. (For example, this allows having an
+   operator for both unary and binary minus: they both start with the token "-",
+   but binary minus has a left argument and unary minus does not.)
+3. Operators with the same precedence must have the same associativity. (This
    rule is enforced by the builder pattern, so you only need to think about it
    if you use `add_raw_op`.)
 
-For example, this allows having an operator for both unary and binary minus:
-they both start with the token "-", but binary minus has a left argument and
-unary minus does not.
+All three rules are enforced by the `Grammar` type; you will get an error if
+you violate them when you call `Grammar.finish()`.
 
-(A note on lexing. The rule for lexing is that longer matches win, or failing
-that a string pattern wins over a regex pattern, or failing that the token
-pattern defined earlier in the grammar wins.)
+### Lexing
+
+When the source is being lexed, multiple regexes from the grammar might match.
+The rule for which one gets used is that:
+
+- The longer match wins,
+- or failing that a string pattern wins over a regex pattern,
+- or failing that the pattern defined earlier in the grammar wins.
 
 ### Parsing
 
-Given a panfix grammar and a source file, you can parse the source in linear
-time, producing either a parse error or a parse tree.
+Given a panfix grammar and a source file, you can parse the source in _linear
+time_, producing either a parse error or a parse tree.
 
 There are three kinds of parse errors:
 
@@ -361,18 +365,20 @@ There are three kinds of parse errors:
 - An operator began but was not completed. For example, encountering an `(` but
   no following `)`.
 
-If parsing is successful, it produces a _parse tree_. Each node in the tree
-contains a reference to an operator and the source location of the occurrence of
-the first token of that operator in the source. The operators referenced include
-the operators defined in the grammar, plus two implicitly defined operators:
+These are the _only_ errors. If there aren't any nonsense tokens and your
+parentheses (and such) are matched, the parse will succeed!
 
-- The "Blank" operator denotes a missing argument. For example, in the source
+If parsing is successful, it produces a _parse tree_. Each node in the tree
+has an operator and a source location. The operators in the tree include the
+operators defined in the grammar, plus two extra operators:
+
+- The `"Blank"` operator denotes a missing argument. For example, in the source
   `true ||`, a "Blank" operator would be inserted to the right of `||`.
-- The "Juxtapose" operator denotes that two expressions are adjacent. For
+- The `"Juxtapose"` operator denotes that two expressions are adjacent. For
   example, in the source `2 3`, a "Jutxapose" operator would be inserted
   between `2` and `3`.
 
-A parse tree is _well formed_ iff:
+The parse tree is guaranteed to be well formed, in the sense that:
 
 1. Each node has children in this order: (i) one child for its left argument, if
    it takes one; (ii) one child for each space "between" its tokens; and (iii)
@@ -385,11 +391,20 @@ A parse tree is _well formed_ iff:
    child. Likewise, if it has a right argument then either it has looser
    precedence than its last child, or it is right associative and has equal
    precedence.
-3. There aren't "too many" blanks and juxtaposes. For example, `1 + 2` should
-   not be parsed as `(Juxtapose (+ 1 Blank) 2)`. In practice this is pretty
-   obvious; technically it's somewhat annoying to define. I believe the
-   definition is that following the "left argument" of a Juxtapose followed by
-   any number of "right argument"s must not yield a Blank, and vice-versa.
+3. There aren't "too many" blanks and juxtaposes. For example, `1 + 2` will
+   be parsed as `(+ 1 2)` and not as `(Juxtapose (+ 1 Blank) 2)`.
 
-If a grammar is well formed, then any source text has at most one well formed
-parse tree, and it can be found in linear time!
+### Putting it all together
+
+1. Construct a `Source`, from file or stdin or whatnot.
+2. Construct a `Grammar` using the builder pattern, or `add_raw_op` if you need
+   more control. Call `Grammar.finish()` to get a `Parser`.
+3. Parse using `Parser.parse(Source)`. If there are any errors, give up and
+   display them.
+4. If that succeeded, convert the `ParseTree` into an AST (or whatever your
+   internal representation will be). _This is the time to check for errors_.
+   Basically: walk the tree, checking the `name()` of each node: if it's
+   expected then recur, and if it's unexpected then produce a custom error
+   message.
+
+Again, to see a full example, look at <examples/json.rs> or <examples/calc.rs>.

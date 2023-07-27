@@ -1,48 +1,3 @@
-/*
-//!
-//! [FILL]
-//!
-//! ## Examples
-//!
-//! ### Unary vs. Binary Minus
-//!
-//! Two operators are allowed to start with the same token, as long as one of them takes a left
-//! argument and the other does not. This let's us parse both unary and binary minus:
-//!
-//! [TODO]
-//! ```
-//! use panfix::{Grammar, Visitor, pattern};
-//!
-//! fn to_sexpr(visitor: Visitor) -> String {
-//!     if visitor.num_children() == 0 {
-//!         visitor.source().to_string()
-//!     } else {
-//!         let mut sexpr = "(".to_string();
-//!         sexpr.push_str(visitor.op());
-//!         for child in visitor.children() {
-//!             sexpr.push_str(" ");
-//!             sexpr.push_str(&to_sexpr(child));
-//!         }
-//!         sexpr
-//!     }
-//! }
-//!
-//! let mut grammar = Grammar::new_with_unicode_whitespace().unwrap();
-//! ```
-//!
-//! ## Spec
-//!
-//! ## Independent Modules
-//!
-//! This crate has two modules used by the parser, that could be used indepdendently of parsing:
-//!
-//! - [`lexing`] is the lexer used by the parser.
-//! - [`rpn`] is used by the parser to store the parse tree with only a single allocation.
-*/
-
-// TODO:
-// - Think about what happens if a starting token is also a follower token in the same subgrammar.
-
 mod grammar;
 mod lexer;
 mod op;
@@ -55,13 +10,12 @@ mod tree_visitor;
 
 use lexer::Lexer;
 use op::Op;
-use std::fmt;
 
 pub use grammar::{Grammar, GrammarError, Pattern};
 pub use op::{Fixity, Prec};
 pub use parse_error::ParseError;
 pub use parse_tree::{ParseTree, Visitor};
-pub use source::Source;
+pub use source::{Col, Line, Offset, Position, Source, Span};
 
 /// A category of lexeme, such as "INTEGER" or "VARIABLE" or "OPEN_PAREN".
 pub type Token = usize;
@@ -77,31 +31,6 @@ pub const TOKEN_JUXTAPOSE: Token = 2;
 const NAME_ERROR: &str = "LexError";
 const NAME_BLANK: &str = "Blank";
 const NAME_JUXTAPOSE: &str = "Juxtapose";
-
-/// A byte offset into the source file.
-pub type Offset = usize;
-/// A line number of a source file. Zero indexed.
-pub type Line = u32;
-/// A column number of a source file. Zero indexed.
-pub type Col = u32;
-
-/// A position in the source text. Positions are _between_ characters.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Position {
-    /// Line number. Zero-indexed.
-    pub line: Line,
-    /// Column number, counted in bytes. Zero-indexed.
-    pub col: Col,
-    /// Column number, counted in utf8 codepoints. Zero-indexed.
-    pub utf8_col: Col,
-}
-
-/// A start and end position in the source text. Positions are _between_ characters.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Span {
-    pub start: Position,
-    pub end: Position,
-}
 
 /// One "word" in the stream returned by the lexer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -136,7 +65,7 @@ impl Parser {
         use tree_visitor::Forest;
 
         // 1. Lex
-        let lexemes = self.lexer.lex(source.source()).collect::<Vec<_>>();
+        let lexemes = self.lexer.lex(source.source());
         #[cfg(feature = "debug_mode")]
         let lexemes = self.print_lexemes(source, "Lexed:    ", lexemes);
 
@@ -183,58 +112,17 @@ impl Parser {
         message: &str,
         lexemes: impl IntoIterator<Item = Lexeme>,
     ) -> impl IntoIterator<Item = Lexeme> {
-        print!("{}", message);
+        eprint!("{}", message);
         let lexemes = lexemes.into_iter().collect::<Vec<_>>();
         for lexeme in &lexemes {
             if lexeme.span.is_empty() {
-                print!("_ ");
+                eprint!("_ ");
             } else {
-                print!("{} ", source.substr(lexeme.span));
+                eprint!("{} ", source.substr(lexeme.span));
             }
         }
-        println!();
+        eprintln!();
         lexemes
-    }
-}
-
-impl fmt::Display for Position {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}:{}", self.line, self.utf8_col)
-    }
-}
-
-impl fmt::Display for Span {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}-{}", self.start, self.end)
-    }
-}
-
-impl Position {
-    /// The position at the start of any document.
-    pub fn start_of_file() -> Position {
-        Position {
-            line: 0,
-            col: 0,
-            utf8_col: 0,
-        }
-    }
-
-    /// Assuming that `ch` appears just to the right of this position, return the position just
-    /// after `ch`.
-    pub fn advance_by_char(self, ch: char) -> Position {
-        if ch == '\n' {
-            Position {
-                line: self.line + 1,
-                col: 0,
-                utf8_col: 0,
-            }
-        } else {
-            Position {
-                line: self.line,
-                col: self.col + ch.len_utf8() as Col,
-                utf8_col: self.utf8_col + 1,
-            }
-        }
     }
 }
 
@@ -244,23 +132,6 @@ impl Lexeme {
             token,
             span: Span { start, end },
         }
-    }
-}
-
-impl Span {
-    pub fn new(start: Position, end: Position) -> Span {
-        Span { start, end }
-    }
-
-    pub fn new_at_pos(pos: Position) -> Span {
-        Span {
-            start: pos,
-            end: pos,
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.start == self.end
     }
 }
 

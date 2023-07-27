@@ -1,6 +1,5 @@
 use panfix::{pattern, Grammar, GrammarError, ParseError, Parser, Source, Visitor};
 use std::collections::HashMap;
-use std::io;
 use std::mem;
 
 fn make_json_parser() -> Result<Parser, GrammarError> {
@@ -156,12 +155,15 @@ impl<'s> Traverser<'s> {
 }
 
 fn main() {
-    use io::Read;
+    eprintln!(
+        "Reading from stdin. If you're using this interactively, end your input with Ctrl-D."
+    );
 
+    // Read input
     let parser = make_json_parser().unwrap();
-    let mut input = String::new();
-    io::stdin().lock().read_to_string(&mut input).unwrap();
-    let source = Source::new("stdin", input);
+    let source = Source::from_stdin().unwrap();
+
+    // Parse and print
     match parser.parse(&source) {
         Ok(tree) => {
             println!("{}", tree.visitor());

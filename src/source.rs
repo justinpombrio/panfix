@@ -1,8 +1,91 @@
-use crate::{Col, Line, Offset, Position, Span};
 use std::fmt;
 
-/// A store of newline locations within a source text, for the purpose of quickly computing line
-/// and column positions.
+/// A byte offset into the source file.
+pub type Offset = usize;
+/// A line number of a source file. Zero indexed.
+pub type Line = u32;
+/// A column number of a source file. Zero indexed.
+pub type Col = u32;
+
+/// A position in the source text. Positions are _between_ characters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Position {
+    /// Line number. Zero indexed.
+    pub line: Line,
+    /// Column number, counted in bytes. Zero indexed.
+    pub col: Col,
+    /// Column number, counted in utf8 codepoints. Zero indexed.
+    pub utf8_col: Col,
+}
+
+/// A start and end position in the source text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Span {
+    pub start: Position,
+    pub end: Position,
+}
+
+impl fmt::Display for Position {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}:{}", self.line, self.utf8_col)
+    }
+}
+
+impl fmt::Display for Span {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}-{}", self.start, self.end)
+    }
+}
+
+impl Position {
+    /// The position at the start of any document.
+    pub fn start_of_file() -> Position {
+        Position {
+            line: 0,
+            col: 0,
+            utf8_col: 0,
+        }
+    }
+
+    /// Assuming that `ch` appears just after this position, return the position just
+    /// after `ch`.
+    pub fn advance_by_char(self, ch: char) -> Position {
+        if ch == '\n' {
+            Position {
+                line: self.line + 1,
+                col: 0,
+                utf8_col: 0,
+            }
+        } else {
+            Position {
+                line: self.line,
+                col: self.col + ch.len_utf8() as Col,
+                utf8_col: self.utf8_col + 1,
+            }
+        }
+    }
+}
+
+impl Span {
+    pub fn new(start: Position, end: Position) -> Span {
+        Span { start, end }
+    }
+
+    pub fn new_at_pos(pos: Position) -> Span {
+        Span {
+            start: pos,
+            end: pos,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.start == self.end
+    }
+}
+
+/// Source text, and a "filename" for it (though it need not have been read from a file).
+/// Newline positions within the source are indexed, which allows all methods to run in
+/// constant time.
 #[derive(Debug, Clone)]
 pub struct Source {
     filename: String,
@@ -12,7 +95,23 @@ pub struct Source {
 }
 
 impl Source {
-    /// Scan a source file for newlines, to allow all further operations to be O(1).
+    /// Read from stdin. The "filename" will be `"[stdin]"`.
+    pub fn from_stdin() -> std::io::Result<Source> {
+        use std::io::Read;
+
+        let mut input = String::new();
+        std::io::stdin().lock().read_to_string(&mut input)?;
+        Ok(Source::new("[stdin]", input))
+    }
+
+    /// Read from a file. The "filename" will be the whole path, with any invalid
+    /// unicode in the path replaced with U+FFFD REPLACEMENT CHARACTER.
+    pub fn open(path: impl AsRef<std::path::Path>) -> std::io::Result<Source> {
+        let path = path.as_ref();
+        let text = std::fs::read_to_string(path)?;
+        Ok(Source::new(&path.to_string_lossy(), text))
+    }
+
     pub fn new(filename: &str, source: String) -> Source {
         let mut pos = 0;
         let mut newline_positions = vec![0];
@@ -31,6 +130,8 @@ impl Source {
         }
     }
 
+    /// The "filename" given in the constructor (though the source need not have been
+    /// read from a file).
     pub fn filename(&self) -> &str {
         &self.filename
     }

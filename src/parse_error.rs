@@ -7,9 +7,9 @@ use std::fmt;
 /// occurred in.
 #[derive(Debug)]
 pub struct ParseError<'s> {
-    source: &'s Source,
-    message: String,
-    span: Span,
+    pub source: &'s Source,
+    pub message: String,
+    pub span: Span,
 }
 
 impl<'s> ParseError<'s> {
@@ -99,4 +99,5 @@ impl<'s> fmt::Display for ParseError<'s> {
         }
     }
 }
+
 impl<'s> error::Error for ParseError<'s> {}

@@ -1,5 +1,4 @@
 use panfix::{pattern, Grammar, GrammarError, ParseError, Parser, Source, Visitor};
-use std::io;
 
 fn make_parser() -> Result<Parser, GrammarError> {
     let mut grammar = Grammar::new_with_unicode_whitespace()?;
@@ -46,18 +45,20 @@ fn calc<'s>(expr: Visitor<'s, '_, '_>) -> Result<f64, ParseError<'s>> {
 //
 // Substituting, we get:
 //
-//     2 * 3.14 * 8.85e-12 * 0.08 / log of (0.04 / 0.02)
+//     2 * 3.14159265 * 8.854187e-12 * 0.08 / log of (0.04 / 0.02)
 //
-// which gives 0.000000000006418621638056938 F = 6.42e-12 F
+// which gives 0.00000000000642086 F ~= 6.42e-12 F
+//
+// Try inputting the second formula: it'll give the same answer.
 
 fn main() {
-    use io::Read;
+    eprintln!(
+        "Reading from stdin. If you're using this interactively, end your input with Ctrl-D."
+    );
 
     // Read input
     let parser = make_parser().unwrap();
-    let mut input = String::new();
-    io::stdin().lock().read_to_string(&mut input).unwrap();
-    let source = Source::new("stdin", input);
+    let source = Source::from_stdin().unwrap();
 
     // Parse and calculate
     match parser.parse(&source) {

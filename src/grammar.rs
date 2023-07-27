@@ -59,9 +59,6 @@ pub enum GrammarError {
     /// Bad regex.
     #[error("Regex error in grammar. {0}")]
     RegexError(RegexError),
-    /// You need to call `left_assoc()` or `right_assoc()` before adding operators with arguments.
-    #[error("Grammar error: you must call `group()` before adding operators.")]
-    PrecNotSet,
 }
 
 /// Describe the syntax of an operator. You typically want to construct this with the `pattern!`
@@ -128,7 +125,7 @@ impl Grammar {
                     follower: None,
                 },
             ],
-            current_prec: 0,
+            current_prec: 10,
             current_assoc: Assoc::Left,
         })
     }
@@ -181,7 +178,7 @@ impl Grammar {
     /// left associativity. Every time you call this function, you overwrite the precedence the
     /// associativity of the juxtaposition operator (so the last call wins).
     pub fn juxtapose(&mut self) -> Result<(), GrammarError> {
-        let (prec, assoc) = self.get_prec_and_assoc()?;
+        let (prec, assoc) = (self.current_prec, self.current_assoc);
         let op = Op::new_juxtapose(assoc, prec);
         let (lprec, rprec) = (op.left_prec, op.right_prec);
         let row = &mut self.op_token_table[TOKEN_JUXTAPOSE];
@@ -208,7 +205,7 @@ impl Grammar {
         if pattern.fixity == Fixity::Nilfix {
             self.add_op(name, Assoc::Left, 0, pattern.fixity, pattern.tokens)
         } else {
-            let (prec, assoc) = self.get_prec_and_assoc()?;
+            let (prec, assoc) = (self.current_prec, self.current_assoc);
             self.add_op(name, assoc, prec, pattern.fixity, pattern.tokens)
         }
     }
@@ -360,13 +357,5 @@ impl Grammar {
             follower,
         });
         Ok(op_token)
-    }
-
-    fn get_prec_and_assoc(&self) -> Result<(Prec, Assoc), GrammarError> {
-        if self.current_prec > 0 {
-            Ok((self.current_prec, self.current_assoc))
-        } else {
-            Err(GrammarError::PrecNotSet)
-        }
     }
 }

@@ -6,6 +6,9 @@ use std::iter;
 ///
 /// The precedence table is indexed by `Token`, and says what that token's left and right
 /// precedence is. Smaller precedence binds tighter.
+///
+/// Uses essentially the [shunting yard algorithm](
+/// https://en.wikipedia.org/wiki/Shunting_yard_algorithm).
 pub fn shunt<'a, 's: 'a>(
     prec_table: &'a [(Prec, Prec)],
     iter: impl Iterator<Item = Lexeme> + 'a,

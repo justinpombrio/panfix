@@ -90,7 +90,6 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    #[allow(clippy::collapsible_else_if)]
     fn resolve(
         mut self,
         input: impl Iterator<Item = Lexeme>,
