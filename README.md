@@ -4,9 +4,9 @@ Panfix parsing is a new approach to parsing based on (but more expressive than)
 [operator precedence grammars](https://en.wikipedia.org/wiki/Operator-precedence_grammar).
 
 It is not based on Context Free Grammars (CFGs), nor on Parsing Expression
-Grammars (PEGs). It's has a **different style of grammar**, roughly given as a
-list of multifix operators. The rules for what constitute a valid grammar are
-extremely simple (unlike, say, LR or LALR parsing).
+Grammars (PEGs). It's has a **different style of grammar**, roughly a list of
+multifix operators. The rules for what constitute a valid grammar are extremely
+simple (unlike, say, LR or LALR parsing).
 
 Panfix parsing always runs in **linear time**, with no dependence on the size of
 the grammar. That is, if `N` is the size of the text to be parsed and `G` is the
@@ -197,6 +197,7 @@ What now? The _hard_ work of producing a parse tree (with source locations, to
 boot) has already been done. What remains is the _easy_ but verbose work of
 walking that tree and converting it into a `Json` type:
 
+```rust
     #[derive(Debug)]
     enum Json {
         String(String),
@@ -206,6 +207,7 @@ walking that tree and converting it into a `Json` type:
         Array(Vec<Json>),
         Object(HashMap<String, Json>),
     }
+```
 
 You can find this conversion at [examples/json.rs](examples/json.rs). It's
 verbose but straightforward. Here's a snippet from it:
@@ -272,8 +274,8 @@ At 'stdin' line 12.
                         ^
 ```
 
-For the full example of JSON parsing, see <examples/json.rs>. For another
-example, see <examples/calc.rs>.
+For the full example of JSON parsing, see [examples/json.rs](examples/json.rs).
+For another example, see [examples/calc.rs](examples/calc.rs).
 
 ## Specification
 
@@ -398,7 +400,8 @@ The parse tree is guaranteed to be well formed, in the sense that:
 
 1. Construct a `Source`, from file or stdin or whatnot.
 2. Construct a `Grammar` using the builder pattern, or `add_raw_op` if you need
-   more control. Call `Grammar.finish()` to get a `Parser`.
+   more control. Call `Grammar.finish()` to get a `Parser`. This will check if
+   the grammar is valid and `Error` if not.
 3. Parse using `Parser.parse(Source)`. If there are any errors, give up and
    display them.
 4. If that succeeded, convert the `ParseTree` into an AST (or whatever your
@@ -407,4 +410,5 @@ The parse tree is guaranteed to be well formed, in the sense that:
    expected then recur, and if it's unexpected then produce a custom error
    message.
 
-Again, to see a full example, look at <examples/json.rs> or <examples/calc.rs>.
+Again, to see a full example, see [examples/json.rs](examples/json.rs)
+or [examples/calc.rs](examples/calc.rs).
