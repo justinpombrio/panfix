@@ -1,8 +1,10 @@
 [package]
 name = "panfix"
-version = "0.3.1"
+version = "0.4.0"
 authors = ["Justin Pombrio <zallambo@gmail.com>"]
-edition = "2018"
+edition = "2021"
+description = "Panfix parsing: linear time parsing of multifix operators."
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

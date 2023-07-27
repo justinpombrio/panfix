@@ -61,7 +61,6 @@ impl Parser {
         use parse_tree::Item;
         use resolver::resolve;
         use shunter::shunt;
-        use std::iter::FromIterator;
         use tree_visitor::Forest;
 
         // 1. Lex
