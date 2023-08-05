@@ -16,10 +16,10 @@ impl<'s> ParseError<'s> {
     /// Construct a custom parsing error message. (This is useful so that you can re-use the
     /// existing parsing error message printing, and because it will have the same type as other
     /// parse errors.
-    pub fn custom_error(source: &'s Source, message: &str, span: Span) -> ParseError<'s> {
+    pub fn custom_error(source: &'s Source, message: String, span: Span) -> ParseError<'s> {
         ParseError {
             source,
-            message: message.to_owned(),
+            message: message,
             span,
         }
     }

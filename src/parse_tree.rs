@@ -178,14 +178,48 @@ impl<'s, 'p, 't> Visitor<'s, 'p, 't> {
         array
     }
 
+    /// Walk down a chain of left-associative binary operators. For example, if `_ , _` is a
+    /// left-associative binary operator then `1,2,3` would parse as `(, 1 (, 2 3))`, and this
+    /// method would iterate over `1`, `2`, and `3` in order.
+    pub fn iter_left_chain(
+        &self,
+        binop_name: &'p str,
+    ) -> impl Iterator<Item = Visitor<'s, 'p, 't>> {
+        IterLeftChain {
+            binop_name,
+            visitor: Some(*self),
+        }
+    }
+
     /// Create a custom parsing error with the given message at the location `self.span()`.
-    pub fn error(&self, message: &str) -> ParseError<'s> {
-        ParseError::custom_error(self.source, message, self.span())
+    pub fn error(&self, message: impl ToString) -> ParseError<'s> {
+        ParseError::custom_error(self.source, message.to_string(), self.span())
     }
 
     /// Create a custom parsing error with the given message at the location `self.token_span()`.
-    pub fn error_at_token(&self, message: &str) -> ParseError<'s> {
-        ParseError::custom_error(self.source, message, self.token_span())
+    pub fn error_at_token(&self, message: impl ToString) -> ParseError<'s> {
+        ParseError::custom_error(self.source, message.to_string(), self.token_span())
+    }
+}
+
+struct IterLeftChain<'s, 'p, 't> {
+    binop_name: &'p str,
+    visitor: Option<Visitor<'s, 'p, 't>>,
+}
+
+impl<'s, 'p, 't> Iterator for IterLeftChain<'s, 'p, 't> {
+    type Item = Visitor<'s, 'p, 't>;
+
+    fn next(&mut self) -> Option<Visitor<'s, 'p, 't>> {
+        let node = self.visitor?;
+        if node.name() == self.binop_name {
+            let [left, right] = node.children();
+            self.visitor = Some(right);
+            Some(left)
+        } else {
+            self.visitor = None;
+            Some(node)
+        }
     }
 }
 
