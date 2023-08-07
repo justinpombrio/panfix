@@ -81,19 +81,19 @@ impl<'s> fmt::Display for ParseError<'s> {
         if self.span.start.line == self.span.end.line {
             writeln!(
                 f,
-                "At '{}' line {}.",
+                "At '{}' line {}:",
                 self.source.filename(),
-                self.span.start.line
+                self.span.start.line + 1
             )?;
             writeln!(f)?;
             self.source.show_span(f, self.span)
         } else {
             writeln!(
                 f,
-                "At '{}' lines {}-{}.",
+                "At '{}' lines {}-{}:",
                 self.source.filename(),
-                self.span.start.line,
-                self.span.end.line
+                self.span.start.line + 1,
+                self.span.end.line + 1
             )?;
             self.source.show_span(f, self.span)
         }

@@ -10,7 +10,7 @@ pub type Col = u32;
 /// A position in the source text. Positions are _between_ characters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Position {
-    /// Line number. Zero indexed.
+    /// Line number. Zero indexed, but _prints_ as one indexed.
     pub line: Line,
     /// Column number, counted in bytes. Zero indexed.
     pub col: Col,
@@ -27,7 +27,7 @@ pub struct Span {
 
 impl fmt::Display for Position {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}:{}", self.line, self.utf8_col)
+        write!(f, "{}:{}", self.line + 1, self.utf8_col)
     }
 }
 
