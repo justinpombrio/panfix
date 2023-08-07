@@ -124,6 +124,70 @@ fn make_lua_parser() -> Result<Parser, GrammarError> {
     grammar.finish()
 }
 
+fn human_readable_name(op_name: &str) -> &str {
+    match op_name {
+        "Name" => "name",
+        "Label" => "label",
+        "Nil" => "'nil'",
+        "False" => "'false'",
+        "True" => "'true'",
+        "Numeral" => "number",
+        "String" => "string literal",
+        "Ellipses" => "'...'",
+        "Parens" => "parentheses",
+        "Table" => "table constructor",
+        "Break" => "'break'",
+        "Break" => "'break'",
+        "Function" => "function",
+        "Do" => "'do' statement",
+        "While" => "'while' statement",
+        "If" => "'if' statement",
+        "If" => "'for' loop",
+        "Dot" => "'.'",
+        "Brackets" => "square brackets",
+        "Colon" => "':'",
+        "Exponentiate" => "'^'",
+        "Neg" => "'-'",
+        "BitwiseNeg" => "'~'",
+        "Not" => "'not'",
+        "Len" => "'#'",
+        "Times" => "'*'",
+        "Divide" => "'/'",
+        "FloorDivide" => "'//'",
+        "Modulo" => "'%'",
+        "Plus" => "'+'",
+        "Minus" => "'-'",
+        "Concat" => "'..'",
+        "LShift" => "'<<'",
+        "RShift" => "'>>'",
+        "BitAnd" => "'&'",
+        "BitXor" => "'~'",
+        "BitOr" => "'|'",
+        "Lt" => "'<'",
+        "Lte" => "'<='",
+        "Gt" => "'>'",
+        "Gte" => "'>='",
+        "Eq" => "'=='",
+        "Neq" => "'~='",
+        "And" => "'and'",
+        "Or" => "'or'",
+        "Semi" => "';'",
+        "Else" => "'else' clause",
+        "Elseif" => "'elseif' clause",
+        "In" => "'in'",
+        "Local" => "'local'",
+        "Return" => "'return' statement",
+        "Repeat" => "'repeat' loop",
+        "Goto" => "'goto' statement",
+        "Equals" => "'='",
+        "Comma" => "','",
+        "BracketField" => "field access ('_[_]')",
+        "FunctionCallParens" => "function call ('_(_)')",
+        "FunctionCallTable" => "function call ('_{_}')",
+        _ => op_name,
+    }
+}
+
 type Name = String;
 type Chunk = Block;
 type ExpList = Vec<Exp>;
@@ -489,7 +553,6 @@ impl<'s> Traverser<'s> {
             }
             "Function" => {
                 let [name, parlist, body] = visitor.children();
-                println!("! Parse function:\n{}\n{}\n{}", name, parlist, body);
                 if name.name() != "Blank" {
                     self.error(visitor, "A function expression cannot have a name");
                 }
@@ -771,10 +834,10 @@ impl<'s> Traverser<'s> {
                 if iteration.name() == "In" {
                     let [namelist, explist] = iteration.children();
                     if namelist.name() == "Blank" {
-                        self.error(namelist, "The variable list in a `for` cannot be empty.");
+                        self.error(namelist, "The variable list in a `for` cannot be empty");
                     }
                     if explist.name() == "Blank" {
-                        self.error(namelist, "The expression list in a `for` cannot be empty.");
+                        self.error(namelist, "The expression list in a `for` cannot be empty");
                     }
                     let namelist = self.parse_namelist(namelist);
                     let explist = self.parse_explist(explist);
@@ -784,7 +847,7 @@ impl<'s> Traverser<'s> {
                     let [var, bounds] = iteration.children();
                     let bounds_list = bounds.iter_right_chain("Comma").collect::<Vec<_>>();
                     if bounds_list.len() != 2 && bounds_list.len() != 3 {
-                        self.error(bounds, "A for loop iteration bounds must be either `min, max` or `min, max, by`.");
+                        self.error(bounds, "A for loop iteration bounds must be either `min, max` or `min, max, by`");
                         return self.empty_stat();
                     }
                     let var = self.parse_name(var);
@@ -801,7 +864,7 @@ impl<'s> Traverser<'s> {
                         body,
                     }
                 } else {
-                    self.error(iteration, "A `for` loop must have either the form `for $vars = $exps do $block end` or `for $name in $exp do $block end`.");
+                    self.error(iteration, "A `for` loop must have either the form `for $vars = $exps do $block end` or `for $name in $exp do $block end`");
                     self.empty_stat()
                 }
             }
@@ -844,13 +907,13 @@ impl<'s> Traverser<'s> {
                         if namelist.name() == "Blank" {
                             self.error(
                                 namelist,
-                                "The variable list in a `local` definition cannot be empty.",
+                                "The variable list in a `local` definition cannot be empty",
                             );
                         }
                         if explist.name() == "Blank" {
                             self.error(
                                 namelist,
-                                "The expression list in a `local` definition cannot be empty.",
+                                "The expression list in a `local` definition cannot be empty",
                             );
                         }
                         let namelist = self.parse_namelist(namelist);
@@ -893,7 +956,11 @@ impl<'s> Traverser<'s> {
             "Blank" => self.error(visitor, format!("Missing {}", context)),
             bad_name => self.error(
                 visitor,
-                format!("Expected {}, but found {}", context, bad_name),
+                format!(
+                    "Expected {}, but found {}",
+                    context,
+                    human_readable_name(bad_name)
+                ),
             ),
         }
     }
