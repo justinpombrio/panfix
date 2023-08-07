@@ -159,6 +159,7 @@ impl<'s, 'p, 't> Visitor<'s, 'p, 't> {
     /// Panics if `N` does not match the number of children. Note that the number of children is
     /// not dynamic: you can tell how many there will be from the grammar. Even if a child is
     /// "missing", it will actually be represented as blank.
+    #[track_caller]
     pub fn children<const N: usize>(&self) -> [Visitor<'s, 'p, 't>; N] {
         let mut array = [*self; N]; // dummy value
         if N != self.num_children() {
@@ -178,14 +179,16 @@ impl<'s, 'p, 't> Visitor<'s, 'p, 't> {
         array
     }
 
-    /// Walk down a chain of left-associative binary operators. For example, if `_ , _` is a
-    /// left-associative binary operator then `1,2,3` would parse as `(, 1 (, 2 3))`, and this
+    /// Walk down a chain of right-associative binary operators. For example, if `_ , _` is a
+    /// right-associative binary operator then `1,2,3` would parse as `(, 1 (, 2 3))`, and this
     /// method would iterate over `1`, `2`, and `3` in order.
-    pub fn iter_left_chain(
+    ///
+    /// If this visitor is Blank, yield nothing.
+    pub fn iter_right_chain(
         &self,
         binop_name: &'p str,
     ) -> impl Iterator<Item = Visitor<'s, 'p, 't>> {
-        IterLeftChain {
+        IterRightChain {
             binop_name,
             visitor: Some(*self),
         }
@@ -202,12 +205,12 @@ impl<'s, 'p, 't> Visitor<'s, 'p, 't> {
     }
 }
 
-struct IterLeftChain<'s, 'p, 't> {
+struct IterRightChain<'s, 'p, 't> {
     binop_name: &'p str,
     visitor: Option<Visitor<'s, 'p, 't>>,
 }
 
-impl<'s, 'p, 't> Iterator for IterLeftChain<'s, 'p, 't> {
+impl<'s, 'p, 't> Iterator for IterRightChain<'s, 'p, 't> {
     type Item = Visitor<'s, 'p, 't>;
 
     fn next(&mut self) -> Option<Visitor<'s, 'p, 't>> {
@@ -218,7 +221,11 @@ impl<'s, 'p, 't> Iterator for IterLeftChain<'s, 'p, 't> {
             Some(left)
         } else {
             self.visitor = None;
-            Some(node)
+            if node.name() == "Blank" {
+                None
+            } else {
+                Some(node)
+            }
         }
     }
 }
