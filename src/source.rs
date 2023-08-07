@@ -171,6 +171,11 @@ impl Source {
         &self.source[start..end]
     }
 
+    fn line_contents_with_expanded_tabs(&self, line: Line) -> String {
+        let (start, end) = self.line_span(line);
+        self.source[start..end].replace('\t', "    ")
+    }
+
     /// Like `line_contents`, but includes the line termination character(s).
     pub fn line_contents_inclusive(&self, line: Line) -> &str {
         let (start, end) = self.line_span_inclusive(line);
@@ -225,6 +230,8 @@ impl Source {
     /// ```text
     ///     x += n + 1;
     ///          ^^^^^
+    ///
+    /// Displays tabs as four spaces.
     pub fn show_span(&self, f: &mut fmt::Formatter, span: Span) -> fmt::Result {
         if span.start.line == span.end.line {
             self.show_line(
@@ -249,12 +256,17 @@ impl Source {
         start: Option<Col>,
         end: Option<Col>,
     ) -> fmt::Result {
-        let line = self.line_contents(line_num);
+        let line = self.line_contents_with_expanded_tabs(line_num);
         let start = start.unwrap_or(0);
         let end = end.unwrap_or_else(|| line.chars().count() as Col);
         writeln!(f, "{}", line)?;
+        let mut chars = self.line_contents(line_num).chars();
         for _ in 0..start {
-            write!(f, " ")?;
+            if let Some('\t') = chars.next() {
+                write!(f, "    ")?;
+            } else {
+                write!(f, " ")?;
+            }
         }
         for _ in 0..(end - start).max(1) {
             write!(f, "^")?;
