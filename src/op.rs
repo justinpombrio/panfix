@@ -8,7 +8,7 @@ pub type Prec = u16;
 ///
 /// - `3` takes no arguments, so it is a `Nilfix` operator.
 /// - `_ [ _ ]` (indexing) takes an argument only on the left, so it is a `Suffix` operator. (The
-/// "internal argument" between the brackets does not count towards the fixity.)
+///   "internal argument" between the brackets does not count towards the fixity.)
 /// - `! _` (not) takes an argument only on the right, so it is a `Prefix` oeprator.
 /// - `_ - _` takes an argument on both sides, so it is an infix operator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

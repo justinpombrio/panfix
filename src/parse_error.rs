@@ -165,7 +165,7 @@ fn show_error_with_loc(
             let last_line = LineInfo {
                 num: format!("{}", end.line + 1),
                 contents: source.line_contents(end.line),
-                carets_start: 0 as usize,
+                carets_start: 0,
                 carets_len: end.col.max(1) as usize,
             };
             let margin = first_line.num.len().max(last_line.num.len()) + 1;

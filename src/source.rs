@@ -121,7 +121,7 @@ impl Source {
                 newline_positions.push(pos);
             }
         }
-        let ends_in_newline = source.chars().rev().next() == Some('\n');
+        let ends_in_newline = source.ends_with('\n');
         Source {
             filename: filename.to_owned(),
             source,

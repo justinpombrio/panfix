@@ -19,6 +19,7 @@ fn make_json_parser() -> Result<Parser, GrammarError> {
     grammar.finish()
 }
 
+#[allow(dead_code)] // I'm not dead! I'm read only through fmt::Debug.
 #[derive(Debug)]
 enum Json {
     String(String),

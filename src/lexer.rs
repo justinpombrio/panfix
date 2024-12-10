@@ -30,9 +30,9 @@
 //!
 //! - The longest match is used.
 //! - If there is a tie, whichever token is a 'string' pattern instead of a 'regex' pattern will be
-//! used.
+//!   used.
 //! - If there is _still_ a tie, the regex that's first in the list provided to `Lexer::new()` will
-//! be used.
+//!   be used.
 
 use crate::{Lexeme, Offset, Position, Span, Token, TOKEN_ERROR};
 use regex::{escape, Regex, RegexSet};
@@ -201,7 +201,7 @@ impl<'l, 's> LexemeIter<'l, 's> {
     }
 }
 
-impl<'l, 's> Iterator for LexemeIter<'l, 's> {
+impl Iterator for LexemeIter<'_, '_> {
     type Item = Lexeme;
 
     fn next(&mut self) -> Option<Lexeme> {

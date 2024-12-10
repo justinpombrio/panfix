@@ -8,7 +8,7 @@ fn get_span(src: &str, span: Span) -> &str {
 }
 
 #[track_caller]
-fn assert_lexeme<'a>(
+fn assert_lexeme(
     src: &str,
     stream: &mut impl Iterator<Item = Lexeme>,
     expected: &str,

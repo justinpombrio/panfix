@@ -53,7 +53,7 @@ impl<'s, 'p> ParseTree<'s, 'p> {
     }
 }
 
-impl<'p> Arity for Item<'p> {
+impl Arity for Item<'_> {
     fn arity(&self) -> usize {
         self.op.arity
     }
@@ -189,7 +189,7 @@ impl<'s, 'p, 't> Visitor<'s, 'p, 't> {
     }
 }
 
-impl<'s, 'p, 't> fmt::Display for Visitor<'s, 'p, 't> {
+impl fmt::Display for Visitor<'_, '_, '_> {
     /// Display this node as an s-expression.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.name() == NAME_BLANK {
@@ -211,7 +211,7 @@ impl<'s, 'p, 't> fmt::Display for Visitor<'s, 'p, 't> {
     }
 }
 
-impl<'s, 'p> fmt::Display for ParseTree<'s, 'p> {
+impl fmt::Display for ParseTree<'_, '_> {
     /// Display this tree as an s-expression.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.visitor())

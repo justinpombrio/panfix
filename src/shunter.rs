@@ -31,7 +31,7 @@ where
     pop_mode: bool,
 }
 
-impl<'a, I: Iterator<Item = Lexeme>> Shunter<'a, I> {
+impl<I: Iterator<Item = Lexeme>> Shunter<'_, I> {
     fn top_rprec(&self) -> Prec {
         self.stack
             .last()
@@ -40,7 +40,7 @@ impl<'a, I: Iterator<Item = Lexeme>> Shunter<'a, I> {
     }
 }
 
-impl<'a, I: Iterator<Item = Lexeme>> Iterator for Shunter<'a, I> {
+impl<I: Iterator<Item = Lexeme>> Iterator for Shunter<'_, I> {
     type Item = Lexeme;
 
     fn next(&mut self) -> Option<Lexeme> {

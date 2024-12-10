@@ -52,10 +52,10 @@ fn test_shunting() {
         lexemes.into_iter()
     }
 
-    fn show_stream<'s>(src: &str, stream: impl Iterator<Item = Lexeme>) -> String {
+    fn show_stream(src: &str, stream: impl Iterator<Item = Lexeme>) -> String {
         stream
             .map(|lex| &src[lex.span.start.col as usize..lex.span.end.col as usize])
-            .map(|lex| if lex == "" { "_" } else { lex })
+            .map(|lex| if lex.is_empty() { "_" } else { lex })
             .collect::<Vec<_>>()
             .join(" ")
     }
@@ -80,11 +80,7 @@ fn test_shunting() {
 
     let mut link_table = Vec::new();
     for _ in 0..NUM_TOKENS {
-        let mut inner_table = Vec::new();
-        for _ in 0..NUM_TOKENS {
-            inner_table.push(false);
-        }
-        link_table.push(inner_table);
+        link_table.push(vec![false; NUM_TOKENS]);
     }
 
     let src = "_";

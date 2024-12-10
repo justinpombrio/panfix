@@ -31,6 +31,12 @@ pub struct Visitor<'f, I: Arity> {
     node: Node<I>,
 }
 
+impl Arity for usize {
+    fn arity(&self) -> usize {
+        *self
+    }
+}
+
 impl<'f, I: Arity> Visitor<'f, I> {
     /// The data stored at this node.
     pub fn item(&self) -> &I {
@@ -121,12 +127,6 @@ impl<I: Arity> Forest<I> {
 
 #[test]
 fn test_tree_visitor() {
-    impl Arity for usize {
-        fn arity(&self) -> usize {
-            *self
-        }
-    }
-
     fn show_forest(forest: &Forest<usize>) -> String {
         let mut out = String::new();
         for i in 0..forest.num_trees() {
