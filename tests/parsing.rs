@@ -11,7 +11,10 @@ fn assert_parse(parser: &Parser, src: &str, expected: &str) {
 fn assert_error(parser: &Parser, src: &str, expected: &str) {
     let source = Source::new("testcase", src.to_owned());
     let err = parser.parse(&source).unwrap_err();
-    assert_eq!(format!("{}", err), expected);
+    assert_eq!(
+        format!("{}", err.display_with_color_override(false)),
+        expected
+    );
 }
 
 #[test]
@@ -29,21 +32,21 @@ fn test_lexing_error() {
         &parser,
         "%!",
         r#"Parse Error: Unrecognized token.
-At 'testcase' line 0.
-
-%!
-^^
+ --> testcase:1:1
+  |
+1 |%!
+  |^^ unrecognized token
 "#,
     );
 
     assert_error(
         &parser,
-        "5 + %! + 8",
+        "5\n + %! + 8",
         r#"Parse Error: Unrecognized token.
-At 'testcase' line 0.
-
-5 + %! + 8
-    ^^
+ --> testcase:2:4
+  |
+2 | + %! + 8
+  |   ^^ unrecognized token
 "#,
     );
 }

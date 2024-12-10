@@ -225,6 +225,7 @@ impl Source {
     /// ```text
     ///     x += n + 1;
     ///          ^^^^^
+    /// ```
     pub fn show_span(&self, f: &mut fmt::Formatter, span: Span) -> fmt::Result {
         if span.start.line == span.end.line {
             self.show_line(

@@ -18,11 +18,14 @@ fn make_parser() -> Result<Parser, GrammarError> {
 
 fn calc<'s>(expr: Visitor<'s, '_, '_>) -> Result<f64, ParseError<'s>> {
     match expr.name() {
-        "Blank" => Err(expr.error("Missing expression.")),
-        "Juxtapose" => Err(expr.error("Multiple expressions. There can only be one.")),
+        "Blank" => Err(expr.error("missing expression", "Missing expression.")),
+        "Juxtapose" => Err(expr.error(
+            "extra expression",
+            "Multiple expressions. There can only be one.",
+        )),
         "Number" => match expr.source().parse::<f64>() {
             Ok(n) => Ok(n),
-            Err(err) => Err(expr.error(&format!("Invalid number '{}'", err))),
+            Err(err) => Err(expr.error("invalid number", &format!("Invalid number '{}'", err))),
         },
         "Times" => Ok(calc(expr.child(0))? * calc(expr.child(1))?),
         "Divide" => Ok(calc(expr.child(0))? / calc(expr.child(1))?),

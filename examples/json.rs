@@ -49,10 +49,18 @@ impl<'s> Traverser<'s> {
 
     fn parse_value(&mut self, visitor: Visitor<'s, '_, '_>) -> Json {
         match visitor.name() {
-            "Error" => self.error_json(visitor, "Unrecognized token in JSON value."),
-            "Blank" => self.error_json(visitor, "Missing Json value."),
-            "Juxtapose" => self.error_json(visitor, "Found two values next to each other."),
-            "Invalid" => self.error_json(visitor, "Missing quotes."),
+            "Error" => self.error_json(
+                visitor,
+                "unknown token",
+                "Unrecognized token in JSON value.",
+            ),
+            "Blank" => self.error_json(visitor, "missing Json value", "Missing Json value."),
+            "Juxtapose" => self.error_json(
+                visitor,
+                "too many values",
+                "Found two values next to each other.",
+            ),
+            "Invalid" => self.error_json(visitor, "missing quotes", "Missing quotes."),
             "Null" => Json::Null,
             "True" => Json::Boolean(true),
             "False" => Json::Boolean(false),
@@ -62,7 +70,11 @@ impl<'s> Traverser<'s> {
             }
             "Number" => match visitor.source().parse::<f64>() {
                 Ok(n) => Json::Number(n),
-                Err(err) => self.error_json(visitor, &format!("Invalid number '{}'", err)),
+                Err(err) => self.error_json(
+                    visitor,
+                    "invalid number",
+                    &format!("Invalid number '{}'", err),
+                ),
             },
             "Array" => {
                 let visitor = visitor.child(0);
@@ -82,10 +94,16 @@ impl<'s> Traverser<'s> {
                 self.parse_object(visitor, &mut object);
                 Json::Object(object)
             }
-            "Comma" => self.error_json(visitor, "Expected a single JSON value, not a list."),
-            "Keyval" => {
-                self.error_json(visitor, "Expected a JSON value here, not a key:value pair.")
-            }
+            "Comma" => self.error_json(
+                visitor,
+                "unexpected list",
+                "Expected a single JSON value, not a list.",
+            ),
+            "Keyval" => self.error_json(
+                visitor,
+                "unexpected key:value pair",
+                "Expected a JSON value here, not a key:value pair.",
+            ),
             op => panic!("Bug: missing parser handler for {}", op),
         }
     }
@@ -98,7 +116,11 @@ impl<'s> Traverser<'s> {
             visitor = tail;
         }
         if visitor.name() == "Blank" {
-            self.error(visitor, "JSON does not allow trailing commas.");
+            self.error(
+                visitor,
+                "trailing comma",
+                "JSON does not allow trailing commas.",
+            );
         } else {
             elems.push(self.parse_value(visitor));
         }
@@ -115,7 +137,11 @@ impl<'s> Traverser<'s> {
             visitor = tail;
         }
         if visitor.name() == "Blank" {
-            self.error(visitor, "JSON does not allow trailing commas.");
+            self.error(
+                visitor,
+                "trailing comma",
+                "JSON does not allow trailing commas.",
+            );
         } else {
             self.parse_keyval(visitor, object);
         }
@@ -123,13 +149,13 @@ impl<'s> Traverser<'s> {
 
     fn parse_keyval(&mut self, visitor: Visitor<'s, '_, '_>, object: &mut HashMap<String, Json>) {
         if visitor.name() != "Keyval" {
-            return self.error(visitor, "Expected a key:value pair.");
+            return self.error(visitor, "expected key:value", "Expected a key:value pair.");
         }
         let [key, val] = visitor.children();
         let strkey = self.parse_key(key);
         let val = self.parse_value(val);
         if object.contains_key(&strkey) {
-            return self.error(key, "Duplicate key in object.");
+            return self.error(key, "duplicate key", "Duplicate key in object.");
         }
         object.insert(strkey, val);
     }
@@ -139,17 +165,26 @@ impl<'s> Traverser<'s> {
             let src = visitor.source();
             src[1..src.len() - 1].to_owned()
         } else {
-            self.error(visitor, "Expected a key (in double quotes).");
+            self.error(
+                visitor,
+                "expected key",
+                "Expected a key (in double quotes).",
+            );
             "".to_owned()
         }
     }
 
-    fn error(&mut self, visitor: Visitor<'s, '_, '_>, message: &str) {
-        self.errors.push(visitor.error(message));
+    fn error(&mut self, visitor: Visitor<'s, '_, '_>, short_message: &str, message: &str) {
+        self.errors.push(visitor.error(short_message, message));
     }
 
-    fn error_json(&mut self, visitor: Visitor<'s, '_, '_>, message: &str) -> Json {
-        self.errors.push(visitor.error(message));
+    fn error_json(
+        &mut self,
+        visitor: Visitor<'s, '_, '_>,
+        short_message: &str,
+        message: &str,
+    ) -> Json {
+        self.errors.push(visitor.error(short_message, message));
         Json::Null
     }
 }

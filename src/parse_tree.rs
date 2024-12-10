@@ -179,13 +179,13 @@ impl<'s, 'p, 't> Visitor<'s, 'p, 't> {
     }
 
     /// Create a custom parsing error with the given message at the location `self.span()`.
-    pub fn error(&self, message: &str) -> ParseError<'s> {
-        ParseError::custom_error(self.source, message, self.span())
+    pub fn error(&self, short_message: &str, message: &str) -> ParseError<'s> {
+        ParseError::custom_error(self.source, short_message, message, self.span())
     }
 
     /// Create a custom parsing error with the given message at the location `self.token_span()`.
-    pub fn error_at_token(&self, message: &str) -> ParseError<'s> {
-        ParseError::custom_error(self.source, message, self.token_span())
+    pub fn error_at_token(&self, short_message: &str, message: &str) -> ParseError<'s> {
+        ParseError::custom_error(self.source, short_message, message, self.token_span())
     }
 }
 

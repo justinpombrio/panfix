@@ -1,6 +1,6 @@
 [package]
 name = "panfix"
-version = "0.4.0"
+version = "0.5.0"
 authors = ["Justin Pombrio <zallambo@gmail.com>"]
 edition = "2021"
 description = "Panfix parsing: linear time parsing of multifix operators."
@@ -14,6 +14,7 @@ repository = "https://github.com/justinpombrio/panfix"
 [dependencies]
 regex = "1"
 thiserror = "1"
+colored = "2.1"
 
 [features]
 debug_mode = []

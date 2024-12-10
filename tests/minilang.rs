@@ -96,15 +96,23 @@ impl<'s> Traverser<'s> {
     fn parse_id(&mut self, visitor: Visitor<'s, '_, '_>) -> Result<String, ()> {
         match visitor.name() {
             "id" => Ok(visitor.source().to_owned()),
-            _ => self.error(visitor, "Expected an identifier."),
+            _ => self.error(visitor, "expected identifier", "Expected an identifier."),
         }
     }
 
     fn parse_expr(&mut self, visitor: Visitor<'s, '_, '_>) -> Result<Expr, ()> {
         match visitor.name() {
             // TODO: num error
-            "Blank" => self.error(visitor, "Expected an expression, but found nothing."),
-            "Juxtapose" => self.error(visitor, "Found two expressions with nothing to join them."),
+            "Blank" => self.error(
+                visitor,
+                "missing expression",
+                "Expected an expression, but found nothing.",
+            ),
+            "Juxtapose" => self.error(
+                visitor,
+                "extra expression",
+                "Found two expressions with nothing to join them.",
+            ),
             "id" => Ok(Expr::Id(visitor.source().to_owned())),
             "num" => Ok(Expr::Num(visitor.source().parse::<i32>().unwrap())),
             "lt" | "gt" | "eq" | "plus" => {
@@ -144,6 +152,7 @@ impl<'s> Traverser<'s> {
                     if ifclause.name() != "if" {
                         return self.error_at_token(
                             clauses,
+                            "missing 'if'",
                             "An 'else' may only come after an 'if', but this 'else' is on its own.",
                         );
                     }
@@ -156,6 +165,7 @@ impl<'s> Traverser<'s> {
                 if clauses.name() != "block" {
                     return self.error(
                         clauses,
+                        "needs braces",
                         "An 'else' must be followed by braces '{...}', but this 'else' was not.",
                     );
                 }
@@ -175,13 +185,24 @@ impl<'s> Traverser<'s> {
         }
     }
 
-    fn error<T>(&mut self, visitor: Visitor<'s, '_, '_>, message: &str) -> Result<T, ()> {
-        self.errors.push(visitor.error(message));
+    fn error<T>(
+        &mut self,
+        visitor: Visitor<'s, '_, '_>,
+        short_message: &str,
+        message: &str,
+    ) -> Result<T, ()> {
+        self.errors.push(visitor.error(short_message, message));
         Err(())
     }
 
-    fn error_at_token<T>(&mut self, visitor: Visitor<'s, '_, '_>, message: &str) -> Result<T, ()> {
-        self.errors.push(visitor.error_at_token(message));
+    fn error_at_token<T>(
+        &mut self,
+        visitor: Visitor<'s, '_, '_>,
+        short_message: &str,
+        message: &str,
+    ) -> Result<T, ()> {
+        self.errors
+            .push(visitor.error_at_token(short_message, message));
         Err(())
     }
 }
@@ -199,9 +220,14 @@ fn parse_to_string(parser: &Parser, src: &str) -> String {
                 Err(errors) => {
                     let mut out = String::new();
                     let mut errors = errors.into_iter();
-                    write!(&mut out, "{}", errors.next().unwrap()).unwrap();
+                    write!(
+                        &mut out,
+                        "{}",
+                        errors.next().unwrap().display_with_color_override(false)
+                    )
+                    .unwrap();
                     for err in errors {
-                        write!(&mut out, "\n{}", err).unwrap();
+                        write!(&mut out, "\n{}", err.display_with_color_override(false)).unwrap();
                     }
                     out
                 }
@@ -256,10 +282,10 @@ fn test_parsing_let() {
         &parser,
         "let x + 1 = 5 in x",
         r#"Parse Error: Expected an identifier.
-At 'testcase' line 0.
-
-let x + 1 = 5 in x
-    ^^^^^
+ --> testcase:1:5
+  |
+1 |let x + 1 = 5 in x
+  |    ^^^^^ expected identifier
 "#,
     );
 }
@@ -272,16 +298,16 @@ fn test_multiple_errors() {
         &parser,
         "(1 else { A }) + (if x > 5 { A } else B + C)",
         r#"Parse Error: An 'else' may only come after an 'if', but this 'else' is on its own.
-At 'testcase' line 0.
-
-(1 else { A }) + (if x > 5 { A } else B + C)
-   ^^^^
+ --> testcase:1:4
+  |
+1 |(1 else { A }) + (if x > 5 { A } else B + C)
+  |   ^^^^ missing 'if'
 
 Parse Error: An 'else' must be followed by braces '{...}', but this 'else' was not.
-At 'testcase' line 0.
-
-(1 else { A }) + (if x > 5 { A } else B + C)
-                                      ^^^^^
+ --> testcase:1:39
+  |
+1 |(1 else { A }) + (if x > 5 { A } else B + C)
+  |                                      ^^^^^ needs braces
 "#,
     );
 }
@@ -294,16 +320,55 @@ fn test_blank_and_juxtapose_errors() {
         &parser,
         "1 2 +",
         r#"Parse Error: Found two expressions with nothing to join them.
-At 'testcase' line 0.
-
-1 2 +
-^^^
+ --> testcase:1:1
+  |
+1 |1 2 +
+  |^^^ extra expression
 
 Parse Error: Expected an expression, but found nothing.
-At 'testcase' line 0.
+ --> testcase:1:6
+  |
+1 |1 2 +
+  |     ^ missing expression
+"#,
+    );
+}
 
-1 2 +
-     ^
+#[test]
+fn test_long_errors() {
+    let parser = make_parser().unwrap();
+
+    test(
+        &parser,
+        "let
+  xx +
+  111 = 5 in x",
+        r#"Parse Error: Expected an identifier.
+ --> testcase:2:3
+  |
+2 |  xx +
+  |  ^^^^
+3 |  111 = 5 in x
+  |^^^^^ expected identifier
+"#,
+    );
+
+    test(
+        &parser,
+        "let
+  xx
+ +
+  111 =
+  5
+in x",
+        r#"Parse Error: Expected an identifier.
+ --> testcase:2:3
+  |
+2 |  xx
+  |  ^^
+...
+4 |  111 =
+  |^^^^^ expected identifier
 "#,
     );
 }

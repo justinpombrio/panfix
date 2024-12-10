@@ -25,7 +25,7 @@ The best introduction might be a worked example.  Let's look at what it takes to
 parse JSON with panfix parsing. Here's a panfix grammar for JSON:
 
 ```rust
-use panfix::{Parser, Grammar, GrammarError};
+use panfix::{Parser, Grammar, GrammarError, pattern};
 
 fn make_json_parser() -> Result<Parser, GrammarError> {
     let mut grammar = Grammar::new("[ \n\r\t]+")?;
@@ -221,7 +221,7 @@ fn parse_list(&mut self, mut visitor: Visitor<'s, '_, '_>, elems: &mut Vec<Json>
         visitor = tail;
     }
     if visitor.name() == "Blank" {
-        self.error(visitor, "JSON does not allow trailing commas.");
+        self.error(visitor, "trailing comma", "JSON does not allow trailing commas.");
     } else {
         elems.push(self.parse_value(visitor));
     }
@@ -233,9 +233,10 @@ context dependent; `panfix` does not know enough to produce quality error
 messages on its own. Notice, for example, the message above: "JSON does not
 allow trailing commas". That can only be hand written.
 
-`visitor` is a reference to a node in the tree. You can call `.children()` to
-get its children, and `.error(message)` to construct an error message at that
-source location.
+`visitor` is a reference to a node in the tree. You can call `.children()` to get its children, and
+`.error(short_message, full_message)` to construct an error message at that source location. The
+short message is displayed inline next to the source code, while the full message is displayed
+separately.
 
 The fact that panfix parsing is so lax comes out to shine: our JSON example
 produces a whole set of helpful error messages for the bad JSON we've been
@@ -243,35 +244,36 @@ looking at:
 
 ```
 Parse Error: Expected a key:value pair.
-At 'stdin' line 2.
-
-    "object_class:" "safe",
-    ^^^^^^^^^^^^^^^^^^^^^^
+ --> [stdin]:3:5
+  |
+3 |    "object_class:" "safe",
+  |    ^^^^^^^^^^^^^^^^^^^^^^ expected key:value
 
 Parse Error: Expected a JSON value here, not a key:value pair.
-At 'stdin' lines 3-4.
-    "weight_kg": 54.5
-                 ^^^^
-    "disposition": "friendly",
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ --> [stdin]:4:18
+  |
+4 |    "weight_kg": 54.5
+  |                 ^^^^
+5 |    "disposition": "friendly",
+  |^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unexpected key:value pair
 
 Parse Error: JSON does not allow trailing commas.
-At 'stdin' line 8.
-
-        "other sweets",
-                       ^
+ --> [stdin]:9:24
+  |
+9 |        "other sweets",
+  |                       ^ trailing comma
 
 Parse Error: Missing quotes.
-At 'stdin' line 12.
-
-        "effect": mixed,
-                  ^^^^^
+  --> [stdin]:13:19
+   |
+13 |        "effect": mixed,
+   |                  ^^^^^ missing quotes
 
 Parse Error: JSON does not allow trailing commas.
-At 'stdin' line 12.
-
-        "effect": mixed,
-                        ^
+  --> [stdin]:13:25
+   |
+13 |        "effect": mixed,
+   |                        ^ trailing comma
 ```
 
 For the full example of JSON parsing, see [examples/json.rs](examples/json.rs).
