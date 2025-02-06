@@ -138,17 +138,19 @@ impl<'s, 'p, 't> Visitor<'s, 'p, 't> {
     /// Get this node's `n`th child.
     ///
     /// # Panics if there aren't at least `n` children.
+    #[track_caller]
     pub fn child(&self, n: usize) -> Visitor<'s, 'p, 't> {
-        Visitor {
-            source: self.source,
-            parser: self.parser,
-            node: self.node.child(n).unwrap_or_else(|| {
-                panic!(
-                    "Visitor: child index '{}' out of bound for op '{}'",
-                    n,
-                    self.node.item().op.name
-                )
-            }),
+        match self.node.child(n) {
+            Some(node) => Visitor {
+                source: self.source,
+                parser: self.parser,
+                node,
+            },
+            None => panic!(
+                "Visitor: child index '{}' out of bound for op '{}'",
+                n,
+                self.node.item().op.name
+            ),
         }
     }
 
@@ -159,6 +161,7 @@ impl<'s, 'p, 't> Visitor<'s, 'p, 't> {
     /// Panics if `N` does not match the number of children. Note that the number of children is
     /// not dynamic: you can tell how many there will be from the grammar. Even if a child is
     /// "missing", it will actually be represented as blank.
+    #[track_caller]
     pub fn children<const N: usize>(&self) -> [Visitor<'s, 'p, 't>; N] {
         let mut array = [*self; N]; // dummy value
         if N != self.num_children() {
