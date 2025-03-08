@@ -2,7 +2,7 @@ use panfix::{pattern, Grammar, GrammarError, ParseError, Parser, Source, Visitor
 use std::fmt;
 use std::mem;
 
-fn make_parser() -> Result<Parser, GrammarError> {
+fn make_parser() -> Result<Parser<&'static str>, GrammarError> {
     let mut grammar = Grammar::new_with_unicode_whitespace()?;
     grammar.regex("id", "[a-zA-Z]+")?;
     grammar.regex("num", "[+-]?[0-9]+")?;
@@ -86,22 +86,25 @@ impl<'s> Traverser<'s> {
         Traverser { errors: vec![] }
     }
 
-    fn parse(mut self, visitor: Visitor<'s, '_, '_>) -> Result<Expr, Vec<ParseError<'s>>> {
+    fn parse(
+        mut self,
+        visitor: Visitor<'s, '_, '_, &'static str>,
+    ) -> Result<Expr, Vec<ParseError<'s>>> {
         match self.parse_expr(visitor) {
             Ok(expr) => Ok(expr),
             Err(()) => Err(mem::take(&mut self.errors)),
         }
     }
 
-    fn parse_id(&mut self, visitor: Visitor<'s, '_, '_>) -> Result<String, ()> {
-        match visitor.name() {
+    fn parse_id(&mut self, visitor: Visitor<'s, '_, '_, &'static str>) -> Result<String, ()> {
+        match visitor.token() {
             "id" => Ok(visitor.source().to_owned()),
             _ => self.error(visitor, "expected identifier", "Expected an identifier."),
         }
     }
 
-    fn parse_expr(&mut self, visitor: Visitor<'s, '_, '_>) -> Result<Expr, ()> {
-        match visitor.name() {
+    fn parse_expr(&mut self, visitor: Visitor<'s, '_, '_, &'static str>) -> Result<Expr, ()> {
+        match visitor.token() {
             // TODO: num error
             "Blank" => self.error(
                 visitor,
@@ -116,7 +119,7 @@ impl<'s> Traverser<'s> {
             "id" => Ok(Expr::Id(visitor.source().to_owned())),
             "num" => Ok(Expr::Num(visitor.source().parse::<i32>().unwrap())),
             "lt" | "gt" | "eq" | "plus" => {
-                let comparison = match visitor.name() {
+                let comparison = match visitor.token() {
                     "lt" => Binop::Lt,
                     "gt" => Binop::Gt,
                     "eq" => Binop::Eq,
@@ -147,9 +150,9 @@ impl<'s> Traverser<'s> {
             "else" => {
                 let mut clauses = visitor;
                 let mut chain = vec![];
-                while clauses.name() == "else" {
+                while clauses.token() == "else" {
                     let [ifclause, else_clauses] = clauses.children();
-                    if ifclause.name() != "if" {
+                    if ifclause.token() != "if" {
                         return self.error_at_token(
                             clauses,
                             "missing 'if'",
@@ -162,7 +165,7 @@ impl<'s> Traverser<'s> {
                     let consq = self.parse_expr(consq);
                     chain.push((cond?, consq?));
                 }
-                if clauses.name() != "block" {
+                if clauses.token() != "block" {
                     return self.error(
                         clauses,
                         "needs braces",
@@ -187,7 +190,7 @@ impl<'s> Traverser<'s> {
 
     fn error<T>(
         &mut self,
-        visitor: Visitor<'s, '_, '_>,
+        visitor: Visitor<'s, '_, '_, &'static str>,
         short_message: &str,
         message: &str,
     ) -> Result<T, ()> {
@@ -197,7 +200,7 @@ impl<'s> Traverser<'s> {
 
     fn error_at_token<T>(
         &mut self,
-        visitor: Visitor<'s, '_, '_>,
+        visitor: Visitor<'s, '_, '_, &'static str>,
         short_message: &str,
         message: &str,
     ) -> Result<T, ()> {
@@ -208,7 +211,7 @@ impl<'s> Traverser<'s> {
 }
 
 #[track_caller]
-fn parse_to_string(parser: &Parser, src: &str) -> String {
+fn parse_to_string(parser: &Parser<&'static str>, src: &str) -> String {
     use std::fmt::Write;
 
     let source = Source::new("testcase", src.to_owned());
@@ -238,7 +241,7 @@ fn parse_to_string(parser: &Parser, src: &str) -> String {
 }
 
 #[track_caller]
-fn test(parser: &Parser, src: &str, expected: &str) {
+fn test(parser: &Parser<&'static str>, src: &str, expected: &str) {
     let actual = parse_to_string(parser, src);
     if actual != expected {
         print!("ACTUAL:\n{}", actual);

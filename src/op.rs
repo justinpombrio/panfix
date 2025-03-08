@@ -1,4 +1,4 @@
-use crate::{TokenId, NAME_BLANK, NAME_ERROR, NAME_JUXTAPOSE};
+use crate::{Token, TokenId};
 use std::fmt;
 
 /// Precedence level. Smaller is tighter / wins.
@@ -36,72 +36,54 @@ pub enum Assoc {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct Op {
-    pub(crate) name: String,
+pub(crate) struct Op<T: Token> {
+    pub(crate) token: T,
     pub(crate) fixity: Fixity,
     pub(crate) assoc: Assoc,
     pub(crate) prec: Prec,
-    pub(crate) tokens: Vec<String>,
     // computed
     pub(crate) arity: usize,
     pub(crate) left_prec: Option<Prec>,
     pub(crate) right_prec: Option<Prec>,
 }
 
-impl Op {
+impl<T: Token> Op<T> {
     pub(crate) fn new(
-        name: &str,
+        token: T,
         fixity: Fixity,
         assoc: Assoc,
         prec: Prec,
-        tokens: Vec<String>,
-    ) -> Op {
-        assert_ne!(name, NAME_BLANK);
-        assert_ne!(name, NAME_JUXTAPOSE);
-        Op::new_unchecked(name, fixity, assoc, prec, tokens)
+        num_tokens: usize,
+    ) -> Op<T> {
+        assert_ne!(token, T::LEX_ERROR);
+        assert_ne!(token, T::BLANK);
+        assert_ne!(token, T::JUXTAPOSE);
+        Op::new_unchecked(token, fixity, assoc, prec, num_tokens)
     }
 
-    pub(crate) fn new_atom(name: &str, _token: TokenId) -> Op {
-        Op::new_unchecked(name, Fixity::Nilfix, Assoc::Left, 0, vec![name.to_owned()])
+    pub(crate) fn new_atom(token: T, _token_id: TokenId) -> Op<T> {
+        Op::new_unchecked(token, Fixity::Nilfix, Assoc::Left, 0, 1)
     }
 
-    pub(crate) fn new_error() -> Op {
-        Op::new_unchecked(
-            NAME_ERROR,
-            Fixity::Nilfix,
-            Assoc::Left,
-            0,
-            vec!["".to_owned()],
-        )
+    pub(crate) fn new_error() -> Op<T> {
+        Op::new_unchecked(T::LEX_ERROR, Fixity::Nilfix, Assoc::Left, 0, 1)
     }
 
-    pub(crate) fn new_blank() -> Op {
-        Op::new_unchecked(
-            NAME_BLANK,
-            Fixity::Nilfix,
-            Assoc::Left,
-            0,
-            vec!["".to_owned()],
-        )
+    pub(crate) fn new_blank() -> Op<T> {
+        Op::new_unchecked(T::BLANK, Fixity::Nilfix, Assoc::Left, 0, 1)
     }
 
-    pub(crate) fn new_juxtapose(assoc: Assoc, prec: Prec) -> Op {
-        Op::new_unchecked(
-            NAME_JUXTAPOSE,
-            Fixity::Infix,
-            assoc,
-            prec,
-            vec!["".to_owned()],
-        )
+    pub(crate) fn new_juxtapose(assoc: Assoc, prec: Prec) -> Op<T> {
+        Op::new_unchecked(T::JUXTAPOSE, Fixity::Infix, assoc, prec, 1)
     }
 
     fn new_unchecked(
-        name: &str,
+        token: T,
         fixity: Fixity,
         assoc: Assoc,
         prec: Prec,
-        tokens: Vec<String>,
-    ) -> Op {
+        num_tokens: usize,
+    ) -> Op<T> {
         use Assoc::{Left, Right};
         use Fixity::{Infix, Nilfix, Prefix, Suffix};
 
@@ -115,16 +97,15 @@ impl Op {
             (Infix, Right) => (Some(prec), Some(prec + 1)),
         };
         let arity = match fixity {
-            Nilfix => tokens.len() - 1,
-            Prefix | Suffix => tokens.len(),
-            Infix => tokens.len() + 1,
+            Nilfix => num_tokens - 1,
+            Prefix | Suffix => num_tokens,
+            Infix => num_tokens + 1,
         };
         Op {
-            name: name.to_owned(),
+            token,
             fixity,
             assoc,
             prec,
-            tokens,
             arity,
             left_prec,
             right_prec,
@@ -132,8 +113,8 @@ impl Op {
     }
 }
 
-impl fmt::Display for Op {
+impl<T: Token> fmt::Display for Op<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.name)
+        write!(f, "{}", self.token)
     }
 }

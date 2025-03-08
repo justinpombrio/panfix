@@ -1,14 +1,14 @@
 use panfix::{pattern, Grammar, GrammarError, Parser, Source};
 
 #[track_caller]
-fn assert_parse(parser: &Parser, src: &str, expected: &str) {
+fn assert_parse(parser: &Parser<&'static str>, src: &str, expected: &str) {
     let source = Source::new("testcase", src.to_owned());
     let tree = parser.parse(&source).unwrap();
     assert_eq!(format!("{}", tree.visitor()), expected);
 }
 
 #[track_caller]
-fn assert_error(parser: &Parser, src: &str, expected: &str) {
+fn assert_error(parser: &Parser<&'static str>, src: &str, expected: &str) {
     let source = Source::new("testcase", src.to_owned());
     let err = parser.parse(&source).unwrap_err();
     assert_eq!(
@@ -19,7 +19,7 @@ fn assert_error(parser: &Parser, src: &str, expected: &str) {
 
 #[test]
 fn test_lexing_error() {
-    fn make_parser() -> Result<Parser, GrammarError> {
+    fn make_parser() -> Result<Parser<&'static str>, GrammarError> {
         let mut grammar = Grammar::new_with_unicode_whitespace()?;
         grammar.regex("num", "[0-9]+")?;
         grammar.left_assoc();
@@ -53,7 +53,7 @@ fn test_lexing_error() {
 
 #[test]
 fn test_parsing_assoc() {
-    fn make_parser() -> Result<Parser, GrammarError> {
+    fn make_parser() -> Result<Parser<&'static str>, GrammarError> {
         let mut grammar = Grammar::new_with_unicode_whitespace()?;
         grammar.regex("num", "[0-9]+")?;
         grammar.right_assoc();
@@ -70,7 +70,7 @@ fn test_parsing_assoc() {
 
 #[test]
 fn test_parsing_minus() {
-    fn make_parser() -> Result<Parser, GrammarError> {
+    fn make_parser() -> Result<Parser<&'static str>, GrammarError> {
         let mut grammar = Grammar::new_with_unicode_whitespace()?;
         grammar.regex("num", "[0-9]+")?;
         grammar.left_assoc();
@@ -89,7 +89,7 @@ fn test_parsing_minus() {
 
 #[test]
 fn test_parsing_blank() {
-    fn make_parser() -> Result<Parser, GrammarError> {
+    fn make_parser() -> Result<Parser<&'static str>, GrammarError> {
         let mut grammar = Grammar::new_with_unicode_whitespace()?;
         grammar.regex("num", "[0-9]+")?;
         grammar.op("parens", pattern!("(" ")"))?;
@@ -113,7 +113,7 @@ fn test_parsing_blank() {
 
 #[test]
 fn test_parsing_juxtapose() {
-    fn make_parser_1() -> Result<Parser, GrammarError> {
+    fn make_parser_1() -> Result<Parser<&'static str>, GrammarError> {
         let mut grammar = Grammar::new_with_unicode_whitespace()?;
         grammar.regex("num", "[0-9]+")?;
         grammar.left_assoc();
@@ -126,7 +126,7 @@ fn test_parsing_juxtapose() {
     assert_parse(&parser, "1 2 3", "(_ (_ 1 2) 3)");
     assert_parse(&parser, "1 2 + 3 4", "(plus (_ 1 2) (_ 3 4))");
 
-    fn make_parser_2() -> Result<Parser, GrammarError> {
+    fn make_parser_2() -> Result<Parser<&'static str>, GrammarError> {
         let mut grammar = Grammar::new_with_unicode_whitespace()?;
         grammar.regex("num", "[0-9]+")?;
         grammar.left_assoc();

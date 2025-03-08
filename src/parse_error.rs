@@ -1,5 +1,5 @@
 use crate::resolver::ResolverError;
-use crate::{Source, Span};
+use crate::{Source, Span, Token};
 use std::error;
 use std::fmt;
 use std::fmt::Write;
@@ -32,10 +32,10 @@ impl<'s> ParseError<'s> {
         }
     }
 
-    pub(crate) fn from_resolver_error(
+    pub(crate) fn from_resolver_error<T: Token>(
         source: &'s Source,
         tok_to_name: &[String],
-        optok_to_name: &[String],
+        optok_to_token: &[T],
         error: ResolverError,
     ) -> ParseError<'s> {
         use ResolverError::{IncompleteOp, LexError, UnexpectedToken};
@@ -60,10 +60,10 @@ impl<'s> ParseError<'s> {
                 op_span,
             } => ParseError {
                 source,
-                short_message: format!("expected {}", &optok_to_name[op]),
+                short_message: format!("expected {}", &optok_to_token[op]),
                 message: format!(
                     "While parsing '{}', expected '{}' but found end of file.",
-                    &optok_to_name[op], &tok_to_name[expected]
+                    &optok_to_token[op], &tok_to_name[expected]
                 ),
                 span: op_span,
             },
@@ -74,10 +74,10 @@ impl<'s> ParseError<'s> {
                 op_span: _,
             } => ParseError {
                 source,
-                short_message: format!("expected {}", &optok_to_name[op]),
+                short_message: format!("expected {}", &optok_to_token[op]),
                 message: format!(
                     "While parsing '{}', expected '{}' but found '{}'.",
-                    &optok_to_name[op],
+                    &optok_to_token[op],
                     &tok_to_name[expected],
                     source.substr(found.span)
                 ),

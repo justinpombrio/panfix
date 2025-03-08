@@ -1,6 +1,6 @@
 use panfix::{pattern, Grammar, GrammarError, ParseError, Parser, Source, Visitor};
 
-fn make_parser() -> Result<Parser, GrammarError> {
+fn make_parser() -> Result<Parser<&'static str>, GrammarError> {
     let mut grammar = Grammar::new_with_unicode_whitespace()?;
     grammar.regex("Number", r#"[0-9]+[.]?[0-9]*([eE][+-]?[0-9]+)?"#)?;
     grammar.op("Parens", pattern!("(" ")"))?;
@@ -16,8 +16,8 @@ fn make_parser() -> Result<Parser, GrammarError> {
     grammar.finish()
 }
 
-fn calc<'s>(expr: Visitor<'s, '_, '_>) -> Result<f64, ParseError<'s>> {
-    match expr.name() {
+fn calc<'s>(expr: Visitor<'s, '_, '_, &'static str>) -> Result<f64, ParseError<'s>> {
+    match expr.token() {
         "Blank" => Err(expr.error("missing expression", "Missing expression.")),
         "Juxtapose" => Err(expr.error(
             "extra expression",
@@ -33,7 +33,7 @@ fn calc<'s>(expr: Visitor<'s, '_, '_>) -> Result<f64, ParseError<'s>> {
         "Negative" => Ok(-calc(expr.child(0))?),
         "Plus" => Ok(calc(expr.child(0))? + calc(expr.child(1))?),
         "Minus" => Ok(calc(expr.child(0))? - calc(expr.child(1))?),
-        "Log" if expr.child(0).name() == "Blank" => Ok(f64::ln(calc(expr.child(1))?)),
+        "Log" if expr.child(0).token() == "Blank" => Ok(f64::ln(calc(expr.child(1))?)),
         "Log" => Ok(calc(expr.child(1))?.log(calc(expr.child(0))?)),
         op => panic!("Bug: missing case in parser: {}", op),
     }

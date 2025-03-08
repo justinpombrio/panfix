@@ -1,9 +1,6 @@
 use crate::lexer::{LexerBuilder, RegexError, UNICODE_WHITESPACE_REGEX};
 use crate::op::{Assoc, Fixity, Op, Prec};
-use crate::{
-    OpTokenId, Parser, TokenId, NAME_BLANK, NAME_ERROR, NAME_JUXTAPOSE, TOKEN_ERROR,
-    TOKEN_JUXTAPOSE,
-};
+use crate::{OpTokenId, Parser, Token, TokenId, TOKEN_ERROR, TOKEN_JUXTAPOSE};
 use thiserror::Error;
 
 const PREC_DELTA: Prec = 10;
@@ -12,12 +9,12 @@ const JUXTAPOSE_PREC: Prec = 5;
 /// A grammar for a language. Add operators until the grammar is complete, then call `.finish()` to
 /// construct a `Parser` you can use to parse.
 #[derive(Debug, Clone)]
-pub struct Grammar {
+pub struct Grammar<T: Token> {
     lexer_builder: LexerBuilder,
     // TokenId -> info about that token
     token_table: Vec<TokenInfo>,
     // OpTokenId -> info about that optoken
-    op_token_table: Vec<OpTokenInfo>,
+    op_token_table: Vec<OpTokenInfo<T>>,
     current_prec: Prec,
     current_assoc: Assoc,
 }
@@ -30,9 +27,9 @@ struct TokenInfo {
 }
 
 #[derive(Debug, Clone)]
-struct OpTokenInfo {
-    name: String,
-    op: Option<Op>,
+struct OpTokenInfo<T: Token> {
+    token: T,
+    op: Option<Op<T>>,
     lprec: Prec,
     rprec: Prec,
     follower: Option<(TokenId, OpTokenId, bool)>,
@@ -70,15 +67,15 @@ pub struct Pattern {
     pub tokens: Vec<String>,
 }
 
-impl Grammar {
+impl<T: Token> Grammar<T> {
     /// An empty grammar, that uses Unicode's Pattern_White_Space for whitespace.
-    pub fn new_with_unicode_whitespace() -> Result<Grammar, GrammarError> {
+    pub fn new_with_unicode_whitespace() -> Result<Grammar<T>, GrammarError> {
         Grammar::new(UNICODE_WHITESPACE_REGEX)
     }
 
     /// An empty grammar. `whitespace_regex` is the regex to use to match whitespace, in the syntax
     /// of the `regex` crate.
-    pub fn new(whitespace_regex: &str) -> Result<Grammar, GrammarError> {
+    pub fn new(whitespace_regex: &str) -> Result<Grammar<T>, GrammarError> {
         use GrammarError::RegexError;
 
         let lexer_builder = LexerBuilder::new(whitespace_regex).map_err(RegexError)?;
@@ -88,38 +85,38 @@ impl Grammar {
             lexer_builder,
             token_table: vec![
                 TokenInfo {
-                    name: NAME_ERROR.to_owned(),
+                    name: T::LEX_ERROR.to_string(),
                     as_prefix: Some((TOKEN_ERROR, false)),
                     as_suffix: None,
                 },
                 TokenInfo {
-                    name: NAME_BLANK.to_owned(),
+                    name: T::BLANK.to_string(),
                     as_prefix: None,
                     as_suffix: None,
                 },
                 TokenInfo {
-                    name: NAME_JUXTAPOSE.to_owned(),
+                    name: T::JUXTAPOSE.to_string(),
                     as_prefix: None,
                     as_suffix: None,
                 },
             ],
             op_token_table: vec![
                 OpTokenInfo {
-                    name: NAME_ERROR.to_owned(),
+                    token: T::LEX_ERROR,
                     op: Some(Op::new_error()),
                     lprec: 0,
                     rprec: 0,
                     follower: None,
                 },
                 OpTokenInfo {
-                    name: NAME_BLANK.to_owned(),
+                    token: T::BLANK,
                     op: Some(Op::new_blank()),
                     lprec: 0,
                     rprec: 0,
                     follower: None,
                 },
                 OpTokenInfo {
-                    name: NAME_JUXTAPOSE.to_owned(),
+                    token: T::JUXTAPOSE,
                     lprec: juxt_op.left_prec.unwrap_or(0),
                     rprec: juxt_op.right_prec.unwrap_or(0),
                     op: Some(juxt_op),
@@ -150,23 +147,23 @@ impl Grammar {
     /// Extend the grammar with an atom: when parsing, if `string_pattern` is found exactly, parse
     /// it as an operator that takes no arguments.
     ///
-    /// For example, a JSON grammar might have `.string("value", "null")`.
-    pub fn string(&mut self, name: &str, string_pattern: &str) -> Result<(), GrammarError> {
-        let token = self.add_string_token(string_pattern)?;
-        let op = Op::new_atom(name, token);
-        self.add_op_token(Some(op), name, token, None, None, None)?;
+    /// For example, a JSON grammar might have `.string(JsonToken::Null, "null")`.
+    pub fn string(&mut self, token: T, string_pattern: &str) -> Result<(), GrammarError> {
+        let token_id = self.add_string_token(string_pattern)?;
+        let op = Op::new_atom(token.clone(), token_id);
+        self.add_op_token(Some(op), token_id, token, None, None, None)?;
         Ok(())
     }
 
     /// Extend the grammar with an atom: when parsing, if `regex_pattern` is matched, parse it as
     /// an operator that takes no arguments.
     ///
-    /// For example, a JSON grammar might have `.atom_regex("value", "[0-9]*")` (though with
-    /// a better regex).
-    pub fn regex(&mut self, name: &str, regex_pattern: &str) -> Result<(), GrammarError> {
-        let token = self.add_regex_token(regex_pattern, name)?;
-        let op = Op::new_atom(name, token);
-        self.add_op_token(Some(op), name, token, None, None, None)?;
+    /// For example, a JSON grammar might have `.atom_regex(JsonToken::Number, "[0-9]*")`
+    /// (though with a better regex).
+    pub fn regex(&mut self, token: T, regex_pattern: &str) -> Result<(), GrammarError> {
+        let token_id = self.add_regex_token(token.clone(), regex_pattern)?;
+        let op = Op::new_atom(token.clone(), token_id);
+        self.add_op_token(Some(op), token_id, token, None, None, None)?;
         Ok(())
     }
 
@@ -202,12 +199,12 @@ impl Grammar {
     /// grammar.left_assoc();
     /// grammar.op("colon", pattern!(_ ":" _));
     /// ```
-    pub fn op(&mut self, name: &str, pattern: Pattern) -> Result<(), GrammarError> {
+    pub fn op(&mut self, token: T, pattern: Pattern) -> Result<(), GrammarError> {
         if pattern.fixity == Fixity::Nilfix {
-            self.add_op(name, Assoc::Left, 0, pattern.fixity, pattern.tokens)
+            self.add_op(token, Assoc::Left, 0, pattern.fixity, pattern.tokens)
         } else {
             let (prec, assoc) = (self.current_prec, self.current_assoc);
-            self.add_op(name, assoc, prec, pattern.fixity, pattern.tokens)
+            self.add_op(token, assoc, prec, pattern.fixity, pattern.tokens)
         }
     }
 
@@ -215,16 +212,16 @@ impl Grammar {
     /// an op into the table exactly as specified.
     pub fn add_raw_op(
         &mut self,
-        name: &str,
+        token: T,
         prec: Prec,
         assoc: Assoc,
         fixity: Fixity,
         tokens: Vec<String>,
     ) -> Result<(), GrammarError> {
-        self.add_op(name, assoc, prec, fixity, tokens)
+        self.add_op(token, assoc, prec, fixity, tokens)
     }
 
-    pub fn finish(self) -> Result<Parser, GrammarError> {
+    pub fn finish(self) -> Result<Parser<T>, GrammarError> {
         let lexer = self
             .lexer_builder
             .finish()
@@ -232,7 +229,7 @@ impl Grammar {
         let mut tok_to_name = vec![];
         let mut tok_to_prefix = vec![];
         let mut tok_to_suffix = vec![];
-        let mut optok_to_name = vec![];
+        let mut optok_to_token = vec![];
         let mut optok_to_follower = vec![];
         let mut optok_to_op = vec![];
         let mut optok_to_prec = vec![];
@@ -242,7 +239,7 @@ impl Grammar {
             tok_to_suffix.push(row.as_suffix);
         }
         for row in self.op_token_table {
-            optok_to_name.push(row.name);
+            optok_to_token.push(row.token);
             optok_to_follower.push(row.follower);
             optok_to_op.push(row.op);
             optok_to_prec.push((row.lprec, row.rprec));
@@ -252,7 +249,7 @@ impl Grammar {
             tok_to_name,
             tok_to_prefix,
             tok_to_suffix,
-            optok_to_name,
+            optok_to_token,
             optok_to_follower,
             optok_to_op,
             optok_to_prec,
@@ -261,7 +258,7 @@ impl Grammar {
 
     fn add_op(
         &mut self,
-        name: &str,
+        token: T,
         assoc: Assoc,
         prec: Prec,
         fixity: Fixity,
@@ -269,69 +266,72 @@ impl Grammar {
     ) -> Result<(), GrammarError> {
         let maxprec = Some(Prec::MAX);
 
-        let token = self.add_string_token(&tokens[0])?;
-        let op = Op::new(name, fixity, assoc, prec, tokens.clone());
+        let token_id = self.add_string_token(&tokens[0])?;
+        let op = Op::new(token.clone(), fixity, assoc, prec, tokens.len());
         let (lprec, rprec) = (op.left_prec, op.right_prec);
         if tokens.len() == 1 {
-            self.add_op_token(Some(op), name, token, lprec, rprec, None)?;
+            self.add_op_token(Some(op), token_id, token, lprec, rprec, None)?;
         } else {
             let patt = tokens.last().unwrap();
-            let token = self.add_string_token(patt)?;
-            let optok = self.add_op_token(None, name, token, Some(Prec::MAX), rprec, None)?;
-            let mut follower = (token, optok, rprec.is_some());
+            let token_id = self.add_string_token(patt)?;
+            let optok =
+                self.add_op_token(None, token_id, token.clone(), Some(Prec::MAX), rprec, None)?;
+            let mut follower = (token_id, optok, rprec.is_some());
             for patt in tokens.iter().skip(1).rev().skip(1) {
-                let token = self.add_string_token(patt)?;
-                let optok =
-                    self.add_op_token(None, name, token, maxprec, maxprec, Some(follower))?;
-                follower = (token, optok, true);
+                let token_id = self.add_string_token(patt)?;
+                let optok = self.add_op_token(
+                    None,
+                    token_id,
+                    token.clone(),
+                    maxprec,
+                    maxprec,
+                    Some(follower),
+                )?;
+                follower = (token_id, optok, true);
             }
             let patt = tokens.first().unwrap();
-            let token = self.add_string_token(patt)?;
-            self.add_op_token(Some(op), name, token, lprec, maxprec, Some(follower))?;
+            let token_id = self.add_string_token(patt)?;
+            self.add_op_token(Some(op), token_id, token, lprec, maxprec, Some(follower))?;
         }
         Ok(())
     }
 
     fn add_string_token(&mut self, string: &str) -> Result<TokenId, GrammarError> {
-        let token = match self.lexer_builder.string(string) {
-            Ok(token) => token,
+        let token_id = match self.lexer_builder.string(string) {
+            Ok(token_id) => token_id,
             Err(err) => return Err(GrammarError::RegexError(err)),
         };
-        self.insert_token(token, string);
-        Ok(token)
+        self.insert_token(token_id, string.to_owned());
+        Ok(token_id)
     }
 
-    fn add_regex_token(
-        &mut self,
-        regex_pattern: &str,
-        name: &str,
-    ) -> Result<TokenId, GrammarError> {
-        let token = match self.lexer_builder.regex(regex_pattern) {
-            Ok(token) => token,
+    fn add_regex_token(&mut self, token: T, regex_pattern: &str) -> Result<TokenId, GrammarError> {
+        let token_id = match self.lexer_builder.regex(regex_pattern) {
+            Ok(token_id) => token_id,
             Err(err) => return Err(GrammarError::RegexError(err)),
         };
-        self.insert_token(token, name);
-        Ok(token)
+        self.insert_token(token_id, token.to_string());
+        Ok(token_id)
     }
 
-    fn insert_token(&mut self, token: TokenId, name: &str) {
-        if token == self.token_table.len() {
+    fn insert_token(&mut self, token_id: TokenId, name: String) {
+        if token_id == self.token_table.len() {
             self.token_table.push(TokenInfo {
-                name: name.to_owned(),
+                name,
                 as_prefix: None,
                 as_suffix: None,
             });
         } else {
-            let row = &self.token_table[token];
-            assert_eq!(&row.name, name, "Duplicate token {}", name);
+            let row = &self.token_table[token_id];
+            assert_eq!(row.name, name, "Duplicate token {}", name);
         }
     }
 
     fn add_op_token(
         &mut self,
-        op: Option<Op>,
-        name: &str,
-        token: TokenId,
+        op: Option<Op<T>>,
+        token_id: TokenId,
+        token: T,
         lprec: Option<Prec>,
         rprec: Option<Prec>,
         follower: Option<(TokenId, OpTokenId, bool)>,
@@ -339,23 +339,23 @@ impl Grammar {
         let op_token = self.op_token_table.len();
         if op.is_some() {
             if lprec.is_none() {
-                if self.token_table[token].as_prefix.is_some() {
+                if self.token_table[token_id].as_prefix.is_some() {
                     return Err(GrammarError::PrefixyConflict(
-                        self.token_table[token].name.clone(),
+                        self.token_table[token_id].name.clone(),
                     ));
                 }
-                self.token_table[token].as_prefix = Some((op_token, rprec.is_some()));
+                self.token_table[token_id].as_prefix = Some((op_token, rprec.is_some()));
             } else {
-                if self.token_table[token].as_suffix.is_some() {
+                if self.token_table[token_id].as_suffix.is_some() {
                     return Err(GrammarError::SuffixyConflict(
-                        self.token_table[token].name.clone(),
+                        self.token_table[token_id].name.clone(),
                     ));
                 }
-                self.token_table[token].as_suffix = Some((op_token, rprec.is_some()));
+                self.token_table[token_id].as_suffix = Some((op_token, rprec.is_some()));
             }
         }
         self.op_token_table.push(OpTokenInfo {
-            name: name.to_owned(),
+            token,
             op,
             lprec: lprec.unwrap_or(0),
             rprec: rprec.unwrap_or(0),

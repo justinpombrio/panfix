@@ -17,7 +17,20 @@ pub use parse_error::ParseError;
 pub use parse_tree::{ParseTree, Visitor};
 pub use source::{Col, Line, Offset, Position, Source, Span};
 
-/// A category of lexeme, such as "INTEGER" or "VARIABLE" or "OPEN_PAREN".
+/// A category of lexeme, such as INTEGER or VARIABLE or OPEN_PAREN.
+///
+/// The three constants `LEX_ERROR`, `BLANK`, and `JUXTAPOSE` must be distinct from each other and
+/// from all regular tokens.
+pub trait Token: PartialEq + Eq + std::fmt::Debug + std::fmt::Display + Clone {
+    /// Represents a lexing error.
+    const LEX_ERROR: Self;
+    /// Represents a missing argument.
+    const BLANK: Self;
+    /// Represents a missing operator.
+    const JUXTAPOSE: Self;
+}
+
+/// Densely packed short ids for tokens and op tokens. Exposed only if you use the lexer directly.
 pub type TokenId = usize;
 type OpTokenId = TokenId;
 
@@ -28,10 +41,6 @@ pub const TOKEN_BLANK: TokenId = 1;
 /// Represents a missing operator.
 pub const TOKEN_JUXTAPOSE: TokenId = 2;
 
-const NAME_ERROR: &str = "LexError";
-const NAME_BLANK: &str = "Blank";
-const NAME_JUXTAPOSE: &str = "Juxtapose";
-
 /// One "word" in the stream returned by the lexer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Lexeme {
@@ -41,23 +50,23 @@ pub struct Lexeme {
 
 /// A Panfix grammar, that's ready to parse.
 #[derive(Debug, Clone)]
-pub struct Parser {
+pub struct Parser<T: Token> {
     lexer: Lexer,
     tok_to_name: Vec<String>,
     tok_to_prefix: Vec<Option<(OpTokenId, bool)>>,
     tok_to_suffix: Vec<Option<(OpTokenId, bool)>>,
     optok_to_follower: Vec<Option<(TokenId, OpTokenId, bool)>>,
-    optok_to_name: Vec<String>,
-    optok_to_op: Vec<Option<Op>>,
+    optok_to_token: Vec<T>,
+    optok_to_op: Vec<Option<Op<T>>>,
     optok_to_prec: Vec<(Prec, Prec)>,
 }
 
-impl Parser {
+impl<T: Token> Parser<T> {
     /// Parse `source`. Runs in linear time.
     pub fn parse<'s, 'g>(
         &'g self,
         source: &'s Source,
-    ) -> Result<ParseTree<'s, 'g>, ParseError<'s>> {
+    ) -> Result<ParseTree<'s, 'g, T>, ParseError<'s>> {
         use parse_tree::Item;
         use resolver::resolve;
         use shunter::shunt;
@@ -76,7 +85,7 @@ impl Parser {
             lexemes,
         )
         .map_err(|err| {
-            ParseError::from_resolver_error(source, &self.tok_to_name, &self.optok_to_name, err)
+            ParseError::from_resolver_error(source, &self.tok_to_name, &self.optok_to_token, err)
         })?;
         #[cfg(feature = "debug_mode")]
         let lexemes = self.print_lexemes(source, "Resolved: ", lexemes);
@@ -125,6 +134,12 @@ impl Parser {
     }
 }
 
+impl Token for &'static str {
+    const LEX_ERROR: &'static str = "LexError";
+    const BLANK: &'static str = "Blank";
+    const JUXTAPOSE: &'static str = "Juxtapose";
+}
+
 impl Lexeme {
     pub fn new(token: TokenId, start: Position, end: Position) -> Lexeme {
         Lexeme {
@@ -134,7 +149,7 @@ impl Lexeme {
     }
 }
 
-/// Describe the syntax of an operator.
+/// Describes the syntax of an operator.
 ///
 /// Consists of a sequence of tokens as string literals, with an optional underscore at the
 /// beginning and/or end, to indicate whether the operator takes a left argument and/or a right
@@ -189,7 +204,8 @@ macro_rules! pattern {
     };
 }
 
-/// If you want to peek under the hood, and use the components that make up the parser separately.
+/// In case you want to peek under the hood and use the components that make up the parser
+/// separately.
 pub mod implementation {
     pub mod lexer {
         pub use crate::lexer::*;

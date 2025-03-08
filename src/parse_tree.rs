@@ -2,7 +2,7 @@ use crate::op::{Assoc, Fixity, Op, Prec};
 use crate::parse_error::ParseError;
 use crate::source::Source;
 use crate::tree_visitor::{Arity, Forest, Visitor as ForestVisitor};
-use crate::{Parser, Position, Span, NAME_BLANK, NAME_JUXTAPOSE};
+use crate::{Parser, Position, Span, Token};
 use std::fmt;
 
 /// The result of parsing a source string. Call `.visitor()` to walk it.
@@ -10,24 +10,26 @@ use std::fmt;
 /// To minimize allocations, this contains references into both the source text and the grammar, so
 /// it cannot outlive either.
 #[derive(Debug)]
-pub struct ParseTree<'s, 'p> {
+pub struct ParseTree<'s, 'p, T: Token> {
     source: &'s Source,
-    parser: &'p Parser,
-    forest: Forest<Item<'p>>,
+    parser: &'p Parser<T>,
+    forest: Forest<Item<'p, T>>,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct Item<'p> {
-    pub(crate) op: &'p Op,
+#[derive(Debug, Clone)]
+pub(crate) struct Item<'p, T: Token> {
+    pub(crate) op: &'p Op<T>,
     pub(crate) span: Span,
 }
 
-impl<'s, 'p> ParseTree<'s, 'p> {
+impl<T: Token> Copy for Item<'_, T> {}
+
+impl<'s, 'p, T: Token> ParseTree<'s, 'p, T> {
     pub(crate) fn new(
         source: &'s Source,
-        parser: &'p Parser,
-        forest: Forest<Item<'p>>,
-    ) -> ParseTree<'s, 'p> {
+        parser: &'p Parser<T>,
+        forest: Forest<Item<'p, T>>,
+    ) -> ParseTree<'s, 'p, T> {
         ParseTree {
             source,
             parser,
@@ -39,7 +41,7 @@ impl<'s, 'p> ParseTree<'s, 'p> {
     ///
     /// (This is not the visitor pattern: you're not supplying a function to run on each node.
     /// Instead you can navigate the nodes and do whatever you want yourself.)
-    pub fn visitor<'t>(&'t self) -> Visitor<'s, 'p, 't> {
+    pub fn visitor<'t>(&'t self) -> Visitor<'s, 'p, 't, T> {
         Visitor {
             source: self.source,
             parser: self.parser,
@@ -53,24 +55,26 @@ impl<'s, 'p> ParseTree<'s, 'p> {
     }
 }
 
-impl Arity for Item<'_> {
+impl<T: Token> Arity for Item<'_, T> {
     fn arity(&self) -> usize {
         self.op.arity
     }
 }
 
 /// One node in a parse tree. Allows you to inspect the node and its children, but not its parent.
-#[derive(Debug, Clone, Copy)]
-pub struct Visitor<'s, 'p, 't> {
+#[derive(Debug, Clone)]
+pub struct Visitor<'s, 'p, 't, T: Token> {
     source: &'s Source,
-    parser: &'p Parser,
-    node: ForestVisitor<'t, Item<'p>>,
+    parser: &'p Parser<T>,
+    node: ForestVisitor<'t, Item<'p, T>>,
 }
 
-impl<'s, 'p, 't> Visitor<'s, 'p, 't> {
-    /// The name of the op at this node.
-    pub fn name(&self) -> &'p str {
-        &self.node.item().op.name
+impl<T: Token> Copy for Visitor<'_, '_, '_, T> {}
+
+impl<'s, 'p, 't, T: Token> Visitor<'s, 'p, 't, T> {
+    /// The token for the op at this node.
+    pub fn token(&self) -> T {
+        self.node.item().op.token.clone()
     }
 
     /// The span of this node and it's children.
@@ -125,11 +129,6 @@ impl<'s, 'p, 't> Visitor<'s, 'p, 't> {
         self.node.item().op.assoc
     }
 
-    /// The tokens of this node's operator.
-    pub fn tokens(&self) -> &[String] {
-        &self.node.item().op.tokens
-    }
-
     /// The number of children this node has (which is determined by its operator).
     pub fn num_children(&self) -> usize {
         self.node.item().op.arity
@@ -139,7 +138,7 @@ impl<'s, 'p, 't> Visitor<'s, 'p, 't> {
     ///
     /// # Panics if there aren't at least `n` children.
     #[track_caller]
-    pub fn child(&self, n: usize) -> Visitor<'s, 'p, 't> {
+    pub fn child(&self, n: usize) -> Visitor<'s, 'p, 't, T> {
         match self.node.child(n) {
             Some(node) => Visitor {
                 source: self.source,
@@ -149,7 +148,7 @@ impl<'s, 'p, 't> Visitor<'s, 'p, 't> {
             None => panic!(
                 "Visitor: child index '{}' out of bound for op '{}'",
                 n,
-                self.node.item().op.name
+                self.node.item().op.token
             ),
         }
     }
@@ -162,7 +161,7 @@ impl<'s, 'p, 't> Visitor<'s, 'p, 't> {
     /// not dynamic: you can tell how many there will be from the grammar. Even if a child is
     /// "missing", it will actually be represented as blank.
     #[track_caller]
-    pub fn children<const N: usize>(&self) -> [Visitor<'s, 'p, 't>; N] {
+    pub fn children<const N: usize>(&self) -> [Visitor<'s, 'p, 't, T>; N] {
         let mut array = [*self; N]; // dummy value
         if N != self.num_children() {
             panic!(
@@ -192,19 +191,19 @@ impl<'s, 'p, 't> Visitor<'s, 'p, 't> {
     }
 }
 
-impl fmt::Display for Visitor<'_, '_, '_> {
+impl<T: Token> fmt::Display for Visitor<'_, '_, '_, T> {
     /// Display this node as an s-expression.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.name() == NAME_BLANK {
+        if self.token() == T::BLANK {
             write!(f, "_")
         } else if self.num_children() == 0 {
             write!(f, "{}", self.source())
         } else {
             write!(f, "(")?;
-            if self.name() == NAME_JUXTAPOSE {
+            if self.token() == T::JUXTAPOSE {
                 write!(f, "_")?;
             } else {
-                write!(f, "{}", self.name())?;
+                write!(f, "{}", self.token())?;
             }
             for i in 0..self.num_children() {
                 write!(f, " {}", self.child(i))?;
@@ -214,7 +213,7 @@ impl fmt::Display for Visitor<'_, '_, '_> {
     }
 }
 
-impl fmt::Display for ParseTree<'_, '_> {
+impl<T: Token> fmt::Display for ParseTree<'_, '_, T> {
     /// Display this tree as an s-expression.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.visitor())
