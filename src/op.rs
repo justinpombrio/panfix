@@ -1,4 +1,4 @@
-use crate::{Token, NAME_BLANK, NAME_ERROR, NAME_JUXTAPOSE};
+use crate::{TokenId, NAME_BLANK, NAME_ERROR, NAME_JUXTAPOSE};
 use std::fmt;
 
 /// Precedence level. Smaller is tighter / wins.
@@ -61,7 +61,7 @@ impl Op {
         Op::new_unchecked(name, fixity, assoc, prec, tokens)
     }
 
-    pub(crate) fn new_atom(name: &str, _token: Token) -> Op {
+    pub(crate) fn new_atom(name: &str, _token: TokenId) -> Op {
         Op::new_unchecked(name, Fixity::Nilfix, Assoc::Left, 0, vec![name.to_owned()])
     }
 

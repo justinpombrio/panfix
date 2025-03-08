@@ -12,11 +12,11 @@ Panfix parsing.
 4. `resolve` takes an iterator of lexemes and produces a vector of lexemes or
    error. It (i) inserts Blanks and Juxtaposes, and (ii) resolves e.g. unary vs.
    binary `-`.
-5. `shunt` takes an iterator of lexems and produces an iterator of lexemes,
+5. `shunt` takes an iterator of lexemes and produces an iterator of lexemes,
    re-ordered by the [shunting yard algorithm](
    https://en.wikipedia.org/wiki/Shunting_yard_algorithm)
    to be in RPN order.
-6. We filter out any token that isn't the first token of its op.
+6. Any token that isn't the first token of its op is filtered out.
 7. `TreeVisitor` takes the RPN sequence and converts it into a navigable tree
    (while only allocating two vectors). It is wrapped in `ParseTree` to have a
    nicer interface.

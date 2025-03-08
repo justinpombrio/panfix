@@ -1,5 +1,5 @@
 use panfix::implementation::lexer::LexerBuilder;
-use panfix::{Lexeme, Span, Token};
+use panfix::{Lexeme, Span, TokenId};
 
 fn get_span(src: &str, span: Span) -> &str {
     // Assuming that no lexeme spans multiple lines!
@@ -12,7 +12,7 @@ fn assert_lexeme(
     src: &str,
     stream: &mut impl Iterator<Item = Lexeme>,
     expected: &str,
-    token: Token,
+    token: TokenId,
 ) {
     let lex = stream
         .next()

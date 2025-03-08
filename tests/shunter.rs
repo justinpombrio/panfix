@@ -1,18 +1,18 @@
 use panfix::implementation::shunter::shunt;
-use panfix::{Col, Lexeme, Position, Prec, Token, TOKEN_BLANK, TOKEN_ERROR, TOKEN_JUXTAPOSE};
+use panfix::{Col, Lexeme, Position, Prec, TokenId, TOKEN_BLANK, TOKEN_ERROR, TOKEN_JUXTAPOSE};
 
 #[test]
 fn test_shunting() {
-    const TOKEN_ID: Token = 3;
-    const TOKEN_TIMES: Token = 4;
-    const TOKEN_PLUS: Token = 5;
-    const TOKEN_NEG: Token = 6;
-    const TOKEN_MINUS: Token = 7;
-    const TOKEN_BANG: Token = 8;
-    const TOKEN_OPEN: Token = 9;
-    const TOKEN_CLOSE: Token = 10;
-    const TOKEN_QMARK: Token = 11;
-    const TOKEN_COLON: Token = 12;
+    const TOKEN_ID: TokenId = 3;
+    const TOKEN_TIMES: TokenId = 4;
+    const TOKEN_PLUS: TokenId = 5;
+    const TOKEN_NEG: TokenId = 6;
+    const TOKEN_MINUS: TokenId = 7;
+    const TOKEN_BANG: TokenId = 8;
+    const TOKEN_OPEN: TokenId = 9;
+    const TOKEN_CLOSE: TokenId = 10;
+    const TOKEN_QMARK: TokenId = 11;
+    const TOKEN_COLON: TokenId = 12;
     const NUM_TOKENS: usize = 13;
 
     fn lex(src: &str) -> impl Iterator<Item = Lexeme> {

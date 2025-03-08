@@ -6,7 +6,7 @@ edition = "2021"
 description = "Panfix parsing: linear time parsing of multifix operators."
 license = "MIT"
 repository = "https://github.com/justinpombrio/panfix"
-# TODO: documentation=, once on crates.io
+documentation = "https://docs.rs/panfix/0.5.1/panfix/"
 # TODO: homepage=, once blog posted
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

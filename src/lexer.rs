@@ -34,7 +34,7 @@
 //! - If there is _still_ a tie, the regex that's first in the list provided to `Lexer::new()` will
 //!   be used.
 
-use crate::{Lexeme, Offset, Position, Span, Token, TOKEN_ERROR};
+use crate::{Lexeme, Offset, Position, Span, TokenId, TOKEN_ERROR};
 use regex::{escape, Regex, RegexSet};
 
 pub use regex::Error as RegexError;
@@ -79,7 +79,7 @@ impl LexerBuilder {
     /// Add a pattern that matches exactly the string provided. Returns the token that will be
     /// produced whenever this pattern matches. If the provided pattern was already added,
     /// returns the pre-existing token for it.
-    pub fn string(&mut self, constant: &str) -> Result<Token, RegexError> {
+    pub fn string(&mut self, constant: &str) -> Result<TokenId, RegexError> {
         let pattern = Pattern {
             regex: new_regex(&escape(constant))?,
             length: Some(constant.len()),
@@ -101,7 +101,7 @@ impl LexerBuilder {
     ///
     /// The syntax is that of the `regex` crate. You do not need to begin the pattern with a
     /// start-of-string character `^`.
-    pub fn regex(&mut self, regex: &str) -> Result<Token, RegexError> {
+    pub fn regex(&mut self, regex: &str) -> Result<TokenId, RegexError> {
         let pattern = Pattern {
             regex: new_regex(regex)?,
             length: None,
@@ -119,7 +119,7 @@ impl LexerBuilder {
     }
 
     /// Reserve a token for personal use.
-    pub fn reserve_token(&mut self) -> Result<Token, RegexError> {
+    pub fn reserve_token(&mut self) -> Result<TokenId, RegexError> {
         let pattern = Pattern {
             regex: Regex::new("$.")?,
             length: None,
@@ -159,7 +159,7 @@ impl Lexer {
         LexemeIter::new(self, source)
     }
 
-    /// The number of tokens. Each `Token` returned by the builder is guaranteed to be smaller than
+    /// The number of tokens. Each `TokenId` returned by the builder is guaranteed to be smaller than
     /// this number.
     pub fn num_tokens(&self) -> usize {
         self.patterns.len()
@@ -216,7 +216,7 @@ impl Iterator for LexemeIter<'_, '_> {
         }
 
         // Find the best match (longest, with a tie-breaker of is_str)
-        let mut best_match: Option<(Token, usize, bool)> = None;
+        let mut best_match: Option<(TokenId, usize, bool)> = None;
         for token in &self.lexer.regex_set.matches(self.source) {
             let pattern = &self.lexer.patterns[token];
 

@@ -1,6 +1,8 @@
-use crate::{Lexeme, OpToken, Position, Span, Token, TOKEN_BLANK, TOKEN_ERROR, TOKEN_JUXTAPOSE};
+use crate::{
+    Lexeme, OpTokenId, Position, Span, TokenId, TOKEN_BLANK, TOKEN_ERROR, TOKEN_JUXTAPOSE,
+};
 
-/// Resolve "tokens" into "op tokens". Both have type `Token` but are in different spaces (i.e. the
+/// Resolve "tokens" into "op tokens". Both have type `usize` but are in different spaces (i.e. the
 /// token `4` and the op token `4` are likely unrelated). This resolution achieves two tasks:
 ///
 /// 1. If the same token is used in multiple operators, disambiguate them. For example, unary minus
@@ -8,9 +10,9 @@ use crate::{Lexeme, OpToken, Position, Span, Token, TOKEN_BLANK, TOKEN_ERROR, TO
 /// 2. Insert a `TOKEN_BLANK` for every missing argument and a `TOKEN_JUXTAPOSE` for every missing
 ///    binary operator.
 pub fn resolve(
-    tok_to_prefix: &[Option<(OpToken, bool)>],
-    tok_to_suffix: &[Option<(OpToken, bool)>],
-    optok_to_follower: &[Option<(Token, OpToken, bool)>],
+    tok_to_prefix: &[Option<(OpTokenId, bool)>],
+    tok_to_suffix: &[Option<(OpTokenId, bool)>],
+    optok_to_follower: &[Option<(TokenId, OpTokenId, bool)>],
     input: impl IntoIterator<Item = Lexeme>,
 ) -> Result<Vec<Lexeme>, ResolverError> {
     Resolver::new(tok_to_prefix, tok_to_suffix, optok_to_follower).resolve(input.into_iter())
@@ -25,28 +27,28 @@ pub enum ResolverError {
     /// While parsing `op`, expected token `expected` but found token `found.token` (or found
     /// end-of-file if None).
     IncompleteOp {
-        op: OpToken,
+        op: OpTokenId,
         op_span: Span,
-        expected: Token,
+        expected: TokenId,
         found: Option<Lexeme>,
     },
 }
 
 struct Resolver<'a> {
-    tok_to_prefix: &'a [Option<(OpToken, bool)>],
-    tok_to_suffix: &'a [Option<(OpToken, bool)>],
-    optok_to_follower: &'a [Option<(Token, OpToken, bool)>],
+    tok_to_prefix: &'a [Option<(OpTokenId, bool)>],
+    tok_to_suffix: &'a [Option<(OpTokenId, bool)>],
+    optok_to_follower: &'a [Option<(TokenId, OpTokenId, bool)>],
     arg_mode: bool,
     last_pos: Position,
-    stack: Vec<(Token, OpToken, bool, Span)>,
+    stack: Vec<(TokenId, OpTokenId, bool, Span)>,
     output: Vec<Lexeme>,
 }
 
 impl<'a> Resolver<'a> {
     fn new(
-        tok_to_prefix: &'a [Option<(OpToken, bool)>],
-        tok_to_suffix: &'a [Option<(OpToken, bool)>],
-        optok_to_follower: &'a [Option<(Token, OpToken, bool)>],
+        tok_to_prefix: &'a [Option<(OpTokenId, bool)>],
+        tok_to_suffix: &'a [Option<(OpTokenId, bool)>],
+        optok_to_follower: &'a [Option<(TokenId, OpTokenId, bool)>],
     ) -> Resolver<'a> {
         Resolver {
             tok_to_prefix,
@@ -59,14 +61,14 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    fn produce(&mut self, optok: OpToken, span: Span) {
+    fn produce(&mut self, optok: OpTokenId, span: Span) {
         if let Some((tok, optok, has_arg)) = self.optok_to_follower[optok] {
             self.stack.push((tok, optok, has_arg, span));
         }
         self.output.push(Lexeme { token: optok, span });
     }
 
-    fn produce_at_last_pos(&mut self, optok: OpToken) {
+    fn produce_at_last_pos(&mut self, optok: OpTokenId) {
         self.output.push(Lexeme {
             token: optok,
             span: Span::new_at_pos(self.last_pos),
@@ -75,7 +77,7 @@ impl<'a> Resolver<'a> {
 
     fn error(
         &mut self,
-        top: Option<(Token, OpToken, bool, Span)>,
+        top: Option<(TokenId, OpTokenId, bool, Span)>,
         lexeme: Lexeme,
     ) -> ResolverError {
         if let Some((tok, optok, _, span)) = top {

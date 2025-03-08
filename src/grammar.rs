@@ -1,7 +1,8 @@
 use crate::lexer::{LexerBuilder, RegexError, UNICODE_WHITESPACE_REGEX};
 use crate::op::{Assoc, Fixity, Op, Prec};
 use crate::{
-    OpToken, Parser, Token, NAME_BLANK, NAME_ERROR, NAME_JUXTAPOSE, TOKEN_ERROR, TOKEN_JUXTAPOSE,
+    OpTokenId, Parser, TokenId, NAME_BLANK, NAME_ERROR, NAME_JUXTAPOSE, TOKEN_ERROR,
+    TOKEN_JUXTAPOSE,
 };
 use thiserror::Error;
 
@@ -13,9 +14,9 @@ const JUXTAPOSE_PREC: Prec = 5;
 #[derive(Debug, Clone)]
 pub struct Grammar {
     lexer_builder: LexerBuilder,
-    // Token -> info about that token
+    // TokenId -> info about that token
     token_table: Vec<TokenInfo>,
-    // OpToken -> info about that optoken
+    // OpTokenId -> info about that optoken
     op_token_table: Vec<OpTokenInfo>,
     current_prec: Prec,
     current_assoc: Assoc,
@@ -24,8 +25,8 @@ pub struct Grammar {
 #[derive(Debug, Clone)]
 struct TokenInfo {
     name: String,
-    as_prefix: Option<(OpToken, bool)>,
-    as_suffix: Option<(OpToken, bool)>,
+    as_prefix: Option<(OpTokenId, bool)>,
+    as_suffix: Option<(OpTokenId, bool)>,
 }
 
 #[derive(Debug, Clone)]
@@ -34,7 +35,7 @@ struct OpTokenInfo {
     op: Option<Op>,
     lprec: Prec,
     rprec: Prec,
-    follower: Option<(Token, OpToken, bool)>,
+    follower: Option<(TokenId, OpTokenId, bool)>,
 }
 
 /// An error while constructing a grammar.
@@ -291,7 +292,7 @@ impl Grammar {
         Ok(())
     }
 
-    fn add_string_token(&mut self, string: &str) -> Result<Token, GrammarError> {
+    fn add_string_token(&mut self, string: &str) -> Result<TokenId, GrammarError> {
         let token = match self.lexer_builder.string(string) {
             Ok(token) => token,
             Err(err) => return Err(GrammarError::RegexError(err)),
@@ -300,7 +301,11 @@ impl Grammar {
         Ok(token)
     }
 
-    fn add_regex_token(&mut self, regex_pattern: &str, name: &str) -> Result<Token, GrammarError> {
+    fn add_regex_token(
+        &mut self,
+        regex_pattern: &str,
+        name: &str,
+    ) -> Result<TokenId, GrammarError> {
         let token = match self.lexer_builder.regex(regex_pattern) {
             Ok(token) => token,
             Err(err) => return Err(GrammarError::RegexError(err)),
@@ -309,7 +314,7 @@ impl Grammar {
         Ok(token)
     }
 
-    fn insert_token(&mut self, token: Token, name: &str) {
+    fn insert_token(&mut self, token: TokenId, name: &str) {
         if token == self.token_table.len() {
             self.token_table.push(TokenInfo {
                 name: name.to_owned(),
@@ -326,11 +331,11 @@ impl Grammar {
         &mut self,
         op: Option<Op>,
         name: &str,
-        token: Token,
+        token: TokenId,
         lprec: Option<Prec>,
         rprec: Option<Prec>,
-        follower: Option<(Token, OpToken, bool)>,
-    ) -> Result<OpToken, GrammarError> {
+        follower: Option<(TokenId, OpTokenId, bool)>,
+    ) -> Result<OpTokenId, GrammarError> {
         let op_token = self.op_token_table.len();
         if op.is_some() {
             if lprec.is_none() {

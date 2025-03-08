@@ -18,15 +18,15 @@ pub use parse_tree::{ParseTree, Visitor};
 pub use source::{Col, Line, Offset, Position, Source, Span};
 
 /// A category of lexeme, such as "INTEGER" or "VARIABLE" or "OPEN_PAREN".
-pub type Token = usize;
-type OpToken = Token;
+pub type TokenId = usize;
+type OpTokenId = TokenId;
 
 /// Represents a lexing error.
-pub const TOKEN_ERROR: Token = 0;
+pub const TOKEN_ERROR: TokenId = 0;
 /// Represents a missing argument.
-pub const TOKEN_BLANK: Token = 1;
+pub const TOKEN_BLANK: TokenId = 1;
 /// Represents a missing operator.
-pub const TOKEN_JUXTAPOSE: Token = 2;
+pub const TOKEN_JUXTAPOSE: TokenId = 2;
 
 const NAME_ERROR: &str = "LexError";
 const NAME_BLANK: &str = "Blank";
@@ -35,7 +35,7 @@ const NAME_JUXTAPOSE: &str = "Juxtapose";
 /// One "word" in the stream returned by the lexer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Lexeme {
-    pub token: Token,
+    pub token: TokenId,
     pub span: Span,
 }
 
@@ -44,9 +44,9 @@ pub struct Lexeme {
 pub struct Parser {
     lexer: Lexer,
     tok_to_name: Vec<String>,
-    tok_to_prefix: Vec<Option<(OpToken, bool)>>,
-    tok_to_suffix: Vec<Option<(OpToken, bool)>>,
-    optok_to_follower: Vec<Option<(Token, OpToken, bool)>>,
+    tok_to_prefix: Vec<Option<(OpTokenId, bool)>>,
+    tok_to_suffix: Vec<Option<(OpTokenId, bool)>>,
+    optok_to_follower: Vec<Option<(TokenId, OpTokenId, bool)>>,
     optok_to_name: Vec<String>,
     optok_to_op: Vec<Option<Op>>,
     optok_to_prec: Vec<(Prec, Prec)>,
@@ -126,7 +126,7 @@ impl Parser {
 }
 
 impl Lexeme {
-    pub fn new(token: Token, start: Position, end: Position) -> Lexeme {
+    pub fn new(token: TokenId, start: Position, end: Position) -> Lexeme {
         Lexeme {
             token,
             span: Span { start, end },
