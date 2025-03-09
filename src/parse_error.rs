@@ -60,7 +60,7 @@ impl<'s> ParseError<'s> {
                 op_span,
             } => ParseError {
                 source,
-                short_message: format!("expected {}", &optok_to_token[op]),
+                short_message: format!("missing '{}'", &tok_to_name[expected]),
                 message: format!(
                     "While parsing '{}', expected '{}' but found end of file.",
                     &optok_to_token[op], &tok_to_name[expected]
@@ -71,17 +71,17 @@ impl<'s> ParseError<'s> {
                 op,
                 expected,
                 found: Some(found),
-                op_span: _,
+                op_span,
             } => ParseError {
                 source,
-                short_message: format!("expected {}", &optok_to_token[op]),
+                short_message: format!("missing '{}'", &tok_to_name[expected]),
                 message: format!(
                     "While parsing '{}', expected '{}' but found '{}'.",
                     &optok_to_token[op],
                     &tok_to_name[expected],
                     source.substr(found.span)
                 ),
-                span: found.span,
+                span: op_span,
             },
         }
     }

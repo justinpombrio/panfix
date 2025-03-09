@@ -236,7 +236,7 @@ fn parse_to_string(parser: &Parser<&'static str>, src: &str) -> String {
                 }
             }
         }
-        Err(err) => format!("{}", err),
+        Err(err) => err.display_with_color_override(false).to_string(),
     }
 }
 
@@ -372,6 +372,33 @@ in x",
 ...
 4 |  111 =
   |^^^^^ expected identifier
+"#,
+    );
+}
+
+#[test]
+fn while_parsing_errors() {
+    let parser = make_parser().unwrap();
+
+    test(
+        &parser,
+        "let x = 1",
+        r#"Parse Error: While parsing 'let', expected 'in' but found end of file.
+ --> testcase:1:1
+  |
+1 |let x = 1
+  |^^^ missing 'in'
+"#,
+    );
+
+    test(
+        &parser,
+        "let x = 1 =",
+        r#"Parse Error: While parsing 'let', expected 'in' but found '='.
+ --> testcase:1:1
+  |
+1 |let x = 1 =
+  |^^^ missing 'in'
 "#,
     );
 }

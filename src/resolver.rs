@@ -101,13 +101,13 @@ impl<'a> Resolver<'a> {
                 return Err(ResolverError::LexError(lexeme));
             }
             match self.stack.last().copied() {
-                Some((tok, optok, has_arg, _)) if lexeme.token == tok => {
+                Some((tok, optok, has_arg, span)) if lexeme.token == tok => {
                     if self.arg_mode {
                         self.produce_at_last_pos(TOKEN_BLANK);
                     }
                     self.arg_mode = has_arg;
                     self.stack.pop();
-                    self.produce(optok, lexeme.span);
+                    self.produce(optok, span);
                 }
                 top => {
                     let (tok_to_op, fallback_tok_to_op, missing) = if self.arg_mode {
