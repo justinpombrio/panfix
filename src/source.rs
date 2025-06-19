@@ -211,8 +211,8 @@ impl Source {
         if self.ends_in_newline {
             line -= 1;
         }
-        let col = self.line_contents_inclusive(line).len() as Col;
-        let utf8_col = self.line_contents_inclusive(line).chars().count() as Col;
+        let col = self.line_contents(line).len() as Col;
+        let utf8_col = self.line_contents(line).chars().count() as Col;
         Position {
             line,
             col,
